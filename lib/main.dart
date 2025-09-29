@@ -25,7 +25,7 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage> {
   final TextEditingController _controller = TextEditingController();
-  String _label = '';
+  final List<String> _messages = <String>[]; // newest first, capped at 10
 
   @override
   void dispose() {
@@ -40,7 +40,12 @@ class _MainPageState extends State<MainPage> {
     // Call into Rust via flutter_rust_bridge and update UI.
     final result = greet(name: text);
     setState(() {
-      _label = result;
+      // Insert newest at the top
+      _messages.insert(0, result);
+      // Cap the buffer to 10 items
+      if (_messages.length > 10) {
+        _messages.removeRange(10, _messages.length);
+      }
     });
 
     // Clear the input field (flush it) after submitting.
@@ -64,27 +69,37 @@ class _MainPageState extends State<MainPage> {
                       controller: _controller,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
-                        labelText: 'Enter LAN IP',
+                        labelText: 'Enter Your Message',
                       ),
                       onSubmitted: _submit,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  ElevatedButton.icon(
+                  ElevatedButton(
                     onPressed: _submit,
-                    icon: const Icon(Icons.send),
-                    label: const Text('Submit'),
+                    child: const Text('Submit'),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0),
-              child: Text(
-                _label.isEmpty ? 'Result will appear here' : _label,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+            Expanded(
+              child: _messages.isEmpty
+                  ? const Center(
+                      child: Text('Result will appear here'),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      itemCount: _messages.length,
+                      separatorBuilder: (_, __) => const Divider(height: 12),
+                      itemBuilder: (context, index) {
+                        final msg = _messages[index];
+                        return ListTile(
+                          dense: true,
+                          title: Text(msg),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
