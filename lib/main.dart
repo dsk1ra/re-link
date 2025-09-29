@@ -25,7 +25,7 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage> {
   final TextEditingController _controller = TextEditingController();
-  String _label = '';
+  final List<String> _messages = <String>[]; // newest first, capped at 10
 
   @override
   void dispose() {
@@ -36,11 +36,19 @@ class _MainPageState extends State<MainPage> {
   void _submit([String? _]) {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+    // Call into Rust to produce the message. Rust manages the buffer.
+    greet(name: text);
 
-    // Call into Rust via flutter_rust_bridge and update UI.
-    final result = greet(name: text);
+    // Refresh the local view of the buffer by asking Rust for the list.
+    final joined = greet(name: '__list__');
     setState(() {
-      _label = result;
+      if (joined.isEmpty) {
+        _messages.clear();
+      } else {
+        _messages
+          ..clear()
+          ..addAll(joined.split('|||'));
+      }
     });
 
     // Clear the input field (flush it) after submitting.
@@ -64,27 +72,55 @@ class _MainPageState extends State<MainPage> {
                       controller: _controller,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
-                        labelText: 'Enter LAN IP',
+                        labelText: 'Enter Your Message',
                       ),
                       onSubmitted: _submit,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  ElevatedButton.icon(
+                  ElevatedButton(
                     onPressed: _submit,
-                    icon: const Icon(Icons.send),
-                    label: const Text('Submit'),
+                    child: const Text('Submit'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () {
+                      // Ask Rust to consume the newest item, then refresh the list.
+                      greet(name: '__consume__');
+                      final joined = greet(name: '__list__');
+                      setState(() {
+                        if (joined.isEmpty) {
+                          _messages.clear();
+                        } else {
+                          _messages
+                            ..clear()
+                            ..addAll(joined.split('|||'));
+                        }
+                      });
+                    },
+                    child: const Text('Consume'),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0),
-              child: Text(
-                _label.isEmpty ? 'Result will appear here' : _label,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+            Expanded(
+              child: _messages.isEmpty
+                  ? const Center(
+                      child: Text('Result will appear here'),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      itemCount: _messages.length,
+                      separatorBuilder: (_, __) => const Divider(height: 12),
+                      itemBuilder: (context, index) {
+                        final msg = _messages[index];
+                        return ListTile(
+                          dense: true,
+                          title: Text(msg),
+                        );
+                      },
+                    ),
             ),
           ],
         ),

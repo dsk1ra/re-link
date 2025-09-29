@@ -14,11 +14,14 @@ void main() {
   testWidgets('Shows input on top with submit button', (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
 
-    // Input field labeled 'Enter LAN IP' exists
-    expect(find.widgetWithText(TextField, 'Enter LAN IP'), findsOneWidget);
+    // Input field labeled exists
+    expect(find.widgetWithText(TextField, 'Enter Your Message'), findsOneWidget);
 
     // Submit button exists
     expect(find.text('Submit'), findsOneWidget);
+
+  // Consume button exists
+  expect(find.text('Consume'), findsOneWidget);
 
     // Result placeholder is visible initially
     expect(find.text('Result will appear here'), findsOneWidget);
