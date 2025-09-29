@@ -20,25 +20,36 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    // Only 10 newest should be visible: 3..12 -> but capped to 10 means 3 is dropped, 4..12 remain (newest first)
-    expect(find.text('Hello, Name 12!'), findsOneWidget);
-    expect(find.text('Hello, Name 11!'), findsOneWidget);
-    expect(find.text('Hello, Name 10!'), findsOneWidget);
-    expect(find.text('Hello, Name 9!'), findsOneWidget);
-    expect(find.text('Hello, Name 8!'), findsOneWidget);
-    expect(find.text('Hello, Name 7!'), findsOneWidget);
-    expect(find.text('Hello, Name 6!'), findsOneWidget);
-    expect(find.text('Hello, Name 5!'), findsOneWidget);
-    expect(find.text('Hello, Name 4!'), findsOneWidget);
-    expect(find.text('Hello, Name 3!'), findsNothing);
-    expect(find.text('Hello, Name 2!'), findsNothing);
-    expect(find.text('Hello, Name 1!'), findsNothing);
+  // Buffer accepts only 10 messages; further submissions are ignored.
+  // After 12 attempts, buffer should contain Name 1..Name 10 (newest-first => Name 10 at top)
+  expect(find.text('Hello, Name 12!'), findsNothing);
+  expect(find.text('Hello, Name 11!'), findsNothing);
+  expect(find.text('Hello, Name 10!'), findsOneWidget);
+  expect(find.text('Hello, Name 9!'), findsOneWidget);
+  expect(find.text('Hello, Name 8!'), findsOneWidget);
+  expect(find.text('Hello, Name 7!'), findsOneWidget);
+  expect(find.text('Hello, Name 6!'), findsOneWidget);
+  expect(find.text('Hello, Name 5!'), findsOneWidget);
+  expect(find.text('Hello, Name 4!'), findsOneWidget);
+  expect(find.text('Hello, Name 3!'), findsOneWidget);
+  expect(find.text('Hello, Name 2!'), findsOneWidget);
+  expect(find.text('Hello, Name 1!'), findsOneWidget);
 
-    // Verify order on screen is newest first (12 at top). We can check by
-    // ensuring the first ListTile's title matches the newest message.
+    // Verify order on screen is newest first (Name 10 at top)
     final tiles = find.byType(ListTile);
     expect(tiles, findsNWidgets(10));
-    final firstTile = tester.widget<ListTile>(tiles.first);
-    expect((firstTile.title as Text).data, 'Hello, Name 12!');
+    var firstTile = tester.widget<ListTile>(tiles.first);
+    expect((firstTile.title as Text).data, 'Hello, Name 10!');
+
+    // Now consume the newest message using the Consume button; it should remove Name 10
+    await tester.tap(find.text('Consume'));
+    await tester.pumpAndSettle();
+
+    // Now there should still be 9 messages; Name 10 should be gone and Name 9 should be first
+    expect(find.text('Hello, Name 10!'), findsNothing);
+    final tilesAfterConsume = find.byType(ListTile);
+    expect(tilesAfterConsume, findsNWidgets(9));
+    firstTile = tester.widget<ListTile>(tilesAfterConsume.first);
+    expect((firstTile.title as Text).data, 'Hello, Name 9!');
   });
 }

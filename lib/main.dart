@@ -37,15 +37,14 @@ class _MainPageState extends State<MainPage> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
+    // If we've hit the buffer limit, ignore further submissions.
+    if (_messages.length >= 10) return;
+
     // Call into Rust via flutter_rust_bridge and update UI.
     final result = greet(name: text);
     setState(() {
       // Insert newest at the top
       _messages.insert(0, result);
-      // Cap the buffer to 10 items
-      if (_messages.length > 10) {
-        _messages.removeRange(10, _messages.length);
-      }
     });
 
     // Clear the input field (flush it) after submitting.
@@ -78,6 +77,17 @@ class _MainPageState extends State<MainPage> {
                   ElevatedButton(
                     onPressed: _submit,
                     child: const Text('Submit'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () {
+                      // Consumer: remove the last produced message (newest)
+                      if (_messages.isEmpty) return;
+                      setState(() {
+                        _messages.removeAt(0);
+                      });
+                    },
+                    child: const Text('Consume'),
                   ),
                 ],
               ),

@@ -20,6 +20,9 @@ void main() {
     // Submit button exists
     expect(find.text('Submit'), findsOneWidget);
 
+  // Consume button exists
+  expect(find.text('Consume'), findsOneWidget);
+
     // Result placeholder is visible initially
     expect(find.text('Result will appear here'), findsOneWidget);
   });
