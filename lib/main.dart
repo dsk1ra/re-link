@@ -36,15 +36,19 @@ class _MainPageState extends State<MainPage> {
   void _submit([String? _]) {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+    // Call into Rust to produce the message. Rust manages the buffer.
+    greet(name: text);
 
-    // If we've hit the buffer limit, ignore further submissions.
-    if (_messages.length >= 10) return;
-
-    // Call into Rust via flutter_rust_bridge and update UI.
-    final result = greet(name: text);
+    // Refresh the local view of the buffer by asking Rust for the list.
+    final joined = greet(name: '__list__');
     setState(() {
-      // Insert newest at the top
-      _messages.insert(0, result);
+      if (joined.isEmpty) {
+        _messages.clear();
+      } else {
+        _messages
+          ..clear()
+          ..addAll(joined.split('|||'));
+      }
     });
 
     // Clear the input field (flush it) after submitting.
@@ -81,10 +85,17 @@ class _MainPageState extends State<MainPage> {
                   const SizedBox(width: 8),
                   ElevatedButton(
                     onPressed: () {
-                      // Consumer: remove the last produced message (newest)
-                      if (_messages.isEmpty) return;
+                      // Ask Rust to consume the newest item, then refresh the list.
+                      greet(name: '__consume__');
+                      final joined = greet(name: '__list__');
                       setState(() {
-                        _messages.removeAt(0);
+                        if (joined.isEmpty) {
+                          _messages.clear();
+                        } else {
+                          _messages
+                            ..clear()
+                            ..addAll(joined.split('|||'));
+                        }
                       });
                     },
                     child: const Text('Consume'),
