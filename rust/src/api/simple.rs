@@ -23,7 +23,7 @@ pub fn greet(name: String) -> String {
     }
 
     // Produce: create the greeting and add it to the buffer (newest at front), but cap at 10
-    let greeting = format!("Hello, {name}!");
+    let greeting = format!("{name}!");
     let mut buf = BUFFER.lock().unwrap();
     buf.insert(0, greeting.clone());
     if buf.len() > 10 {
