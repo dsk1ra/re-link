@@ -3,12 +3,8 @@ use std::sync::Mutex;
 
 static BUFFER: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
-#[flutter_rust_bridge::frb(sync)] // Synchronous mode for simplicity of the demo
+#[flutter_rust_bridge::frb(sync)]
 pub fn greet(name: String) -> String {
-    // Special commands:
-    // "__consume__" -> remove and return the newest message, or empty string if none
-    // "__list__" -> return all messages joined by "|||" (delimiter)
-
     if name == "__consume__" {
         let mut buf = BUFFER.lock().unwrap();
         if buf.is_empty() {
@@ -22,7 +18,6 @@ pub fn greet(name: String) -> String {
         return buf.join("|||");
     }
 
-    // Produce: create the greeting and add it to the buffer (newest at front), but cap at 10
     let greeting = format!("{name}!");
     let mut buf = BUFFER.lock().unwrap();
     buf.insert(0, greeting.clone());
@@ -34,6 +29,5 @@ pub fn greet(name: String) -> String {
 
 #[flutter_rust_bridge::frb(init)]
 pub fn init_app() {
-    // Default utilities - feel free to customize
     flutter_rust_bridge::setup_default_user_utils();
 }

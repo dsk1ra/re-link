@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:application/src/rust/api/simple.dart';
 import 'package:application/src/rust/frb_generated.dart';
+import 'src/signaling/signaling_client.dart';
+import 'src/messaging/message_queue_backend.dart';
+import 'src/messaging/http_queue_backend.dart';
 
 Future<void> main() async {
   await RustLib.init();
@@ -20,100 +20,10 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Abstract backend that can produce, consume, list messages and be disposed
-abstract class ServerBackend {
-  Future<void> produce(String name);
-
-  Future<String?> consume();
-
-  Future<List<String>> list();
-
-  Future<void> dispose();
-}
-
-/// Local Rust backend that routes through flutter_rust_bridge using special tokens
-class LocalRustBackend implements ServerBackend {
-  LocalRustBackend();
-
-  @override
-  Future<void> produce(String name) async {
-    // produce via greet(name)
-    greet(name: name);
-  }
-
-  @override
-  Future<String?> consume() async {
-    final res = greet(name: '__consume__');
-    return res.isEmpty ? null : res;
-  }
-
-  @override
-  Future<List<String>> list() async {
-    final joined = greet(name: '__list__');
-    if (joined.isEmpty) return [];
-    return joined.split('|||');
-  }
-
-  @override
-  Future<void> dispose() async {}
-}
-
-/// TCP backend: simple line protocol for demo purposes.
-/// Commands:
-/// PRODUCE:<name> -> reply OK
-/// CONSUME -> reply with consumed line or empty
-/// LIST -> reply with joined messages via |||
-class TcpBackend implements ServerBackend {
-  Socket? _socket;
-  final _readController = StreamController<String>();
-  StreamSubscription<String>? _sub;
-
-  Future<void> connect(String host, int port) async {
-    _socket = await Socket.connect(host, port, timeout: const Duration(seconds: 3));
-    _sub = _socket!.cast<List<int>>().transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
-      _readController.add(line);
-    });
-  }
-
-  Future<void> _sendLine(String line) async {
-    if (_socket == null) throw Exception('Not connected');
-    _socket!.write('$line\n');
-    await _socket!.flush();
-  }
-
-  Future<String> _readOne({Duration timeout = const Duration(seconds: 2)}) async {
-    return _readController.stream.first.timeout(timeout);
-  }
-
-  @override
-  Future<void> produce(String name) async {
-    await _sendLine('PRODUCE:$name');
-    final r = await _readOne();
-    if (r != 'OK') throw Exception('Produce failed: $r');
-  }
-
-  @override
-  Future<String?> consume() async {
-    await _sendLine('CONSUME');
-    final r = await _readOne();
-    return r.isEmpty ? null : r;
-  }
-
-  @override
-  Future<List<String>> list() async {
-    await _sendLine('LIST');
-    final r = await _readOne();
-    if (r.isEmpty) return [];
-    return r.split('|||');
-  }
-
-  @override
-  Future<void> dispose() async {
-    await _sub?.cancel();
-    await _socket?.close();
-    await _readController.close();
-  }
-}
+/// HTTP signaling client that sends messages to itself.
+/// Expose minimal produce/list 
+// Message queue abstraction instance in UI
+typedef Backend = MessageQueueBackend;
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -127,7 +37,7 @@ class _MainPageState extends State<MainPage> {
   final TextEditingController _serverController = TextEditingController();
   final List<String> _messages = <String>[]; // newest first
 
-  ServerBackend? _backend;
+  Backend? _backend;
   bool _connected = false;
   bool _connecting = false;
 
@@ -145,16 +55,17 @@ class _MainPageState extends State<MainPage> {
     });
 
     try {
-      if (addr == 'local') {
-        _backend = LocalRustBackend();
-      } else {
-        final parts = addr.split(':');
-        final host = parts[0];
-        final port = parts.length > 1 ? int.tryParse(parts[1]) ?? 4000 : 4000;
-        final tcp = TcpBackend();
-        await tcp.connect(host, port);
-        _backend = tcp;
+      if (!(addr.startsWith('http://') || addr.startsWith('https://'))) {
+        throw Exception('Enter full signaling base URL, e.g. http://127.0.0.1:8080');
       }
+      final signaling = SignalingClient(addr);
+      await signaling.register(deviceLabel: 'flutter-app');
+      final queue = HttpQueueBackend(
+        baseUrl: addr,
+        clientId: signaling.clientId!,
+        sessionToken: signaling.sessionToken!,
+      );
+      _backend = _HttpQueueAdapter(queue);
 
       final list = await _backend!.list();
       setState(() {
@@ -221,7 +132,7 @@ class _MainPageState extends State<MainPage> {
                         controller: _serverController,
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
-                          labelText: 'Enter Rust server address (host:port or "local")',
+                          labelText: 'Enter signaling base URL (http://host:port)',
                         ),
                       ),
                     ),
@@ -242,7 +153,7 @@ class _MainPageState extends State<MainPage> {
                         controller: _controller,
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
-                          labelText: 'Enter Your Message',
+                          labelText: 'Enter message to send to self',
                         ),
                         onSubmitted: (v) => _produce(v),
                       ),
@@ -255,7 +166,7 @@ class _MainPageState extends State<MainPage> {
                     const SizedBox(width: 8),
                     ElevatedButton(
                       onPressed: _consume,
-                      child: const Text('Consume'),
+                      child: const Text('Consume (just polls again)'),
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton(
@@ -290,4 +201,25 @@ class _MainPageState extends State<MainPage> {
       ),
     );
   }
+}
+
+class _HttpQueueAdapter implements MessageQueueBackend {
+  final HttpQueueBackend inner;
+  _HttpQueueAdapter(this.inner);
+
+  @override
+  Future<void> dispose() => inner.dispose();
+
+  @override
+  Future<List<String>> list() async {
+    final items = await inner.list();
+    // newest first is not guaranteed by server; just return as-is for now
+    return items.reversed.toList();
+  }
+
+  @override
+  Future<void> produce(String payload) => inner.produce(payload);
+
+  @override
+  Future<String?> consume() => inner.consume();
 }
