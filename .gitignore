@@ -37,13 +37,6 @@ tmp/
 
 # VS Code: ignore everything by default, but keep common workspace files
 .vscode/*
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/settings.json
-!.vscode/extensions.json
-!.vscode/*.code-snippets
-# Local-only overrides (never commit)
-.vscode/settings.local.json
 
 ########################################
 # Flutter / Dart
