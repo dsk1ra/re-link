@@ -1,6 +1,6 @@
 use crate::shared::{
-    HeartbeatRequest, RegisterRequest, SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest,
-    QueueProduceRequest, QueueConsumeRequest, QueueListRequest, QueueConsumeResponse, QueueListResponse, ClientsListResponse, ChatSendRequest, ChatListRequest, ChatListResponse,
+    ChatListRequest, ChatListResponse, ChatSendRequest, ClientsListResponse, HeartbeatRequest,
+    RegisterRequest, SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest,
 };
 use crate::signaling::{RegistryError, SessionRegistry, SignalingServerConfig};
 use axum::{
@@ -27,7 +27,10 @@ struct ErrorResponse {
 }
 
 pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
-    let registry = Arc::new(SessionRegistry::new(config.session_ttl, config.heartbeat_interval));
+    let registry = Arc::new(SessionRegistry::new(
+        config.session_ttl,
+        config.heartbeat_interval,
+    ));
     let state = AppState {
         registry,
         config: Arc::new(config),
@@ -45,10 +48,6 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         // global chat
         .route("/chat/send", post(chat_send))
         .route("/chat/list", post(chat_list))
-    // queue endpoints
-    .route("/queue/produce", post(queue_produce))
-    .route("/queue/consume", post(queue_consume))
-    .route("/queue/list", post(queue_list))
         .with_state(state.clone());
 
     let listen_addr = state.config.listen_addr;
@@ -73,7 +72,10 @@ struct SignalingServerInfo {
 }
 
 #[instrument(skip(state, payload))]
-async fn register(State(state): State<AppState>, Json(payload): Json<RegisterRequest>) -> impl IntoResponse {
+async fn register(
+    State(state): State<AppState>,
+    Json(payload): Json<RegisterRequest>,
+) -> impl IntoResponse {
     let response = state.registry.register(payload).await;
     (StatusCode::OK, Json(response))
 }
@@ -153,52 +155,17 @@ async fn chat_list(
         .map_err(registry_err)
 }
 
-// -------- Queue handlers --------
-#[instrument(skip(state, payload))]
-async fn queue_produce(
-    State(state): State<AppState>,
-    Json(payload): Json<QueueProduceRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    state
-        .registry
-        .queue_produce(payload)
-        .await
-        .map(|()| StatusCode::ACCEPTED)
-        .map_err(registry_err)
-}
-
-#[instrument(skip(state, payload))]
-async fn queue_consume(
-    State(state): State<AppState>,
-    Json(payload): Json<QueueConsumeRequest>,
-) -> Result<(StatusCode, Json<QueueConsumeResponse>), (StatusCode, Json<ErrorResponse>)> {
-    state
-        .registry
-        .queue_consume(payload)
-        .await
-        .map(|resp| (StatusCode::OK, Json(resp)))
-        .map_err(registry_err)
-}
-
-#[instrument(skip(state, payload))]
-async fn queue_list(
-    State(state): State<AppState>,
-    Json(payload): Json<QueueListRequest>,
-) -> Result<(StatusCode, Json<QueueListResponse>), (StatusCode, Json<ErrorResponse>)> {
-    state
-        .registry
-        .queue_list(payload)
-        .await
-        .map(|resp| (StatusCode::OK, Json(resp)))
-        .map_err(registry_err)
-}
-
 fn registry_err(err: RegistryError) -> (StatusCode, Json<ErrorResponse>) {
     let status = match err {
         RegistryError::ClientNotFound => StatusCode::NOT_FOUND,
         RegistryError::InvalidToken => StatusCode::UNAUTHORIZED,
     };
-    (status, Json(ErrorResponse { message: err.to_string() }))
+    (
+        status,
+        Json(ErrorResponse {
+            message: err.to_string(),
+        }),
+    )
 }
 
 // Root handler for "/"

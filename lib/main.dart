@@ -78,7 +78,7 @@ class _ChatPageState extends State<ChatPage> {
 
   void _startPolling() {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 50), (_) async {
       try {
         if (_backend == null) return;
         await _refreshChat();

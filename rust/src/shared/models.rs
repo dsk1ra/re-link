@@ -68,44 +68,6 @@ impl SignalingClientConfigDto {
     }
 }
 
-// ---------- Queue (Producer/Consumer) Models ----------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueueProduceRequest {
-    pub client_id: ClientId,
-    pub session_token: String,
-    pub payload: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueueConsumeRequest {
-    pub client_id: ClientId,
-    pub session_token: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueueListRequest {
-    pub client_id: ClientId,
-    pub session_token: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueueItemDto {
-    pub id: u64,
-    pub payload: String,
-    pub created_at_epoch_ms: u128,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueueConsumeResponse {
-    pub item: Option<QueueItemDto>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueueListResponse {
-    pub items: Vec<QueueItemDto>,
-}
-
 // ---------- Chat/Clients Models ----------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

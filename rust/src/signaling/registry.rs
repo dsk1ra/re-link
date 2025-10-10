@@ -1,7 +1,6 @@
 use crate::shared::{
     ClientId, HeartbeatRequest, HeartbeatResponse, RegisterRequest, RegisterResponse, SignalEnvelope,
-    SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest, QueueProduceRequest, QueueConsumeRequest,
-    QueueListRequest, QueueConsumeResponse, QueueListResponse, QueueItemDto, ClientInfoDto, ClientsListResponse, ChatSendRequest, ChatListRequest, ChatListResponse, ChatMessageDto,
+    SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest, ClientInfoDto, ClientsListResponse, ChatSendRequest, ChatListRequest, ChatListResponse, ChatMessageDto,
 };
 use std::{
     collections::HashMap,
@@ -35,7 +34,6 @@ pub enum RegistryError {
 pub struct SessionRegistry {
     clients: RwLock<HashMap<ClientId, ClientRecord>>,
     messages: RwLock<Vec<SignalEnvelope>>,
-    queue_items: RwLock<Vec<QueueStoredItem>>,
     chat_messages: RwLock<Vec<ChatStoredMsg>>,
     session_ttl: Duration,
     heartbeat_interval: Duration,
@@ -46,7 +44,6 @@ impl SessionRegistry {
         Self {
             clients: RwLock::new(HashMap::new()),
             messages: RwLock::new(Vec::new()),
-            queue_items: RwLock::new(Vec::new()),
             chat_messages: RwLock::new(Vec::new()),
             session_ttl,
             heartbeat_interval,
@@ -175,43 +172,6 @@ impl SessionRegistry {
         }
     }
 
-    // -------- Queue API --------
-    pub async fn queue_produce(&self, req: QueueProduceRequest) -> Result<(), RegistryError> {
-        self.prune_expired().await;
-        let clients = self.clients.read().await;
-        self.verify_client(&clients, &req.client_id, &req.session_token)?;
-        drop(clients);
-        let mut items = self.queue_items.write().await;
-        let id = items.len() as u64 + 1;
-        let created_at_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
-        items.push(QueueStoredItem { id, payload: req.payload, created_at_epoch_ms: created_at_ms });
-        Ok(())
-    }
-
-    pub async fn queue_consume(&self, req: QueueConsumeRequest) -> Result<QueueConsumeResponse, RegistryError> {
-        self.prune_expired().await;
-        let clients = self.clients.read().await;
-        self.verify_client(&clients, &req.client_id, &req.session_token)?;
-        drop(clients);
-        let mut items = self.queue_items.write().await;
-        if items.is_empty() {
-            return Ok(QueueConsumeResponse { item: None });
-        }
-        // FIFO: remove first
-        let first = items.remove(0);
-        Ok(QueueConsumeResponse { item: Some(first.into_dto()) })
-    }
-
-    pub async fn queue_list(&self, req: QueueListRequest) -> Result<QueueListResponse, RegistryError> {
-        self.prune_expired().await;
-        let clients = self.clients.read().await;
-        self.verify_client(&clients, &req.client_id, &req.session_token)?;
-        drop(clients);
-        let items = self.queue_items.read().await;
-        let dtos = items.iter().map(|i| i.clone().into_dto()).collect();
-        Ok(QueueListResponse { items: dtos })
-    }
-
     // -------- Chat helpers --------
     pub async fn list_clients(&self) -> ClientsListResponse {
         let clients = self.clients.read().await;
@@ -254,11 +214,6 @@ impl SessionRegistry {
         Ok(ChatListResponse { messages: list })
     }
 }
-
-#[derive(Debug, Clone)]
-struct QueueStoredItem { id: u64, payload: String, created_at_epoch_ms: u128 }
-
-impl QueueStoredItem { fn into_dto(self) -> QueueItemDto { QueueItemDto { id: self.id, payload: self.payload, created_at_epoch_ms: self.created_at_epoch_ms } } }
 
 #[derive(Debug, Clone)]
 struct ChatStoredMsg {
