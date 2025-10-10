@@ -35,8 +35,14 @@ tmp/
 *.iws
 .idea/
 
-# VS Code (keep if you want shared settings; uncomment to ignore)
-# .vscode/
+# VS Code: ignore everything by default, but keep common workspace files
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+# Local-only overrides (never commit)
 .vscode/settings.local.json
 
 ########################################
@@ -56,6 +62,7 @@ tmp/
 /coverage/
 coverage/
 lcov.info
+.dart_tool/chrome-device/
 
 # Generated registrants & ephemeral engine bits
 **/GeneratedPluginRegistrant.*
@@ -138,9 +145,8 @@ DerivedData/
 *.rsp
 
 ########################################
-# Web (Flutter web build in build/ already ignored)
+# Web (Flutter web build already under build/)
 ########################################
-.dart_tool/chrome-device/
 
 ########################################
 # Symbolication / Obfuscation outputs

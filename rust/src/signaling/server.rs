@@ -1,6 +1,6 @@
 use crate::shared::{
     HeartbeatRequest, RegisterRequest, SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest,
-    QueueProduceRequest, QueueConsumeRequest, QueueListRequest, QueueConsumeResponse, QueueListResponse,
+    QueueProduceRequest, QueueConsumeRequest, QueueListRequest, QueueConsumeResponse, QueueListResponse, ClientsListResponse, ChatSendRequest, ChatListRequest, ChatListResponse,
 };
 use crate::signaling::{RegistryError, SessionRegistry, SignalingServerConfig};
 use axum::{
@@ -40,6 +40,11 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         .route("/heartbeat", post(heartbeat))
         .route("/signal", post(send_signal))
         .route("/signal/fetch", post(fetch_signal))
+        // chat helpers
+        .route("/clients", get(list_clients))
+        // global chat
+        .route("/chat/send", post(chat_send))
+        .route("/chat/list", post(chat_list))
     // queue endpoints
     .route("/queue/produce", post(queue_produce))
     .route("/queue/consume", post(queue_consume))
@@ -109,6 +114,42 @@ async fn fetch_signal(
         .fetch_signals(payload)
         .await
         .map(|messages| (StatusCode::OK, Json(messages)))
+        .map_err(registry_err)
+}
+
+// -------- Chat handlers --------
+#[instrument(skip(state))]
+async fn list_clients(
+    State(state): State<AppState>,
+) -> Result<(StatusCode, Json<ClientsListResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let resp = state.registry.list_clients().await;
+    Ok((StatusCode::OK, Json(resp)))
+}
+
+// -------- Global chat handlers --------
+#[instrument(skip(state, payload))]
+async fn chat_send(
+    State(state): State<AppState>,
+    Json(payload): Json<ChatSendRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    state
+        .registry
+        .chat_send(payload)
+        .await
+        .map(|()| StatusCode::ACCEPTED)
+        .map_err(registry_err)
+}
+
+#[instrument(skip(state, payload))]
+async fn chat_list(
+    State(state): State<AppState>,
+    Json(payload): Json<ChatListRequest>,
+) -> Result<(StatusCode, Json<ChatListResponse>), (StatusCode, Json<ErrorResponse>)> {
+    state
+        .registry
+        .chat_list(payload)
+        .await
+        .map(|resp| (StatusCode::OK, Json(resp)))
         .map_err(registry_err)
 }
 

@@ -1,7 +1,7 @@
 use crate::shared::{
     ClientId, HeartbeatRequest, HeartbeatResponse, RegisterRequest, RegisterResponse, SignalEnvelope,
     SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest, QueueProduceRequest, QueueConsumeRequest,
-    QueueListRequest, QueueConsumeResponse, QueueListResponse, QueueItemDto,
+    QueueListRequest, QueueConsumeResponse, QueueListResponse, QueueItemDto, ClientInfoDto, ClientsListResponse, ChatSendRequest, ChatListRequest, ChatListResponse, ChatMessageDto,
 };
 use std::{
     collections::HashMap,
@@ -20,6 +20,7 @@ struct ClientRecord {
     #[allow(dead_code)]
     registered_at: Instant,
     last_heartbeat: Instant,
+    display_name: String,
 }
 
 #[derive(Debug, Error)]
@@ -35,6 +36,7 @@ pub struct SessionRegistry {
     clients: RwLock<HashMap<ClientId, ClientRecord>>,
     messages: RwLock<Vec<SignalEnvelope>>,
     queue_items: RwLock<Vec<QueueStoredItem>>,
+    chat_messages: RwLock<Vec<ChatStoredMsg>>,
     session_ttl: Duration,
     heartbeat_interval: Duration,
 }
@@ -45,6 +47,7 @@ impl SessionRegistry {
             clients: RwLock::new(HashMap::new()),
             messages: RwLock::new(Vec::new()),
             queue_items: RwLock::new(Vec::new()),
+            chat_messages: RwLock::new(Vec::new()),
             session_ttl,
             heartbeat_interval,
         }
@@ -61,11 +64,18 @@ impl SessionRegistry {
 
         let client_id = Uuid::new_v4();
         let session_token = Uuid::new_v4().to_string();
+        // Assign incremental display name based on current active clients count + 1
+        let display_name = {
+            let clients = self.clients.read().await;
+            let n = clients.len() + 1;
+            format!("Client {}", n)
+        };
         let new_record = ClientRecord {
             device_label: request.device_label,
             session_token: session_token.clone(),
             registered_at: Instant::now(),
             last_heartbeat: Instant::now(),
+            display_name: display_name.clone(),
         };
 
         self.clients.write().await.insert(client_id, new_record);
@@ -74,6 +84,7 @@ impl SessionRegistry {
             client_id,
             session_token,
             heartbeat_interval_secs: self.heartbeat_interval.as_secs(),
+            display_name,
         }
     }
 
@@ -200,9 +211,72 @@ impl SessionRegistry {
         let dtos = items.iter().map(|i| i.clone().into_dto()).collect();
         Ok(QueueListResponse { items: dtos })
     }
+
+    // -------- Chat helpers --------
+    pub async fn list_clients(&self) -> ClientsListResponse {
+        let clients = self.clients.read().await;
+        let mut list: Vec<ClientInfoDto> = clients
+            .iter()
+            .map(|(id, rec)| ClientInfoDto { client_id: *id, display_name: rec.display_name.clone() })
+            .collect();
+        // Deterministic ordering for UI
+        list.sort_by_key(|c| c.display_name.clone());
+        ClientsListResponse { clients: list }
+    }
+
+    // -------- Global chat API --------
+    pub async fn chat_send(&self, req: ChatSendRequest) -> Result<(), RegistryError> {
+        self.prune_expired().await;
+        let clients = self.clients.read().await;
+        let rec = self.verify_client(&clients, &req.client_id, &req.session_token)?;
+        let from_display_name = rec.display_name.clone();
+        drop(clients);
+        let mut messages = self.chat_messages.write().await;
+        let id = messages.len() as u64 + 1;
+        let created_at_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
+        messages.push(ChatStoredMsg {
+            id,
+            from_client_id: req.client_id,
+            from_display_name,
+            text: req.text,
+            created_at_epoch_ms: created_at_ms,
+        });
+        Ok(())
+    }
+
+    pub async fn chat_list(&self, req: ChatListRequest) -> Result<ChatListResponse, RegistryError> {
+        self.prune_expired().await;
+        let clients = self.clients.read().await;
+        self.verify_client(&clients, &req.client_id, &req.session_token)?;
+        drop(clients);
+        let messages = self.chat_messages.read().await;
+        let list = messages.iter().cloned().map(|m| m.into_dto()).collect();
+        Ok(ChatListResponse { messages: list })
+    }
 }
 
 #[derive(Debug, Clone)]
 struct QueueStoredItem { id: u64, payload: String, created_at_epoch_ms: u128 }
 
 impl QueueStoredItem { fn into_dto(self) -> QueueItemDto { QueueItemDto { id: self.id, payload: self.payload, created_at_epoch_ms: self.created_at_epoch_ms } } }
+
+#[derive(Debug, Clone)]
+struct ChatStoredMsg {
+    id: u64,
+    from_client_id: ClientId,
+    from_display_name: String,
+    text: String,
+    created_at_epoch_ms: u128,
+}
+
+impl ChatStoredMsg {
+    fn into_dto(self) -> ChatMessageDto {
+        ChatMessageDto {
+            id: self.id,
+            from_client_id: self.from_client_id,
+            from_display_name: self.from_display_name,
+            text: self.text,
+            created_at_epoch_ms: self.created_at_epoch_ms,
+        }
+    }
+}
