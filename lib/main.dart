@@ -25,7 +25,6 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> {
-  final TextEditingController _serverController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
 
   HttpSignalingBackend? _backend;
@@ -33,26 +32,37 @@ class _ChatPageState extends State<ChatPage> {
   String? _selfName;
   final List<_ChatEntry> _chat = []; // oldest first
   bool _connecting = false;
+  String? _connectError;
+
+  // The app auto-connects on launch to this signaling server.
+  // To change the target, update this constant or make it configurable elsewhere.
+  static const String _serverUrl = 'http://127.0.0.1:8080';
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-connect to the fixed server as soon as the page loads.
+    // A short microtask ensures build has a context for SnackBars if needed.
+    scheduleMicrotask(() {
+      _connect();
+    });
+  }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
     _backend?.dispose();
-    _serverController.dispose();
     _messageController.dispose();
     super.dispose();
   }
 
   Future<void> _connect() async {
-    final addr = _serverController.text.trim();
-    if (addr.isEmpty) return;
-    if (!(addr.startsWith('http://') || addr.startsWith('https://'))) {
-      _show('Enter full signaling base URL, e.g. http://127.0.0.1:8080');
-      return;
-    }
-    setState(() => _connecting = true);
+    setState(() {
+      _connecting = true;
+      _connectError = null;
+    });
     try {
-      final backend = HttpSignalingBackend(addr);
+      final backend = HttpSignalingBackend(_serverUrl);
       final reg = await backend.register(deviceLabel: 'flutter-chat');
       _backend = backend;
       _selfName = reg.displayName;
@@ -60,6 +70,7 @@ class _ChatPageState extends State<ChatPage> {
   _startPolling();
       setState(() {});
     } catch (e) {
+      _connectError = e.toString();
       _show('Connect failed: $e');
     } finally {
       setState(() => _connecting = false);
@@ -124,34 +135,50 @@ class _ChatPageState extends State<ChatPage> {
               padding: const EdgeInsets.all(12.0),
               child: Row(
                 children: [
-                  if (!connected) ...[
-                    Expanded(
-                      child: TextField(
-                        controller: _serverController,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          labelText: 'Signaling URL (http://host:port)',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: _connecting ? null : _connect,
-                      child: Text(_connecting ? 'Connecting...' : 'Connect'),
-                    ),
-                  ] else ...[
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Text('You: ${_selfName ?? ''}'),
-                          const Spacer(),
-                          IconButton(onPressed: _refreshChat, icon: const Icon(Icons.refresh)),
-                          const SizedBox(width: 8),
-                          ElevatedButton(onPressed: _disconnect, child: const Text('Disconnect')),
-                        ],
-                      ),
-                    ),
-                  ],
+                  Expanded(
+                    child: connected
+                        ? Row(
+                            children: [
+                              Text('You: ${_selfName ?? ''}') ,
+                              const Spacer(),
+                              IconButton(onPressed: _refreshChat, icon: const Icon(Icons.refresh)),
+                              const SizedBox(width: 8),
+                              ElevatedButton(onPressed: _disconnect, child: const Text('Disconnect')),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              if (_connecting) ...[
+                                const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                                const SizedBox(width: 12),
+                                const Text('Connecting to the server...'),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _serverUrl,
+                                  style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+                                ),
+                              ] else ...[
+                                const Icon(Icons.cloud_off, color: Colors.redAccent),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _connectError != null
+                                        ? 'Failed to connect: $_connectError'
+                                        : 'Not connected',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                ElevatedButton(onPressed: _connect, child: const Text('Retry')),
+                              ],
+                            ],
+                          ),
+                  ),
                 ],
               ),
             ),
