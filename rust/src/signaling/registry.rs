@@ -1,6 +1,6 @@
 use crate::shared::{
     ClientId, HeartbeatRequest, HeartbeatResponse, RegisterRequest, RegisterResponse, SignalEnvelope,
-    SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest, ClientInfoDto, ClientsListResponse, ChatSendRequest, ChatListRequest, ChatListResponse, ChatMessageDto,
+    SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest
 };
 use std::{
     collections::HashMap,
@@ -18,8 +18,7 @@ struct ClientRecord {
     session_token: String,
     #[allow(dead_code)]
     registered_at: Instant,
-    last_heartbeat: Instant,
-    display_name: String,
+    last_heartbeat: Instant
 }
 
 #[derive(Debug, Error)]
@@ -34,7 +33,6 @@ pub enum RegistryError {
 pub struct SessionRegistry {
     clients: RwLock<HashMap<ClientId, ClientRecord>>,
     messages: RwLock<Vec<SignalEnvelope>>,
-    chat_messages: RwLock<Vec<ChatStoredMsg>>,
     session_ttl: Duration,
     heartbeat_interval: Duration,
 }
@@ -44,7 +42,6 @@ impl SessionRegistry {
         Self {
             clients: RwLock::new(HashMap::new()),
             messages: RwLock::new(Vec::new()),
-            chat_messages: RwLock::new(Vec::new()),
             session_ttl,
             heartbeat_interval,
         }
@@ -72,7 +69,6 @@ impl SessionRegistry {
             session_token: session_token.clone(),
             registered_at: Instant::now(),
             last_heartbeat: Instant::now(),
-            display_name: display_name.clone(),
         };
 
         self.clients.write().await.insert(client_id, new_record);
@@ -145,6 +141,12 @@ impl SessionRegistry {
         Ok(SignalFetchResponse { messages: collected })
     }
 
+    pub async fn verify_session(&self, client_id: &ClientId, session_token: &str) -> Result<(), RegistryError> {
+        let clients = self.clients.read().await;
+        let _ = self.verify_client(&clients, client_id, session_token)?;
+        Ok(())
+    }
+
     async fn prune_expired(&self) {
         let expiration_threshold = self.session_ttl;
 
@@ -169,69 +171,6 @@ impl SessionRegistry {
                 }
                 !drop_msg
             });
-        }
-    }
-
-    // -------- Chat helpers --------
-    pub async fn list_clients(&self) -> ClientsListResponse {
-        let clients = self.clients.read().await;
-        let mut list: Vec<ClientInfoDto> = clients
-            .iter()
-            .map(|(id, rec)| ClientInfoDto { client_id: *id, display_name: rec.display_name.clone() })
-            .collect();
-        // Deterministic ordering for UI
-        list.sort_by_key(|c| c.display_name.clone());
-        ClientsListResponse { clients: list }
-    }
-
-    // -------- Global chat API --------
-    pub async fn chat_send(&self, req: ChatSendRequest) -> Result<(), RegistryError> {
-        self.prune_expired().await;
-        let clients = self.clients.read().await;
-        let rec = self.verify_client(&clients, &req.client_id, &req.session_token)?;
-        let from_display_name = rec.display_name.clone();
-        drop(clients);
-        let mut messages = self.chat_messages.write().await;
-        let id = messages.len() as u64 + 1;
-        let created_at_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
-        messages.push(ChatStoredMsg {
-            id,
-            from_client_id: req.client_id,
-            from_display_name,
-            text: req.text,
-            created_at_epoch_ms: created_at_ms,
-        });
-        Ok(())
-    }
-
-    pub async fn chat_list(&self, req: ChatListRequest) -> Result<ChatListResponse, RegistryError> {
-        self.prune_expired().await;
-        let clients = self.clients.read().await;
-        self.verify_client(&clients, &req.client_id, &req.session_token)?;
-        drop(clients);
-        let messages = self.chat_messages.read().await;
-        let list = messages.iter().cloned().map(|m| m.into_dto()).collect();
-        Ok(ChatListResponse { messages: list })
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ChatStoredMsg {
-    id: u64,
-    from_client_id: ClientId,
-    from_display_name: String,
-    text: String,
-    created_at_epoch_ms: u128,
-}
-
-impl ChatStoredMsg {
-    fn into_dto(self) -> ChatMessageDto {
-        ChatMessageDto {
-            id: self.id,
-            from_client_id: self.from_client_id,
-            from_display_name: self.from_display_name,
-            text: self.text,
-            created_at_epoch_ms: self.created_at_epoch_ms,
         }
     }
 }

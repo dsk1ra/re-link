@@ -68,44 +68,35 @@ impl SignalingClientConfigDto {
     }
 }
 
-// ---------- Chat/Clients Models ----------
+// ---------- Ephemeral Room Models ----------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClientInfoDto {
-    pub client_id: ClientId,
-    pub display_name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClientsListResponse {
-    pub clients: Vec<ClientInfoDto>,
-}
-
-// ---------- Global Chat Models ----------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatSendRequest {
-    pub client_id: ClientId,
-    pub session_token: String,
-    pub text: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatListRequest {
+pub struct RoomCreateRequest {
     pub client_id: ClientId,
     pub session_token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessageDto {
-    pub id: u64,
-    pub from_client_id: ClientId,
-    pub from_display_name: String,
-    pub text: String,
-    pub created_at_epoch_ms: u128,
+pub struct RoomCreateResponse {
+    pub room_id: String,         // 32-char hex
+    pub password: String,        // 32-char base64
+    pub initiator_token: String, // 64-char hex
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at_epoch_ms: Option<u128>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatListResponse {
-    pub messages: Vec<ChatMessageDto>,
+pub struct RoomJoinRequest {
+    pub client_id: ClientId,
+    pub session_token: String,
+    pub room_id: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomJoinResponse {
+    pub initiator_token: String, // 64-char hex
+    pub receiver_token: String,  // 64-char hex
 }
