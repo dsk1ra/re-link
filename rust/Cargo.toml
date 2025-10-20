@@ -21,8 +21,8 @@ uuid = { version = "1.18.1", features = ["serde", "v4"] }
 redis = { version = "0.32.7", features = ["tokio-comp"] }
 argon2 = "0.5.3"
 password-hash = "0.5.0"
+# Align with password-hash (uses rand_core 0.6). rand 0.8 depends on rand_core 0.6.
 rand = "0.8.5"
-rand_core = "0.6.4"
 base64 = { version = "0.22.1", features = ["alloc"] }
 hex = "0.4.3"
 

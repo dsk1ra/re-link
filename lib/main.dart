@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:application/src/rust/frb_generated.dart';
 import 'src/signaling/http_backend.dart';
 
@@ -182,7 +183,7 @@ class _ChatPageState extends State<ChatPage> {
     final connected = _backend?.isRegistered == true;
     final hasRoom = (_createdRoomId != null) || (_joinedInitiatorToken != null && _joinedReceiverToken != null);
     return Scaffold(
-      appBar: AppBar(title: const Text('P2P Pairing')),
+      appBar: AppBar(title: const Text('Pairing Screen')),
       body: SafeArea(
         child: Column(
           children: [
@@ -324,7 +325,15 @@ class _HandshakeCard extends StatelessWidget {
                       color: Colors.black12,
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text('Expires in ${ttlRemaining!.clamp(0, 999)}s'),
+                    child: Text(
+                      ttlRemaining! <= 0
+                          ? 'Expired'
+                          : 'Expires in ${ttlRemaining!.clamp(0, 999)}s',
+                      style: TextStyle(
+                        color: ttlRemaining! <= 0 ? Colors.red : null,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 const SizedBox(width: 8),
                 TextButton(onPressed: onReset, child: const Text('Reset')),
@@ -353,9 +362,10 @@ class _HandshakeCard extends StatelessWidget {
                       ),
                       if (createdRoomId != null) ...[
                         const SizedBox(height: 8),
-                        _KV('Room ID', createdRoomId!),
+                        _KV('Room ID', createdRoomId!, copyable: true),
                       ],
-                      if (createdRoomPassword != null) _KV('Password', createdRoomPassword!),
+                      if (createdRoomPassword != null)
+                        _KV('Password', createdRoomPassword!, copyable: true),
                       if (createdInitiatorToken != null)
                         _KV('Your Token (initiator)', createdInitiatorToken!),
                       const SizedBox(height: 8),
@@ -423,7 +433,8 @@ class _HandshakeCard extends StatelessWidget {
 class _KV extends StatelessWidget {
   final String k;
   final String v;
-  const _KV(this.k, this.v);
+  final bool copyable;
+  const _KV(this.k, this.v, {this.copyable = false});
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -441,7 +452,25 @@ class _KV extends StatelessWidget {
                 border: Border.all(color: Colors.grey.shade300),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: SelectableText(v, style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: SelectableText(v, style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+                  ),
+                  if (copyable)
+                    IconButton(
+                      tooltip: 'Copy',
+                      icon: const Icon(Icons.copy, size: 18),
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: v));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('$k copied')),
+                        );
+                      },
+                    ),
+                ],
+              ),
             ),
           ),
         ],
@@ -492,15 +521,23 @@ class _RoomInfo extends StatelessWidget {
                       color: Colors.black12,
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text('Expires in ${ttlRemaining!.clamp(0, 999)}s'),
+                    child: Text(
+                      ttlRemaining! <= 0
+                          ? 'Expired'
+                          : 'Expires in ${ttlRemaining!.clamp(0, 999)}s',
+                      style: TextStyle(
+                        color: ttlRemaining! <= 0 ? Colors.red : null,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 const SizedBox(width: 8),
                 TextButton(onPressed: onReset, child: const Text('Start over')),
               ],
             ),
             const SizedBox(height: 8),
-            if (roomId != null) _KV('Room ID', roomId!),
-            if (roleIsInitiator && password != null) _KV('Password', password!),
+            if (roomId != null) _KV('Room ID', roomId!, copyable: true),
+            if (roleIsInitiator && password != null) _KV('Password', password!, copyable: true),
             if (initiatorToken != null)
               _KV(roleIsInitiator ? 'Your Token (initiator)' : 'Initiator Token', initiatorToken!),
             if (!roleIsInitiator && receiverToken != null)

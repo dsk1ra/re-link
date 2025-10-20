@@ -11,7 +11,7 @@ use axum::{
     Json, Router,
 };
 use rand::rngs::OsRng;
-use rand_core::RngCore as _;
+use rand::RngCore as _;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::net::TcpListener;
