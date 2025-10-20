@@ -25,14 +25,25 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> {
-  final TextEditingController _messageController = TextEditingController();
+  final TextEditingController _roomIdController = TextEditingController();
+  final TextEditingController _roomPasswordController = TextEditingController();
 
   HttpSignalingBackend? _backend;
-  Timer? _pollTimer;
   String? _selfName;
-  final List<_ChatEntry> _chat = []; // oldest first
   bool _connecting = false;
   String? _connectError;
+
+  // Handshake (room) creation/join state
+  String? _createdRoomId;
+  String? _createdRoomPassword;
+  String? _createdInitiatorToken;
+  int? _roomTtlRemaining; // seconds
+  Timer? _roomTtlTimer;
+
+  String? _joinedInitiatorToken;
+  String? _joinedReceiverToken;
+  String? _lastRoomId; // room connected (created or joined)
+  bool? _isInitiator; // true if created, false if joined
 
   // The app auto-connects on launch to this signaling server.
   // To change the target, update this constant or make it configurable elsewhere.
@@ -50,9 +61,10 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
     _backend?.dispose();
-    _messageController.dispose();
+    _roomIdController.dispose();
+    _roomPasswordController.dispose();
+    _roomTtlTimer?.cancel();
     super.dispose();
   }
 
@@ -63,11 +75,9 @@ class _ChatPageState extends State<ChatPage> {
     });
     try {
       final backend = HttpSignalingBackend(_serverUrl);
-      final reg = await backend.register(deviceLabel: 'flutter-chat');
+      final reg = await backend.register(deviceLabel: 'flutter-pairing');
       _backend = backend;
       _selfName = reg.displayName;
-  await _refreshChat();
-  _startPolling();
       setState(() {});
     } catch (e) {
       _connectError = e.toString();
@@ -77,44 +87,88 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Future<void> _refreshChat() async {
-    if (_backend == null) return;
-    final msgs = await _backend!.chatList();
-    setState(() {
-      _chat
-        ..clear()
-        ..addAll(msgs.map((m) => _ChatEntry(senderName: m.fromDisplayName, payload: m.text)));
-    });
-  }
-
-  void _startPolling() {
-    _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(milliseconds: 50), (_) async {
-      try {
-        if (_backend == null) return;
-        await _refreshChat();
-      } catch (_) {}
-    });
-  }
-
-  Future<void> _send() async {
-    final text = _messageController.text.trim();
-    if (text.isEmpty || _backend == null) return;
-    try {
-      await _backend!.chatSend(text);
-      _messageController.clear();
-      await _refreshChat();
-    } catch (e) {
-      _show('Send failed: $e');
+  Future<void> _createRoom() async {
+    if (_backend == null || !_backend!.isRegistered) {
+      _show('Not connected to server');
+      return;
     }
+    try {
+      final resp = await _backend!.roomCreate();
+      setState(() {
+        _createdRoomId = resp.roomId;
+        _createdRoomPassword = resp.password;
+        _createdInitiatorToken = resp.initiatorToken;
+        _joinedInitiatorToken = null;
+        _joinedReceiverToken = null;
+        _roomTtlRemaining = resp.ttlSeconds ?? 30;
+        _lastRoomId = resp.roomId;
+        _isInitiator = true;
+      });
+      _roomTtlTimer?.cancel();
+      if (_roomTtlRemaining != null) {
+        _roomTtlTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+          if (!mounted) return;
+          setState(() {
+            if (_roomTtlRemaining != null && _roomTtlRemaining! > 0) {
+              _roomTtlRemaining = _roomTtlRemaining! - 1;
+            } else {
+              t.cancel();
+            }
+          });
+        });
+      }
+    } catch (e) {
+      _show('Create room failed: $e');
+    }
+  }
+
+  Future<void> _joinRoom() async {
+    final roomId = _roomIdController.text.trim();
+    final password = _roomPasswordController.text.trim();
+    if (roomId.isEmpty || password.isEmpty) {
+      _show('Enter Room ID and Password');
+      return;
+    }
+    if (_backend == null || !_backend!.isRegistered) {
+      _show('Not connected to server');
+      return;
+    }
+    try {
+      final resp = await _backend!.roomJoin(roomId: roomId, password: password);
+      setState(() {
+        _joinedInitiatorToken = resp.initiatorToken;
+        _joinedReceiverToken = resp.receiverToken;
+        // When someone joins, server deletes the room. Invalidate local countdown.
+        _roomTtlTimer?.cancel();
+        _roomTtlRemaining = null;
+        _lastRoomId = roomId;
+        _isInitiator = false;
+      });
+    } catch (e) {
+      _show('Join room failed: $e');
+    }
+  }
+
+  void _resetHandshakeState() {
+    setState(() {
+      _createdRoomId = null;
+      _createdRoomPassword = null;
+      _createdInitiatorToken = null;
+      _joinedInitiatorToken = null;
+      _joinedReceiverToken = null;
+      _roomTtlTimer?.cancel();
+      _roomTtlRemaining = null;
+      _roomIdController.clear();
+      _roomPasswordController.clear();
+      _lastRoomId = null;
+      _isInitiator = null;
+    });
   }
 
   Future<void> _disconnect() async {
     await _backend?.dispose();
     _backend = null;
-    _pollTimer?.cancel();
     setState(() {
-      _chat.clear();
       _selfName = null;
     });
   }
@@ -126,8 +180,9 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final connected = _backend?.isRegistered == true;
+    final hasRoom = (_createdRoomId != null) || (_joinedInitiatorToken != null && _joinedReceiverToken != null);
     return Scaffold(
-      appBar: AppBar(title: const Text('Chat Demo')),
+      appBar: AppBar(title: const Text('P2P Pairing')),
       body: SafeArea(
         child: Column(
           children: [
@@ -141,8 +196,6 @@ class _ChatPageState extends State<ChatPage> {
                             children: [
                               Text('You: ${_selfName ?? ''}') ,
                               const Spacer(),
-                              IconButton(onPressed: _refreshChat, icon: const Icon(Icons.refresh)),
-                              const SizedBox(width: 8),
                               ElevatedButton(onPressed: _disconnect, child: const Text('Disconnect')),
                             ],
                           )
@@ -182,39 +235,34 @@ class _ChatPageState extends State<ChatPage> {
                 ],
               ),
             ),
-            Expanded(
-              child: _chat.isEmpty
-                  ? const Center(child: Text('No messages yet'))
-                  : ListView.separated(
-                      reverse: false,
-                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                      itemCount: _chat.length,
-                      separatorBuilder: (_, __) => const Divider(height: 8),
-                      itemBuilder: (context, index) {
-                        final msg = _chat[index];
-                        return ListTile(
-                          dense: true,
-                          title: Text(msg.payload),
-                          subtitle: Text(msg.senderName),
-                        );
-                      },
-                    ),
-            ),
             if (connected)
-              Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Type a message'),
-                        onSubmitted: (_) => _send(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(onPressed: _send, child: const Text('Send')),
-                  ],
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                  child: hasRoom
+                      ? _RoomInfo(
+                          roleIsInitiator: _isInitiator == true,
+                          roomId: _lastRoomId,
+                          ttlRemaining: _isInitiator == true ? _roomTtlRemaining : null,
+                          initiatorToken: _isInitiator == true ? _createdInitiatorToken : _joinedInitiatorToken,
+                          receiverToken: _isInitiator == true ? null : _joinedReceiverToken,
+                          password: _isInitiator == true ? _createdRoomPassword : null,
+                          onReset: _resetHandshakeState,
+                        )
+                      : _HandshakeCard(
+                          connected: connected,
+                          ttlRemaining: _roomTtlRemaining,
+                          createdRoomId: _createdRoomId,
+                          createdRoomPassword: _createdRoomPassword,
+                          createdInitiatorToken: _createdInitiatorToken,
+                          joinedInitiatorToken: _joinedInitiatorToken,
+                          joinedReceiverToken: _joinedReceiverToken,
+                          onCreateRoom: _createRoom,
+                          onJoinRoom: _joinRoom,
+                          roomIdController: _roomIdController,
+                          roomPasswordController: _roomPasswordController,
+                          onReset: _resetHandshakeState,
+                        ),
                 ),
               ),
           ],
@@ -224,8 +272,247 @@ class _ChatPageState extends State<ChatPage> {
   }
 }
 
-class _ChatEntry {
-  final String senderName;
-  final String payload;
-  _ChatEntry({required this.senderName, required this.payload});
+class _HandshakeCard extends StatelessWidget {
+  final bool connected;
+  final int? ttlRemaining;
+  final String? createdRoomId;
+  final String? createdRoomPassword;
+  final String? createdInitiatorToken;
+  final String? joinedInitiatorToken;
+  final String? joinedReceiverToken;
+  final VoidCallback onCreateRoom;
+  final VoidCallback onJoinRoom;
+  final TextEditingController roomIdController;
+  final TextEditingController roomPasswordController;
+  final VoidCallback onReset;
+
+  const _HandshakeCard({
+    required this.connected,
+    required this.ttlRemaining,
+    required this.createdRoomId,
+    required this.createdRoomPassword,
+    required this.createdInitiatorToken,
+    required this.joinedInitiatorToken,
+    required this.joinedReceiverToken,
+    required this.onCreateRoom,
+    required this.onJoinRoom,
+    required this.roomIdController,
+    required this.roomPasswordController,
+    required this.onReset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_key, size: 18),
+                const SizedBox(width: 8),
+                const Text('Private pairing', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Spacer(),
+                if (ttlRemaining != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black12,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text('Expires in ${ttlRemaining!.clamp(0, 999)}s'),
+                  ),
+                const SizedBox(width: 8),
+                TextButton(onPressed: onReset, child: const Text('Reset')),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('1) Create Room (initiator)'),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: connected ? onCreateRoom : null,
+                            icon: const Icon(Icons.add_circle_outline),
+                            label: const Text('Create Room'),
+                          ),
+                        ],
+                      ),
+                      if (createdRoomId != null) ...[
+                        const SizedBox(height: 8),
+                        _KV('Room ID', createdRoomId!),
+                      ],
+                      if (createdRoomPassword != null) _KV('Password', createdRoomPassword!),
+                      if (createdInitiatorToken != null)
+                        _KV('Your Token (initiator)', createdInitiatorToken!),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Share Room ID and Password with receiver. Keep your token private.',
+                        style: TextStyle(color: Colors.black54, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('2) Join Room (receiver)'),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: roomIdController,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'Room ID',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: roomPasswordController,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'Password',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: ElevatedButton.icon(
+                          onPressed: connected ? onJoinRoom : null,
+                          icon: const Icon(Icons.login),
+                          label: const Text('Join Room'),
+                        ),
+                      ),
+                      if (joinedInitiatorToken != null)
+                        _KV('Initiator Token', joinedInitiatorToken!),
+                      if (joinedReceiverToken != null)
+                        _KV('Your Token (receiver)', joinedReceiverToken!),
+                      if (joinedInitiatorToken != null || joinedReceiverToken != null) ...[
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Use the tokens to mutually verify during P2P connection. The server is now out of the loop.',
+                          style: TextStyle(color: Colors.black54, fontSize: 12),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _KV extends StatelessWidget {
+  final String k;
+  final String v;
+  const _KV(this.k, this.v);
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 140, child: Text(k, style: const TextStyle(fontWeight: FontWeight.w600))),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: SelectableText(v, style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoomInfo extends StatelessWidget {
+  final bool roleIsInitiator;
+  final String? roomId;
+  final int? ttlRemaining;
+  final String? initiatorToken;
+  final String? receiverToken;
+  final String? password;
+  final VoidCallback onReset;
+
+  const _RoomInfo({
+    required this.roleIsInitiator,
+    required this.roomId,
+    required this.ttlRemaining,
+    required this.initiatorToken,
+    required this.receiverToken,
+    required this.password,
+    required this.onReset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.link, size: 18),
+                const SizedBox(width: 8),
+                Text('Connected as ${roleIsInitiator ? 'Initiator' : 'Receiver'}',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const Spacer(),
+                if (ttlRemaining != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black12,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text('Expires in ${ttlRemaining!.clamp(0, 999)}s'),
+                  ),
+                const SizedBox(width: 8),
+                TextButton(onPressed: onReset, child: const Text('Start over')),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (roomId != null) _KV('Room ID', roomId!),
+            if (roleIsInitiator && password != null) _KV('Password', password!),
+            if (initiatorToken != null)
+              _KV(roleIsInitiator ? 'Your Token (initiator)' : 'Initiator Token', initiatorToken!),
+            if (!roleIsInitiator && receiverToken != null)
+              _KV('Your Token (receiver)', receiverToken!),
+            const SizedBox(height: 8),
+            const Text(
+              'Use these tokens to verify each other over your P2P channel. The server is out of the loop after pairing.',
+              style: TextStyle(color: Colors.black54, fontSize: 12),
+            )
+          ],
+        ),
+      ),
+    );
+  }
 }
