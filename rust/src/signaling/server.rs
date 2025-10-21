@@ -24,6 +24,8 @@ use base64::Engine as _;
 use hex::ToHex;
 use redis::AsyncCommands;
 use std::time::{SystemTime, UNIX_EPOCH};
+use aes_gcm::{Aes256Gcm, aead::{Aead, KeyInit}};
+use aes_gcm::aead::generic_array::GenericArray;
 
 #[derive(Clone)]
 struct AppState {
@@ -42,6 +44,13 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         config.session_ttl,
         config.heartbeat_interval,
     ));
+    // Enforce TLS for Redis unless explicitly disabled for local dev
+    if config.redis_require_tls && !config.redis_url.starts_with("rediss://") {
+        anyhow::bail!(
+            "Redis TLS required but URL is not rediss:// (got: {}). Set SIGNALING_REDIS_REQUIRE_TLS=false only for local development.",
+            config.redis_url
+        );
+    }
     let redis = redis::Client::open(config.redis_url.clone())?;
     let state = AppState {
         registry,
@@ -156,6 +165,14 @@ struct RoomStored {
     participants: u8,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct EncryptedValueV1 {
+    enc: bool,
+    v: u8,
+    nonce_b64: String,
+    ct_b64: String,
+}
+
 fn gen_hex(len_bytes: usize) -> String {
     let mut buf = vec![0u8; len_bytes];
     let mut rng = OsRng;
@@ -168,6 +185,58 @@ fn gen_b64(len_bytes: usize) -> String {
     let mut rng = OsRng;
     rng.fill_bytes(&mut buf);
     B64.encode(buf)
+}
+
+fn encrypt_maybe(plain: &str, cfg: &SignalingServerConfig) -> anyhow::Result<String> {
+    if !cfg.redis_encrypt_payloads {
+        return Ok(plain.to_string());
+    }
+    let key_bytes = cfg.redis_encryption_key.as_ref().ok_or_else(|| anyhow::anyhow!(
+        "SIGNALING_REDIS_ENCRYPT is true but SIGNALING_REDIS_ENC_KEY_B64 is missing or invalid (needs 32 bytes)"
+    ))?;
+    let key = GenericArray::from_slice(key_bytes);
+    let cipher = Aes256Gcm::new(key);
+    let mut nonce = [0u8; 12];
+    let mut rng = OsRng;
+    rng.fill_bytes(&mut nonce);
+    let ct = cipher
+        .encrypt(GenericArray::from_slice(&nonce), plain.as_bytes())
+        .map_err(|e| anyhow::anyhow!("encrypt error: {e}"))?;
+    let wrap = EncryptedValueV1 {
+        enc: true,
+        v: 1,
+        nonce_b64: B64.encode(nonce),
+        ct_b64: B64.encode(ct),
+    };
+    Ok(serde_json::to_string(&wrap)?)
+}
+
+fn try_decrypt(loaded: &str, cfg: &SignalingServerConfig) -> anyhow::Result<Option<String>> {
+    // Best-effort: if looks like encrypted wrapper and encryption enabled with key, decrypt
+    if !cfg.redis_encrypt_payloads {
+        return Ok(None);
+    }
+    let key_bytes = match cfg.redis_encryption_key.as_ref() {
+        Some(k) => k,
+        None => return Ok(None),
+    };
+    let wrap: EncryptedValueV1 = match serde_json::from_str::<EncryptedValueV1>(loaded) {
+        Ok(w) if w.enc && w.v == 1 => w,
+        _ => return Ok(None),
+    };
+    let nonce = base64::engine::general_purpose::STANDARD
+        .decode(wrap.nonce_b64)
+        .map_err(|e| anyhow::anyhow!("nonce decode: {e}"))?;
+    let ct = base64::engine::general_purpose::STANDARD
+        .decode(wrap.ct_b64)
+        .map_err(|e| anyhow::anyhow!("ct decode: {e}"))?;
+    let key = GenericArray::from_slice(key_bytes);
+    let cipher = Aes256Gcm::new(key);
+    let pt = cipher
+        .decrypt(GenericArray::from_slice(&nonce), ct.as_ref())
+        .map_err(|e| anyhow::anyhow!("decrypt error: {e}"))?;
+    let plain = String::from_utf8(pt).map_err(|e| anyhow::anyhow!("utf8 error: {e}"))?;
+    Ok(Some(plain))
 }
 
 #[instrument(skip(state, payload))]
@@ -219,6 +288,7 @@ async fn room_create(
         participants: 1,
     };
     let key = format!("room:{room_id}");
+    let key = format!("{}:{}", state.config.redis_key_prefix, key);
     let mut conn = state
         .redis
         .get_multiplexed_async_connection()
@@ -231,7 +301,7 @@ async fn room_create(
                 }),
             )
         })?;
-    let payload_json = serde_json::to_string(&store).map_err(|e| {
+    let payload_json_plain = serde_json::to_string(&store).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -239,8 +309,20 @@ async fn room_create(
             }),
         )
     })?;
-    let _: () = conn
-        .set_ex(key, payload_json, ttl_secs)
+    let payload_json = encrypt_maybe(&payload_json_plain, &state.config).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { message: e.to_string() }),
+        )
+    })?;
+    // Prefer SET with EX and NX to avoid accidental overwrite on extremely unlikely collision
+    let set_res: Option<String> = redis::cmd("SET")
+        .arg(&key)
+        .arg(&payload_json)
+        .arg("EX")
+        .arg(ttl_secs)
+        .arg("NX")
+        .query_async(&mut conn)
         .await
         .map_err(|e| {
             (
@@ -250,6 +332,15 @@ async fn room_create(
                 }),
             )
         })?;
+    if set_res.is_none() {
+        // NX failed (key already exists) -> treat as conflict
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                message: "Room allocation conflict, please retry".to_string(),
+            }),
+        ));
+    }
 
     let resp = RoomCreateResponse {
         room_id,
@@ -273,7 +364,7 @@ async fn room_join(
         .await
         .map_err(registry_err)?;
 
-    let key = format!("room:{}", payload.room_id);
+    let key = format!("{}:room:{}", state.config.redis_key_prefix, payload.room_id);
     let mut conn = state
         .redis
         .get_multiplexed_async_connection()
@@ -303,14 +394,25 @@ async fn room_join(
             }),
         ));
     };
-    let room: RoomStored = serde_json::from_str(&json).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                message: e.to_string(),
-            }),
-        )
-    })?;
+    // Try plaintext parse; if it fails, attempt decrypt-then-parse
+    let room: RoomStored = match serde_json::from_str(&json) {
+        Ok(r) => r,
+        Err(_) => {
+            if let Ok(Some(plain)) = try_decrypt(&json, &state.config) {
+                serde_json::from_str(&plain).map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse { message: e.to_string() }),
+                    )
+                })?
+            } else {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse { message: "Invalid room payload".to_string() }),
+                ));
+            }
+        }
+    };
 
     // expiry check
     let now_ms = SystemTime::now()
@@ -365,10 +467,13 @@ async fn room_join(
     // generate receiver token, mark as joined and delete room payload (privacy)
     let receiver_token = gen_hex(32);
     // set a joined flag with short TTL to reflect connection status to initiator
-    let joined_key = format!("room_joined:{}", payload.room_id);
+    let joined_key = format!(
+        "{}:room_joined:{}",
+        state.config.redis_key_prefix, payload.room_id
+    );
     let _: () = redis::cmd("SETEX")
         .arg(&joined_key)
-        .arg(60u64) // keep joined flag for a short period
+        .arg(state.config.joined_flag_ttl.as_secs())
         .arg("1")
         .query_async(&mut conn)
         .await
@@ -426,8 +531,11 @@ async fn room_status(
             )
         })?;
 
-    let key = format!("room:{}", payload.room_id);
-    let joined_key = format!("room_joined:{}", payload.room_id);
+    let key = format!("{}:room:{}", state.config.redis_key_prefix, payload.room_id);
+    let joined_key = format!(
+        "{}:room_joined:{}",
+        state.config.redis_key_prefix, payload.room_id
+    );
 
     // if joined flag exists -> connected
     let joined: Option<String> = redis::cmd("GET")
