@@ -61,7 +61,7 @@ class RoomInfo extends StatelessWidget {
                     ),
                   ),
                 const SizedBox(width: 8),
-                TextButton(onPressed: onReset, child: const Text('Start over')),
+                TextButton(onPressed: onReset, child: const Text('Disconnect')),
               ],
             ),
             const SizedBox(height: 8),

@@ -36,8 +36,9 @@ class KvRow extends StatelessWidget {
                       tooltip: 'Copy',
                       icon: const Icon(Icons.copy, size: 18),
                       onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
                         await Clipboard.setData(ClipboardData(text: v));
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        messenger.showSnackBar(
                           SnackBar(content: Text('$k copied')),
                         );
                       },
