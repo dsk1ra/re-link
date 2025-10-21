@@ -100,3 +100,17 @@ pub struct RoomJoinResponse {
     pub initiator_token: String, // 64-char hex
     pub receiver_token: String,  // 64-char hex
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomStatusRequest {
+    pub client_id: ClientId,
+    pub session_token: String,
+    pub room_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomStatusResponse {
+    pub status: String, // "waiting" | "joined" | "expired"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<u64>,
+}

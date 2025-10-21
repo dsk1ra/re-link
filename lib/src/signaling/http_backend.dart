@@ -178,4 +178,26 @@ extension HttpSignalingBackendRoom on HttpSignalingBackend {
     }
     return JoinRoomResponse.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
   }
+
+  /// Returns the status of a room: waiting | joined | expired
+  Future<(String status, int? ttlSeconds)> roomStatus(String roomId) async {
+    if (!isRegistered) throw Exception('Not registered');
+    final uri = Uri.parse('$baseUrl/room/status');
+    final resp = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'client_id': _clientId,
+        'session_token': _sessionToken,
+        'room_id': roomId,
+      }),
+    );
+    if (resp.statusCode != 200) {
+      throw Exception('roomStatus failed: ${resp.statusCode} ${resp.body}');
+    }
+    final m = jsonDecode(resp.body) as Map<String, dynamic>;
+    final status = m['status'] as String;
+    final ttl = (m['ttl_seconds'] as num?)?.toInt();
+    return (status, ttl);
+  }
 }

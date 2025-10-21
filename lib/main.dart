@@ -40,6 +40,8 @@ class _ChatPageState extends State<ChatPage> {
   String? _createdInitiatorToken;
   int? _roomTtlRemaining; // seconds
   Timer? _roomTtlTimer;
+  Timer? _statusPollTimer;
+  bool _roomConnected = false;
 
   String? _joinedInitiatorToken;
   String? _joinedReceiverToken;
@@ -66,6 +68,7 @@ class _ChatPageState extends State<ChatPage> {
     _roomIdController.dispose();
     _roomPasswordController.dispose();
     _roomTtlTimer?.cancel();
+    _statusPollTimer?.cancel();
     super.dispose();
   }
 
@@ -104,8 +107,10 @@ class _ChatPageState extends State<ChatPage> {
         _roomTtlRemaining = resp.ttlSeconds ?? 30;
         _lastRoomId = resp.roomId;
         _isInitiator = true;
+        _roomConnected = false;
       });
       _roomTtlTimer?.cancel();
+      _statusPollTimer?.cancel();
       if (_roomTtlRemaining != null) {
         _roomTtlTimer = Timer.periodic(const Duration(seconds: 1), (t) {
           if (!mounted) return;
@@ -116,6 +121,34 @@ class _ChatPageState extends State<ChatPage> {
               t.cancel();
             }
           });
+        });
+        _statusPollTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
+          if (!mounted) return;
+          final roomId = _createdRoomId;
+          if (roomId == null || _backend == null) return;
+          try {
+            final result = await _backend!.roomStatus(roomId);
+            final status = result.$1;
+            final ttl = result.$2;
+            if (status == 'joined') {
+              _roomTtlTimer?.cancel();
+              _statusPollTimer?.cancel();
+              setState(() {
+                _roomConnected = true;
+                _roomTtlRemaining = null;
+              });
+            } else if (status == 'expired' || (ttl != null && ttl <= 0)) {
+              _roomTtlTimer?.cancel();
+              _statusPollTimer?.cancel();
+              await _createRoom();
+            } else if (ttl != null) {
+              setState(() {
+                _roomTtlRemaining = ttl;
+              });
+            }
+          } catch (_) {
+            // ignore transient errors
+          }
         });
       }
     } catch (e) {
@@ -144,6 +177,7 @@ class _ChatPageState extends State<ChatPage> {
         _roomTtlRemaining = null;
         _lastRoomId = roomId;
         _isInitiator = false;
+        _roomConnected = true;
       });
     } catch (e) {
       _show('Join room failed: $e');
@@ -158,11 +192,13 @@ class _ChatPageState extends State<ChatPage> {
       _joinedInitiatorToken = null;
       _joinedReceiverToken = null;
       _roomTtlTimer?.cancel();
+      _statusPollTimer?.cancel();
       _roomTtlRemaining = null;
       _roomIdController.clear();
       _roomPasswordController.clear();
       _lastRoomId = null;
       _isInitiator = null;
+      _roomConnected = false;
     });
   }
 
@@ -241,13 +277,14 @@ class _ChatPageState extends State<ChatPage> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12.0),
                   child: hasRoom
-                      ? _RoomInfo(
+            ? _RoomInfo(
                           roleIsInitiator: _isInitiator == true,
                           roomId: _lastRoomId,
-                          ttlRemaining: _isInitiator == true ? _roomTtlRemaining : null,
+                          ttlRemaining: _isInitiator == true && !_roomConnected ? _roomTtlRemaining : null,
                           initiatorToken: _isInitiator == true ? _createdInitiatorToken : _joinedInitiatorToken,
                           receiverToken: _isInitiator == true ? null : _joinedReceiverToken,
                           password: _isInitiator == true ? _createdRoomPassword : null,
+              connected: _roomConnected,
                           onReset: _resetHandshakeState,
                         )
                       : _HandshakeCard(
@@ -318,23 +355,6 @@ class _HandshakeCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 const Text('Private pairing', style: TextStyle(fontWeight: FontWeight.bold)),
                 const Spacer(),
-                if (ttlRemaining != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black12,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      ttlRemaining! <= 0
-                          ? 'Expired'
-                          : 'Expires in ${ttlRemaining!.clamp(0, 999)}s',
-                      style: TextStyle(
-                        color: ttlRemaining! <= 0 ? Colors.red : null,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
                 const SizedBox(width: 8),
                 TextButton(onPressed: onReset, child: const Text('Reset')),
               ],
@@ -486,6 +506,7 @@ class _RoomInfo extends StatelessWidget {
   final String? initiatorToken;
   final String? receiverToken;
   final String? password;
+  final bool connected;
   final VoidCallback onReset;
 
   const _RoomInfo({
@@ -495,6 +516,7 @@ class _RoomInfo extends StatelessWidget {
     required this.initiatorToken,
     required this.receiverToken,
     required this.password,
+    required this.connected,
     required this.onReset,
   });
 
@@ -514,7 +536,7 @@ class _RoomInfo extends StatelessWidget {
                 Text('Connected as ${roleIsInitiator ? 'Initiator' : 'Receiver'}',
                     style: const TextStyle(fontWeight: FontWeight.bold)),
                 const Spacer(),
-                if (ttlRemaining != null)
+                if (connected || (roleIsInitiator && ttlRemaining != null))
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
@@ -522,12 +544,16 @@ class _RoomInfo extends StatelessWidget {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      ttlRemaining! <= 0
-                          ? 'Expired'
-                          : 'Expires in ${ttlRemaining!.clamp(0, 999)}s',
+                      connected
+                          ? 'Connected'
+                          : (ttlRemaining! <= 0
+                              ? 'Expired'
+                              : 'Expires in ${ttlRemaining!.clamp(0, 999)}s'),
                       style: TextStyle(
-                        color: ttlRemaining! <= 0 ? Colors.red : null,
-                        fontWeight: FontWeight.w600,
+                        color: connected
+                            ? Colors.green
+                            : (ttlRemaining! <= 0 ? Colors.red : null),
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),

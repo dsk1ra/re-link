@@ -1,6 +1,7 @@
 use crate::shared::{
     HeartbeatRequest, RegisterRequest, RoomCreateRequest, RoomCreateResponse, RoomJoinRequest,
-    RoomJoinResponse, SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest,
+    RoomJoinResponse, RoomStatusRequest, RoomStatusResponse, SignalFetchRequest,
+    SignalFetchResponse, SignalSubmitRequest,
 };
 use crate::signaling::{RegistryError, SessionRegistry, SignalingServerConfig};
 use axum::{
@@ -57,7 +58,8 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         .route("/signal/fetch", post(fetch_signal))
         // room pairing endpoints
         .route("/room/create", post(room_create))
-        .route("/room/join", post(room_join))
+    .route("/room/join", post(room_join))
+    .route("/room/status", post(room_status))
         .with_state(state.clone());
 
     let listen_addr = state.config.listen_addr;
@@ -360,8 +362,25 @@ async fn room_join(
             )
         })?;
 
-    // generate receiver token and delete room (privacy)
+    // generate receiver token, mark as joined and delete room payload (privacy)
     let receiver_token = gen_hex(32);
+    // set a joined flag with short TTL to reflect connection status to initiator
+    let joined_key = format!("room_joined:{}", payload.room_id);
+    let _: () = redis::cmd("SETEX")
+        .arg(&joined_key)
+        .arg(60u64) // keep joined flag for a short period
+        .arg("1")
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+    // delete the room data
     let _: () = redis::cmd("DEL")
         .arg(&key)
         .query_async(&mut conn)
@@ -380,6 +399,91 @@ async fn room_join(
         receiver_token,
     };
     Ok((StatusCode::OK, Json(resp)))
+}
+
+#[instrument(skip(state, payload))]
+async fn room_status(
+    State(state): State<AppState>,
+    Json(payload): Json<RoomStatusRequest>,
+) -> Result<(StatusCode, Json<RoomStatusResponse>), (StatusCode, Json<ErrorResponse>)> {
+    // verify session
+    state
+        .registry
+        .verify_session(&payload.client_id, &payload.session_token)
+        .await
+        .map_err(registry_err)?;
+
+    let mut conn = state
+        .redis
+        .get_multiplexed_async_connection()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    let key = format!("room:{}", payload.room_id);
+    let joined_key = format!("room_joined:{}", payload.room_id);
+
+    // if joined flag exists -> connected
+    let joined: Option<String> = redis::cmd("GET")
+        .arg(&joined_key)
+        .query_async(&mut conn)
+        .await
+        .unwrap_or(None);
+    if joined.is_some() {
+        return Ok((
+            StatusCode::OK,
+            Json(RoomStatusResponse {
+                status: "joined".to_string(),
+                ttl_seconds: None,
+            }),
+        ));
+    }
+
+    // check if room exists
+    let json: Option<String> = redis::cmd("GET")
+        .arg(&key)
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    if json.is_some() {
+        // Not joined yet; return waiting with approximate TTL using PTTL
+        let ttl_ms: i64 = redis::cmd("PTTL")
+            .arg(&key)
+            .query_async(&mut conn)
+            .await
+            .unwrap_or(-2);
+        let ttl_seconds = if ttl_ms >= 0 { Some((ttl_ms as u64) / 1000) } else { None };
+        return Ok((
+            StatusCode::OK,
+            Json(RoomStatusResponse {
+                status: "waiting".to_string(),
+                ttl_seconds,
+            }),
+        ));
+    }
+
+    // No room and no joined flag -> expired
+    Ok((
+        StatusCode::OK,
+        Json(RoomStatusResponse {
+            status: "expired".to_string(),
+            ttl_seconds: None,
+        }),
+    ))
 }
 
 // Root handler for "/"
