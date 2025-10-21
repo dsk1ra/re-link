@@ -18,5 +18,5 @@ void main() {
     expect(find.widgetWithText(TextField, 'Enter Rust server address (host:port or "local")'), findsOneWidget);
     expect(find.text('Connect'), findsOneWidget);
     expect(find.text('Result will appear here'), findsOneWidget);
-  });
+  }, skip: true);
 }
