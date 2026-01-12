@@ -18,14 +18,18 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::{info, instrument};
 
+use aes_gcm::aead::generic_array::GenericArray;
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm,
+};
 use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use hex::ToHex;
 use redis::AsyncCommands;
+use reqwest::Client as HttpClient;
 use std::time::{SystemTime, UNIX_EPOCH};
-use aes_gcm::{Aes256Gcm, aead::{Aead, KeyInit}};
-use aes_gcm::aead::generic_array::GenericArray;
 
 #[derive(Clone)]
 struct AppState {
@@ -67,8 +71,9 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         .route("/signal/fetch", post(fetch_signal))
         // room pairing endpoints
         .route("/room/create", post(room_create))
-    .route("/room/join", post(room_join))
-    .route("/room/status", post(room_status))
+        .route("/room/callback/register", post(room_register_callback))
+        .route("/room/join", post(room_join))
+        .route("/room/status", post(room_status))
         .with_state(state.clone());
 
     let listen_addr = state.config.listen_addr;
@@ -312,7 +317,9 @@ async fn room_create(
     let payload_json = encrypt_maybe(&payload_json_plain, &state.config).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse { message: e.to_string() }),
+            Json(ErrorResponse {
+                message: e.to_string(),
+            }),
         )
     })?;
     // Prefer SET with EX and NX to avoid accidental overwrite on extremely unlikely collision
@@ -350,6 +357,105 @@ async fn room_create(
         expires_at_epoch_ms: Some(expires_ms),
     };
     Ok((StatusCode::OK, Json(resp)))
+}
+
+#[instrument(skip(state, payload))]
+async fn room_register_callback(
+    State(state): State<AppState>,
+    Json(payload): Json<crate::shared::RoomCallbackRegisterRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    // verify client/session
+    state
+        .registry
+        .verify_session(&payload.client_id, &payload.session_token)
+        .await
+        .map_err(registry_err)?;
+
+    // read existing room and verify initiator token
+    let key = format!("{}:room:{}", state.config.redis_key_prefix, payload.room_id);
+    let mut conn = state
+        .redis
+        .get_multiplexed_async_connection()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    let json: Option<String> = conn.get(&key).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                message: e.to_string(),
+            }),
+        )
+    })?;
+    let Some(json) = json else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                message: "Room not found".to_string(),
+            }),
+        ));
+    };
+
+    // Try plaintext parse; if it fails, attempt decrypt-then-parse
+    let room: RoomStored = match serde_json::from_str(&json) {
+        Ok(r) => r,
+        Err(_) => {
+            if let Ok(Some(plain)) = try_decrypt(&json, &state.config) {
+                serde_json::from_str(&plain).map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            message: e.to_string(),
+                        }),
+                    )
+                })?
+            } else {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        message: "Invalid room payload".to_string(),
+                    }),
+                ));
+            }
+        }
+    };
+
+    if room.initiator_token != payload.initiator_token {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                message: "Initiator token mismatch".to_string(),
+            }),
+        ));
+    }
+
+    // store callback URL with same TTL as room
+    let ttl_secs = state.config.room_ttl.as_secs();
+    let callback_key = format!("{}:room_callback:{}", state.config.redis_key_prefix, payload.room_id);
+    let _: () = redis::cmd("SET")
+        .arg(&callback_key)
+        .arg(&payload.callback_url)
+        .arg("EX")
+        .arg(ttl_secs)
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    Ok((StatusCode::OK, Json(serde_json::json!({ "ok": true }))))
 }
 
 #[instrument(skip(state, payload))]
@@ -402,13 +508,17 @@ async fn room_join(
                 serde_json::from_str(&plain).map_err(|e| {
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse { message: e.to_string() }),
+                        Json(ErrorResponse {
+                            message: e.to_string(),
+                        }),
                     )
                 })?
             } else {
                 return Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse { message: "Invalid room payload".to_string() }),
+                    Json(ErrorResponse {
+                        message: "Invalid room payload".to_string(),
+                    }),
                 ));
             }
         }
@@ -503,6 +613,57 @@ async fn room_join(
         initiator_token: room.initiator_token,
         receiver_token,
     };
+
+    // Try to notify initiator via webhook (fire-and-forget)
+    let redis_client = state.redis.clone();
+    let cfg = state.config.clone();
+    let room_id_clone = payload.room_id.clone();
+    let initiator_token_clone = resp.initiator_token.clone();
+    let receiver_token_clone = resp.receiver_token.clone();
+    tokio::spawn(async move {
+        let callback_key = format!("{}:room_callback:{}", cfg.redis_key_prefix, room_id_clone);
+        let mut conn = match redis_client.get_multiplexed_async_connection().await {
+            Ok(c) => c,
+            Err(e) => {
+                info!("webhook: failed to get redis conn: {}", e);
+                return;
+            }
+        };
+        let callback_opt: Option<String> = redis::cmd("GET")
+            .arg(&callback_key)
+            .query_async(&mut conn)
+            .await
+            .unwrap_or(None);
+        let Some(callback_url) = callback_opt else {
+            // no callback registered
+            return;
+        };
+
+        #[derive(Serialize)]
+        struct JoinNotification<'a> {
+            room_id: &'a str,
+            status: &'a str,
+            initiator_token: &'a str,
+            receiver_token: &'a str,
+        }
+
+        let notif = JoinNotification {
+            room_id: &room_id_clone,
+            status: "joined",
+            initiator_token: &initiator_token_clone,
+            receiver_token: &receiver_token_clone,
+        };
+
+        let client = HttpClient::new();
+        match client.post(&callback_url).json(&notif).send().await {
+            Ok(resp) => {
+                info!("webhook sent, status = {}", resp.status());
+            }
+            Err(e) => {
+                info!("webhook send failed: {}", e);
+            }
+        }
+    });
     Ok((StatusCode::OK, Json(resp)))
 }
 
@@ -574,7 +735,11 @@ async fn room_status(
             .query_async(&mut conn)
             .await
             .unwrap_or(-2);
-        let ttl_seconds = if ttl_ms >= 0 { Some((ttl_ms as u64) / 1000) } else { None };
+        let ttl_seconds = if ttl_ms >= 0 {
+            Some((ttl_ms as u64) / 1000)
+        } else {
+            None
+        };
         return Ok((
             StatusCode::OK,
             Json(RoomStatusResponse {

@@ -114,3 +114,12 @@ pub struct RoomStatusResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ttl_seconds: Option<u64>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomCallbackRegisterRequest {
+    pub client_id: ClientId,
+    pub session_token: String,
+    pub room_id: String,
+    pub initiator_token: String,
+    pub callback_url: String,
+}
