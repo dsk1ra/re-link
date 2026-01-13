@@ -1,9 +1,11 @@
 use crate::shared::{
-    HeartbeatRequest, RegisterRequest, RoomCreateRequest, RoomCreateResponse, RoomJoinRequest,
-    RoomJoinResponse, RoomStatusRequest, RoomStatusResponse, SignalFetchRequest,
-    SignalFetchResponse, SignalSubmitRequest,
+    HeartbeatRequest, RegisterRequest, SignalFetchRequest,
+    SignalFetchResponse, SignalSubmitRequest, ConnectionInitRequest, ConnectionInitResponse,
+    ConnectionJoinRequest, ConnectionJoinResponse, MailboxSendRequest, MailboxRecvResponse,
+    MailboxMessage,
 };
 use crate::signaling::{RegistryError, SessionRegistry, SignalingServerConfig};
+use crate::connection;
 use axum::{
     extract::State,
     http::StatusCode,
@@ -11,8 +13,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use rand::rngs::OsRng;
-use rand::RngCore as _;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -23,12 +24,9 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm,
 };
-use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use hex::ToHex;
-use redis::AsyncCommands;
-use reqwest::Client as HttpClient;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
@@ -69,11 +67,11 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         .route("/heartbeat", post(heartbeat))
         .route("/signal", post(send_signal))
         .route("/signal/fetch", post(fetch_signal))
-        // room pairing endpoints
-        .route("/room/create", post(room_create))
-        .route("/room/callback/register", post(room_register_callback))
-        .route("/room/join", post(room_join))
-        .route("/room/status", post(room_status))
+        // connection-based blind rendezvous endpoints
+        .route("/connection/init", post(connection_init))
+        .route("/connection/join", post(connection_join))
+        .route("/connection/send", post(mailbox_send))
+        .route("/connection/recv", post(mailbox_recv))
         .with_state(state.clone());
 
     let listen_addr = state.config.listen_addr;
@@ -158,17 +156,7 @@ fn registry_err(err: RegistryError) -> (StatusCode, Json<ErrorResponse>) {
     )
 }
 
-// -------- Ephemeral Room (Redis) --------
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-struct RoomStored {
-    hashed_password: String,
-    initiator_token: String,
-    created_at_epoch_ms: u128,
-    expires_at_epoch_ms: u128,
-    state: String,
-    participants: u8,
-}
+// -------- Storage Types --------
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct EncryptedValueV1 {
@@ -178,16 +166,35 @@ struct EncryptedValueV1 {
     ct_b64: String,
 }
 
+// -------- Connection Link (Blind Rendezvous) --------
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct MailboxState {
+    mailbox_id: String,
+    peer_mailbox_id: Option<String>,
+    created_at_epoch_ms: u128,
+    expires_at_epoch_ms: u128,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct MailboxMessageStored {
+    from_mailbox_id: String,
+    ciphertext_b64: String,
+    sequence: u64,
+    timestamp_epoch_ms: u128,
+}
+
+
 fn gen_hex(len_bytes: usize) -> String {
     let mut buf = vec![0u8; len_bytes];
-    let mut rng = OsRng;
+    let mut rng = rand::rng();
     rng.fill_bytes(&mut buf);
     buf.encode_hex::<String>()
 }
 
 fn gen_b64(len_bytes: usize) -> String {
     let mut buf = vec![0u8; len_bytes];
-    let mut rng = OsRng;
+    let mut rng = rand::rng();
     rng.fill_bytes(&mut buf);
     B64.encode(buf)
 }
@@ -202,7 +209,7 @@ fn encrypt_maybe(plain: &str, cfg: &SignalingServerConfig) -> anyhow::Result<Str
     let key = GenericArray::from_slice(key_bytes);
     let cipher = Aes256Gcm::new(key);
     let mut nonce = [0u8; 12];
-    let mut rng = OsRng;
+    let mut rng = rand::rng();
     rng.fill_bytes(&mut nonce);
     let ct = cipher
         .encrypt(GenericArray::from_slice(&nonce), plain.as_bytes())
@@ -244,11 +251,13 @@ fn try_decrypt(loaded: &str, cfg: &SignalingServerConfig) -> anyhow::Result<Opti
     Ok(Some(plain))
 }
 
+// -------- Connection Link Handlers (Blind Rendezvous) --------
+
 #[instrument(skip(state, payload))]
-async fn room_create(
+async fn connection_init(
     State(state): State<AppState>,
-    Json(payload): Json<RoomCreateRequest>,
-) -> Result<(StatusCode, Json<RoomCreateResponse>), (StatusCode, Json<ErrorResponse>)> {
+    Json(payload): Json<ConnectionInitRequest>,
+) -> Result<(StatusCode, Json<ConnectionInitResponse>), (StatusCode, Json<ErrorResponse>)> {
     // verify client/session
     state
         .registry
@@ -256,44 +265,23 @@ async fn room_create(
         .await
         .map_err(registry_err)?;
 
-    // generate credentials
-    let room_id = gen_hex(16); // 32 hex chars
-    let password_plain = gen_b64(24); // will be ~32 base64 chars
-    let initiator_token = gen_hex(32); // 64 hex chars
-
-    // hash password
-    let mut rng = OsRng;
-    let salt = SaltString::generate(&mut rng);
-    let argon = Argon2::default();
-    let hashed_password = argon
-        .hash_password(password_plain.as_bytes(), &salt)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    message: format!("hash error: {e}"),
-                }),
-            )
-        })?
-        .to_string();
-
-    // store in Redis with TTL
-    let ttl_secs = state.config.room_ttl.as_secs();
+    // Generate opaque mailbox ID for initiator
+    let mailbox_id = connection::gen_mailbox_id();
+    
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or_default();
     let expires_ms = now_ms + (state.config.room_ttl.as_millis() as u128);
-    let store = RoomStored {
-        hashed_password,
-        initiator_token: initiator_token.clone(),
+
+    // Store mailbox metadata
+    let mailbox_state = MailboxState {
+        mailbox_id: mailbox_id.clone(),
+        peer_mailbox_id: None,
         created_at_epoch_ms: now_ms,
         expires_at_epoch_ms: expires_ms,
-        state: "WAITING".to_string(),
-        participants: 1,
     };
-    let key = format!("room:{room_id}");
-    let key = format!("{}:{}", state.config.redis_key_prefix, key);
+    
     let mut conn = state
         .redis
         .get_multiplexed_async_connection()
@@ -306,7 +294,14 @@ async fn room_create(
                 }),
             )
         })?;
-    let payload_json_plain = serde_json::to_string(&store).map_err(|e| {
+
+    let ttl_secs = state.config.room_ttl.as_secs();
+    let meta_key = format!("{}:mailbox_meta:{}", state.config.redis_key_prefix, mailbox_id);
+    let mailbox_list_key = format!("{}:mailbox_msgs:{}", state.config.redis_key_prefix, mailbox_id);
+    let rendezvous_key = format!("{}:rendezvous:{}", state.config.redis_key_prefix, payload.rendezvous_id_b64);
+
+    // Store mailbox metadata
+    let meta_json = serde_json::to_string(&mailbox_state).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -314,21 +309,11 @@ async fn room_create(
             }),
         )
     })?;
-    let payload_json = encrypt_maybe(&payload_json_plain, &state.config).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                message: e.to_string(),
-            }),
-        )
-    })?;
-    // Prefer SET with EX and NX to avoid accidental overwrite on extremely unlikely collision
-    let set_res: Option<String> = redis::cmd("SET")
-        .arg(&key)
-        .arg(&payload_json)
+    let _: () = redis::cmd("SET")
+        .arg(&meta_key)
+        .arg(meta_json)
         .arg("EX")
         .arg(ttl_secs)
-        .arg("NX")
         .query_async(&mut conn)
         .await
         .map_err(|e| {
@@ -339,54 +324,139 @@ async fn room_create(
                 }),
             )
         })?;
-    if set_res.is_none() {
-        // NX failed (key already exists) -> treat as conflict
+
+    // Initialize empty message list
+    let _: () = redis::cmd("DEL")
+        .arg(&mailbox_list_key)
+        .query_async(&mut conn)
+        .await
+        .unwrap_or(());
+
+    // Store mapping: rendezvous_id -> mailbox_id (TTL: short, single-use)
+    let rendezvous_ttl_secs = 300u64; // 5 minutes for link generation
+    let _: () = redis::cmd("SET")
+        .arg(&rendezvous_key)
+        .arg(&mailbox_id)
+        .arg("EX")
+        .arg(rendezvous_ttl_secs)
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    Ok((
+        StatusCode::OK,
+        Json(ConnectionInitResponse {
+            mailbox_id,
+            expires_at_epoch_ms: expires_ms,
+        }),
+    ))
+}
+
+#[instrument(skip(state, payload))]
+async fn connection_join(
+    State(state): State<AppState>,
+    Json(payload): Json<ConnectionJoinRequest>,
+) -> Result<(StatusCode, Json<ConnectionJoinResponse>), (StatusCode, Json<ErrorResponse>)> {
+    // Lookup mailbox_id from rendezvous token
+    let mut conn = state
+        .redis
+        .get_multiplexed_async_connection()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    let rendezvous_key = format!("{}:rendezvous:{}", state.config.redis_key_prefix, payload.token_b64);
+    let initiator_mailbox_id: Option<String> = redis::cmd("GET")
+        .arg(&rendezvous_key)
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    let Some(initiator_mailbox_id) = initiator_mailbox_id else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                message: "Invalid or expired token".to_string(),
+            }),
+        ));
+    };
+
+    // Delete token to prevent reuse (single-use)
+    let _: () = redis::cmd("DEL")
+        .arg(&rendezvous_key)
+        .query_async(&mut conn)
+        .await
+        .unwrap_or(());
+
+    // Generate mailbox for responder
+    let responder_mailbox_id = connection::gen_mailbox_id();
+
+    // Verify initiator mailbox exists and not yet joined
+    let initiator_meta_key = format!("{}:mailbox_meta:{}", state.config.redis_key_prefix, initiator_mailbox_id);
+    let initiator_meta_json: Option<String> = redis::cmd("GET")
+        .arg(&initiator_meta_key)
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    let Some(meta_json) = initiator_meta_json else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                message: "Initiator session not found or expired".to_string(),
+            }),
+        ));
+    };
+
+    let mut initiator_state: MailboxState = serde_json::from_str(&meta_json).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                message: e.to_string(),
+            }),
+        )
+    })?;
+
+    // Check if already joined (peer_mailbox_id set)
+    if initiator_state.peer_mailbox_id.is_some() {
         return Err((
             StatusCode::CONFLICT,
             Json(ErrorResponse {
-                message: "Room allocation conflict, please retry".to_string(),
+                message: "Session already has a peer".to_string(),
             }),
         ));
     }
 
-    let resp = RoomCreateResponse {
-        room_id,
-        password: password_plain,
-        initiator_token,
-        ttl_seconds: Some(state.config.room_ttl.as_secs()),
-        expires_at_epoch_ms: Some(expires_ms),
-    };
-    Ok((StatusCode::OK, Json(resp)))
-}
-
-#[instrument(skip(state, payload))]
-async fn room_register_callback(
-    State(state): State<AppState>,
-    Json(payload): Json<crate::shared::RoomCallbackRegisterRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    // verify client/session
-    state
-        .registry
-        .verify_session(&payload.client_id, &payload.session_token)
-        .await
-        .map_err(registry_err)?;
-
-    // read existing room and verify initiator token
-    let key = format!("{}:room:{}", state.config.redis_key_prefix, payload.room_id);
-    let mut conn = state
-        .redis
-        .get_multiplexed_async_connection()
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    message: e.to_string(),
-                }),
-            )
-        })?;
-
-    let json: Option<String> = conn.get(&key).await.map_err(|e| {
+    // Link the two mailboxes
+    initiator_state.peer_mailbox_id = Some(responder_mailbox_id.clone());
+    let updated_meta = serde_json::to_string(&initiator_state).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -394,54 +464,11 @@ async fn room_register_callback(
             }),
         )
     })?;
-    let Some(json) = json else {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                message: "Room not found".to_string(),
-            }),
-        ));
-    };
 
-    // Try plaintext parse; if it fails, attempt decrypt-then-parse
-    let room: RoomStored = match serde_json::from_str(&json) {
-        Ok(r) => r,
-        Err(_) => {
-            if let Ok(Some(plain)) = try_decrypt(&json, &state.config) {
-                serde_json::from_str(&plain).map_err(|e| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            message: e.to_string(),
-                        }),
-                    )
-                })?
-            } else {
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        message: "Invalid room payload".to_string(),
-                    }),
-                ));
-            }
-        }
-    };
-
-    if room.initiator_token != payload.initiator_token {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                message: "Initiator token mismatch".to_string(),
-            }),
-        ));
-    }
-
-    // store callback URL with same TTL as room
     let ttl_secs = state.config.room_ttl.as_secs();
-    let callback_key = format!("{}:room_callback:{}", state.config.redis_key_prefix, payload.room_id);
     let _: () = redis::cmd("SET")
-        .arg(&callback_key)
-        .arg(&payload.callback_url)
+        .arg(&initiator_meta_key)
+        .arg(updated_meta)
         .arg("EX")
         .arg(ttl_secs)
         .query_async(&mut conn)
@@ -455,22 +482,60 @@ async fn room_register_callback(
             )
         })?;
 
-    Ok((StatusCode::OK, Json(serde_json::json!({ "ok": true }))))
+    // Store responder mailbox metadata
+    let responder_meta_key = format!("{}:mailbox_meta:{}", state.config.redis_key_prefix, responder_mailbox_id);
+    let responder_state = MailboxState {
+        mailbox_id: responder_mailbox_id.clone(),
+        peer_mailbox_id: Some(initiator_mailbox_id),
+        created_at_epoch_ms: initiator_state.created_at_epoch_ms,
+        expires_at_epoch_ms: initiator_state.expires_at_epoch_ms,
+    };
+    let responder_meta_json = serde_json::to_string(&responder_state).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                message: e.to_string(),
+            }),
+        )
+    })?;
+    let _: () = redis::cmd("SET")
+        .arg(&responder_meta_key)
+        .arg(responder_meta_json)
+        .arg("EX")
+        .arg(ttl_secs)
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    // Initialize responder message list
+    let responder_list_key = format!("{}:mailbox_msgs:{}", state.config.redis_key_prefix, responder_mailbox_id);
+    let _: () = redis::cmd("DEL")
+        .arg(&responder_list_key)
+        .query_async(&mut conn)
+        .await
+        .unwrap_or(());
+
+    Ok((
+        StatusCode::OK,
+        Json(ConnectionJoinResponse {
+            mailbox_id: responder_mailbox_id,
+            expires_at_epoch_ms: responder_state.expires_at_epoch_ms,
+        }),
+    ))
 }
 
 #[instrument(skip(state, payload))]
-async fn room_join(
+async fn mailbox_send(
     State(state): State<AppState>,
-    Json(payload): Json<RoomJoinRequest>,
-) -> Result<(StatusCode, Json<RoomJoinResponse>), (StatusCode, Json<ErrorResponse>)> {
-    // verify session
-    state
-        .registry
-        .verify_session(&payload.client_id, &payload.session_token)
-        .await
-        .map_err(registry_err)?;
-
-    let key = format!("{}:room:{}", state.config.redis_key_prefix, payload.room_id);
+    Json(payload): Json<MailboxSendRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let mut conn = state
         .redis
         .get_multiplexed_async_connection()
@@ -484,7 +549,31 @@ async fn room_join(
             )
         })?;
 
-    let json: Option<String> = conn.get(&key).await.map_err(|e| {
+    // Get mailbox metadata
+    let meta_key = format!("{}:mailbox_meta:{}", state.config.redis_key_prefix, payload.mailbox_id);
+    let meta_json: Option<String> = redis::cmd("GET")
+        .arg(&meta_key)
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    let Some(meta_json) = meta_json else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                message: "Mailbox not found".to_string(),
+            }),
+        ));
+    };
+
+    let mailbox_state: MailboxState = serde_json::from_str(&meta_json).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -492,70 +581,52 @@ async fn room_join(
             }),
         )
     })?;
-    let Some(json) = json else {
+
+    let Some(peer_mailbox_id) = mailbox_state.peer_mailbox_id else {
         return Err((
-            StatusCode::NOT_FOUND,
+            StatusCode::CONFLICT,
             Json(ErrorResponse {
-                message: "Room not found".to_string(),
+                message: "No peer connected".to_string(),
             }),
         ));
     };
-    // Try plaintext parse; if it fails, attempt decrypt-then-parse
-    let room: RoomStored = match serde_json::from_str(&json) {
-        Ok(r) => r,
-        Err(_) => {
-            if let Ok(Some(plain)) = try_decrypt(&json, &state.config) {
-                serde_json::from_str(&plain).map_err(|e| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            message: e.to_string(),
-                        }),
-                    )
-                })?
-            } else {
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        message: "Invalid room payload".to_string(),
-                    }),
-                ));
-            }
-        }
-    };
 
-    // expiry check
+    // Check expiry
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or_default();
-    if now_ms >= room.expires_at_epoch_ms {
-        // try to delete and return Gone
-        let _: () = redis::cmd("DEL")
-            .arg(&key)
-            .query_async(&mut conn)
-            .await
-            .unwrap_or(());
+    if now_ms >= mailbox_state.expires_at_epoch_ms {
         return Err((
             StatusCode::GONE,
             Json(ErrorResponse {
-                message: "Room expired".to_string(),
+                message: "Session expired".to_string(),
             }),
         ));
     }
 
-    // state checks
-    if room.state != "WAITING" || room.participants >= 2 {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                message: "Room not available".to_string(),
-            }),
-        ));
-    }
+    // Get current message count for sequence number
+    let peer_list_key = format!("{}:mailbox_msgs:{}", state.config.redis_key_prefix, peer_mailbox_id);
+    let msg_count: u64 = redis::cmd("LLEN")
+        .arg(&peer_list_key)
+        .query_async(&mut conn)
+        .await
+        .unwrap_or(0);
 
-    // verify password
-    let parsed_hash = PasswordHash::new(&room.hashed_password).map_err(|e| {
+    // Store message in peer's mailbox
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    
+    let msg = MailboxMessageStored {
+        from_mailbox_id: payload.mailbox_id.clone(),
+        ciphertext_b64: payload.ciphertext_b64,
+        sequence: msg_count,
+        timestamp_epoch_ms: timestamp,
+    };
+
+    let msg_json = serde_json::to_string(&msg).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -563,41 +634,11 @@ async fn room_join(
             }),
         )
     })?;
-    Argon2::default()
-        .verify_password(payload.password.as_bytes(), &parsed_hash)
-        .map_err(|_| {
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(ErrorResponse {
-                    message: "Invalid password".to_string(),
-                }),
-            )
-        })?;
 
-    // generate receiver token, mark as joined and delete room payload (privacy)
-    let receiver_token = gen_hex(32);
-    // set a joined flag with short TTL to reflect connection status to initiator
-    let joined_key = format!(
-        "{}:room_joined:{}",
-        state.config.redis_key_prefix, payload.room_id
-    );
-    let _: () = redis::cmd("SETEX")
-        .arg(&joined_key)
-        .arg(state.config.joined_flag_ttl.as_secs())
-        .arg("1")
-        .query_async(&mut conn)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    message: e.to_string(),
-                }),
-            )
-        })?;
-    // delete the room data
-    let _: () = redis::cmd("DEL")
-        .arg(&key)
+    let ttl_secs = state.config.room_ttl.as_secs();
+    let _: () = redis::cmd("RPUSH")
+        .arg(&peer_list_key)
+        .arg(msg_json)
         .query_async(&mut conn)
         .await
         .map_err(|e| {
@@ -609,76 +650,22 @@ async fn room_join(
             )
         })?;
 
-    let resp = RoomJoinResponse {
-        initiator_token: room.initiator_token,
-        receiver_token,
-    };
+    // Ensure TTL is set
+    let _: () = redis::cmd("EXPIRE")
+        .arg(&peer_list_key)
+        .arg(ttl_secs)
+        .query_async(&mut conn)
+        .await
+        .unwrap_or(());
 
-    // Try to notify initiator via webhook (fire-and-forget)
-    let redis_client = state.redis.clone();
-    let cfg = state.config.clone();
-    let room_id_clone = payload.room_id.clone();
-    let initiator_token_clone = resp.initiator_token.clone();
-    let receiver_token_clone = resp.receiver_token.clone();
-    tokio::spawn(async move {
-        let callback_key = format!("{}:room_callback:{}", cfg.redis_key_prefix, room_id_clone);
-        let mut conn = match redis_client.get_multiplexed_async_connection().await {
-            Ok(c) => c,
-            Err(e) => {
-                info!("webhook: failed to get redis conn: {}", e);
-                return;
-            }
-        };
-        let callback_opt: Option<String> = redis::cmd("GET")
-            .arg(&callback_key)
-            .query_async(&mut conn)
-            .await
-            .unwrap_or(None);
-        let Some(callback_url) = callback_opt else {
-            // no callback registered
-            return;
-        };
-
-        #[derive(Serialize)]
-        struct JoinNotification<'a> {
-            room_id: &'a str,
-            status: &'a str,
-            initiator_token: &'a str,
-            receiver_token: &'a str,
-        }
-
-        let notif = JoinNotification {
-            room_id: &room_id_clone,
-            status: "joined",
-            initiator_token: &initiator_token_clone,
-            receiver_token: &receiver_token_clone,
-        };
-
-        let client = HttpClient::new();
-        match client.post(&callback_url).json(&notif).send().await {
-            Ok(resp) => {
-                info!("webhook sent, status = {}", resp.status());
-            }
-            Err(e) => {
-                info!("webhook send failed: {}", e);
-            }
-        }
-    });
-    Ok((StatusCode::OK, Json(resp)))
+    Ok(StatusCode::ACCEPTED)
 }
 
 #[instrument(skip(state, payload))]
-async fn room_status(
+async fn mailbox_recv(
     State(state): State<AppState>,
-    Json(payload): Json<RoomStatusRequest>,
-) -> Result<(StatusCode, Json<RoomStatusResponse>), (StatusCode, Json<ErrorResponse>)> {
-    // verify session
-    state
-        .registry
-        .verify_session(&payload.client_id, &payload.session_token)
-        .await
-        .map_err(registry_err)?;
-
+    Json(payload): Json<MailboxSendRequest>,
+) -> Result<(StatusCode, Json<MailboxRecvResponse>), (StatusCode, Json<ErrorResponse>)> {
     let mut conn = state
         .redis
         .get_multiplexed_async_connection()
@@ -692,31 +679,10 @@ async fn room_status(
             )
         })?;
 
-    let key = format!("{}:room:{}", state.config.redis_key_prefix, payload.room_id);
-    let joined_key = format!(
-        "{}:room_joined:{}",
-        state.config.redis_key_prefix, payload.room_id
-    );
-
-    // if joined flag exists -> connected
-    let joined: Option<String> = redis::cmd("GET")
-        .arg(&joined_key)
-        .query_async(&mut conn)
-        .await
-        .unwrap_or(None);
-    if joined.is_some() {
-        return Ok((
-            StatusCode::OK,
-            Json(RoomStatusResponse {
-                status: "joined".to_string(),
-                ttl_seconds: None,
-            }),
-        ));
-    }
-
-    // check if room exists
-    let json: Option<String> = redis::cmd("GET")
-        .arg(&key)
+    // Get mailbox metadata to verify it exists
+    let meta_key = format!("{}:mailbox_meta:{}", state.config.redis_key_prefix, payload.mailbox_id);
+    let meta_json: Option<String> = redis::cmd("GET")
+        .arg(&meta_key)
         .query_async(&mut conn)
         .await
         .map_err(|e| {
@@ -728,33 +694,62 @@ async fn room_status(
             )
         })?;
 
-    if json.is_some() {
-        // Not joined yet; return waiting with approximate TTL using PTTL
-        let ttl_ms: i64 = redis::cmd("PTTL")
-            .arg(&key)
-            .query_async(&mut conn)
-            .await
-            .unwrap_or(-2);
-        let ttl_seconds = if ttl_ms >= 0 {
-            Some((ttl_ms as u64) / 1000)
-        } else {
-            None
-        };
-        return Ok((
-            StatusCode::OK,
-            Json(RoomStatusResponse {
-                status: "waiting".to_string(),
-                ttl_seconds,
+    let Some(meta_json) = meta_json else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                message: "Mailbox not found".to_string(),
             }),
         ));
-    }
+    };
 
-    // No room and no joined flag -> expired
+    let _mailbox_state: MailboxState = serde_json::from_str(&meta_json).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                message: e.to_string(),
+            }),
+        )
+    })?;
+
+    // Fetch messages from this mailbox
+    let list_key = format!("{}:mailbox_msgs:{}", state.config.redis_key_prefix, payload.mailbox_id);
+    let msg_jsons: Vec<String> = redis::cmd("LRANGE")
+        .arg(&list_key)
+        .arg(0)
+        .arg(-1)
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    let messages: Vec<MailboxMessage> = msg_jsons
+        .iter()
+        .filter_map(|json| {
+            serde_json::from_str::<MailboxMessageStored>(json)
+                .ok()
+                .map(|stored| MailboxMessage {
+                    from_mailbox_id: stored.from_mailbox_id,
+                    ciphertext_b64: stored.ciphertext_b64,
+                    sequence: stored.sequence,
+                    timestamp_epoch_ms: stored.timestamp_epoch_ms,
+                })
+        })
+        .collect();
+
+    let last_sequence = messages.last().map(|m| m.sequence).unwrap_or(0);
+
     Ok((
         StatusCode::OK,
-        Json(RoomStatusResponse {
-            status: "expired".to_string(),
-            ttl_seconds: None,
+        Json(MailboxRecvResponse {
+            messages,
+            last_sequence,
         }),
     ))
 }

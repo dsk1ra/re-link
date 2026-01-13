@@ -67,59 +67,48 @@ impl SignalingClientConfigDto {
         }
     }
 }
-
-// ---------- Ephemeral Room Models ----------
+// ---------- Connection Link Models (Blind Rendezvous) ----------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoomCreateRequest {
+pub struct ConnectionInitRequest {
     pub client_id: ClientId,
     pub session_token: String,
+    pub rendezvous_id_b64: String,  // high-entropy random ID from initiator
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoomCreateResponse {
-    pub room_id: String,         // 32-char hex
-    pub password: String,        // 32-char base64
-    pub initiator_token: String, // 64-char hex
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl_seconds: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expires_at_epoch_ms: Option<u128>,
+pub struct ConnectionInitResponse {
+    pub mailbox_id: String,          // opaque ID for initiator
+    pub expires_at_epoch_ms: u128,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoomJoinRequest {
-    pub client_id: ClientId,
-    pub session_token: String,
-    pub room_id: String,
-    pub password: String,
+pub struct ConnectionJoinRequest {
+    pub token_b64: String,  // rendezvous_id_b64 extracted from link
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoomJoinResponse {
-    pub initiator_token: String, // 64-char hex
-    pub receiver_token: String,  // 64-char hex
+pub struct ConnectionJoinResponse {
+    pub mailbox_id: String,          // opaque ID for responder
+    pub expires_at_epoch_ms: u128,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoomStatusRequest {
-    pub client_id: ClientId,
-    pub session_token: String,
-    pub room_id: String,
+pub struct MailboxSendRequest {
+    pub mailbox_id: String,
+    pub ciphertext_b64: String,  // opaque encrypted blob from client
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoomStatusResponse {
-    pub status: String, // "waiting" | "joined" | "expired"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl_seconds: Option<u64>,
+pub struct MailboxMessage {
+    pub from_mailbox_id: String,
+    pub ciphertext_b64: String,
+    pub sequence: u64,
+    pub timestamp_epoch_ms: u128,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoomCallbackRegisterRequest {
-    pub client_id: ClientId,
-    pub session_token: String,
-    pub room_id: String,
-    pub initiator_token: String,
-    pub callback_url: String,
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MailboxRecvResponse {
+    pub messages: Vec<MailboxMessage>,
+    pub last_sequence: u64,
 }
