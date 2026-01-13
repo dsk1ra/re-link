@@ -1619,6 +1619,7 @@ dependencies = [
  "base64",
  "dotenvy",
  "flutter_rust_bridge",
+ "futures-util",
  "hex",
  "hmac",
  "once_cell",

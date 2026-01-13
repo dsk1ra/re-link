@@ -75,7 +75,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
       if (serverMailboxId != null) {
         _initiatorServerMailboxId = serverMailboxId;
-        _startPollingForPeer(serverMailboxId);
+        _startListeningForPeer(serverMailboxId);
       }
 
       setState(() {
@@ -89,24 +89,19 @@ class _InitiatorPageState extends State<InitiatorPage> {
     }
   }
 
-  void _startPollingForPeer(String mailboxId) {
+  void _startListeningForPeer(String mailboxId) {
     _pollTimer?.cancel();
     setState(() => _pollingPeer = true);
-    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
-      try {
-        final messages = await _connectionService.fetchMessages(
-          mailboxId: mailboxId,
-        );
-        if (messages.isEmpty) return;
 
-        _pollTimer?.cancel();
-        setState(() {
-          _pollingPeer = false;
-          _incomingRequestFrom = messages.last['from_mailbox_id'] as String?;
-        });
-
-        _showIncomingDialog();
-      } catch (_) {}
+    final stream = _connectionService.subscribeMailbox(mailboxId: mailboxId);
+    stream.first.then((evt) {
+      setState(() {
+        _pollingPeer = false;
+        _incomingRequestFrom = evt['from_mailbox_id'] as String?;
+      });
+      _showIncomingDialog();
+    }).catchError((_) {
+      setState(() => _pollingPeer = false);
     });
   }
 

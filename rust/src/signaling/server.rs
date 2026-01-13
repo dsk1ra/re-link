@@ -7,26 +7,17 @@ use crate::shared::{
 use crate::signaling::{RegistryError, SessionRegistry, SignalingServerConfig};
 use crate::connection;
 use axum::{
-    extract::State,
+    extract::{Path, State, WebSocketUpgrade},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
-use rand::RngCore;
+use axum::extract::ws::{Message, WebSocket};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::{info, instrument};
-
-use aes_gcm::aead::generic_array::GenericArray;
-use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm,
-};
-use base64::engine::general_purpose::STANDARD as B64;
-use base64::Engine as _;
-use hex::ToHex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
@@ -34,6 +25,31 @@ struct AppState {
     registry: Arc<SessionRegistry>,
     config: Arc<SignalingServerConfig>,
     redis: redis::Client,
+    push: Arc<PushHub>,
+}
+
+struct PushHub {
+    inner: tokio::sync::Mutex<std::collections::HashMap<String, tokio::sync::broadcast::Sender<String>>>,
+}
+
+impl PushHub {
+    fn new() -> Self {
+        Self { inner: tokio::sync::Mutex::new(std::collections::HashMap::new()) }
+    }
+    async fn subscribe(&self, mailbox_id: &str) -> tokio::sync::broadcast::Receiver<String> {
+        let mut guard = self.inner.lock().await;
+        let tx = guard.entry(mailbox_id.to_string()).or_insert_with(|| {
+            let (tx, _rx) = tokio::sync::broadcast::channel(100);
+            tx
+        });
+        tx.subscribe()
+    }
+    async fn notify(&self, mailbox_id: &str, msg: String) {
+        let guard = self.inner.lock().await;
+        if let Some(tx) = guard.get(mailbox_id) {
+            let _ = tx.send(msg);
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -58,6 +74,7 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         registry,
         config: Arc::new(config),
         redis,
+        push: Arc::new(PushHub::new()),
     };
 
     let router = Router::new()
@@ -72,6 +89,8 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         .route("/connection/join", post(connection_join))
         .route("/connection/send", post(mailbox_send))
         .route("/connection/recv", post(mailbox_recv))
+        // websocket push for mailbox
+        .route("/ws/{mailbox_id}", get(ws_upgrade))
         .with_state(state.clone());
 
     let listen_addr = state.config.listen_addr;
@@ -156,16 +175,6 @@ fn registry_err(err: RegistryError) -> (StatusCode, Json<ErrorResponse>) {
     )
 }
 
-// -------- Storage Types --------
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-struct EncryptedValueV1 {
-    enc: bool,
-    v: u8,
-    nonce_b64: String,
-    ct_b64: String,
-}
-
 // -------- Connection Link (Blind Rendezvous) --------
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -182,73 +191,6 @@ struct MailboxMessageStored {
     ciphertext_b64: String,
     sequence: u64,
     timestamp_epoch_ms: u128,
-}
-
-
-fn gen_hex(len_bytes: usize) -> String {
-    let mut buf = vec![0u8; len_bytes];
-    let mut rng = rand::rng();
-    rng.fill_bytes(&mut buf);
-    buf.encode_hex::<String>()
-}
-
-fn gen_b64(len_bytes: usize) -> String {
-    let mut buf = vec![0u8; len_bytes];
-    let mut rng = rand::rng();
-    rng.fill_bytes(&mut buf);
-    B64.encode(buf)
-}
-
-fn encrypt_maybe(plain: &str, cfg: &SignalingServerConfig) -> anyhow::Result<String> {
-    if !cfg.redis_encrypt_payloads {
-        return Ok(plain.to_string());
-    }
-    let key_bytes = cfg.redis_encryption_key.as_ref().ok_or_else(|| anyhow::anyhow!(
-        "SIGNALING_REDIS_ENCRYPT is true but SIGNALING_REDIS_ENC_KEY_B64 is missing or invalid (needs 32 bytes)"
-    ))?;
-    let key = GenericArray::from_slice(key_bytes);
-    let cipher = Aes256Gcm::new(key);
-    let mut nonce = [0u8; 12];
-    let mut rng = rand::rng();
-    rng.fill_bytes(&mut nonce);
-    let ct = cipher
-        .encrypt(GenericArray::from_slice(&nonce), plain.as_bytes())
-        .map_err(|e| anyhow::anyhow!("encrypt error: {e}"))?;
-    let wrap = EncryptedValueV1 {
-        enc: true,
-        v: 1,
-        nonce_b64: B64.encode(nonce),
-        ct_b64: B64.encode(ct),
-    };
-    Ok(serde_json::to_string(&wrap)?)
-}
-
-fn try_decrypt(loaded: &str, cfg: &SignalingServerConfig) -> anyhow::Result<Option<String>> {
-    // Best-effort: if looks like encrypted wrapper and encryption enabled with key, decrypt
-    if !cfg.redis_encrypt_payloads {
-        return Ok(None);
-    }
-    let key_bytes = match cfg.redis_encryption_key.as_ref() {
-        Some(k) => k,
-        None => return Ok(None),
-    };
-    let wrap: EncryptedValueV1 = match serde_json::from_str::<EncryptedValueV1>(loaded) {
-        Ok(w) if w.enc && w.v == 1 => w,
-        _ => return Ok(None),
-    };
-    let nonce = base64::engine::general_purpose::STANDARD
-        .decode(wrap.nonce_b64)
-        .map_err(|e| anyhow::anyhow!("nonce decode: {e}"))?;
-    let ct = base64::engine::general_purpose::STANDARD
-        .decode(wrap.ct_b64)
-        .map_err(|e| anyhow::anyhow!("ct decode: {e}"))?;
-    let key = GenericArray::from_slice(key_bytes);
-    let cipher = Aes256Gcm::new(key);
-    let pt = cipher
-        .decrypt(GenericArray::from_slice(&nonce), ct.as_ref())
-        .map_err(|e| anyhow::anyhow!("decrypt error: {e}"))?;
-    let plain = String::from_utf8(pt).map_err(|e| anyhow::anyhow!("utf8 error: {e}"))?;
-    Ok(Some(plain))
 }
 
 // -------- Connection Link Handlers (Blind Rendezvous) --------
@@ -522,6 +464,40 @@ async fn connection_join(
         .await
         .unwrap_or(());
 
+    // Also push a 'join' event into initiator's mailbox for immediate notification
+    let initiator_list_key = format!("{}:mailbox_msgs:{}", state.config.redis_key_prefix, initiator_state.mailbox_id);
+    let initiator_msg_count: u64 = redis::cmd("LLEN")
+        .arg(&initiator_list_key)
+        .query_async(&mut conn)
+        .await
+        .unwrap_or(0);
+
+    let join_msg = MailboxMessageStored {
+        from_mailbox_id: responder_mailbox_id.clone(),
+        ciphertext_b64: "".to_string(),
+        sequence: initiator_msg_count,
+        timestamp_epoch_ms: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or_default(),
+    };
+    let join_json = serde_json::to_string(&join_msg).unwrap_or_else(|_| "{}".to_string());
+    let _: () = redis::cmd("RPUSH")
+        .arg(&initiator_list_key)
+        .arg(&join_json)
+        .query_async(&mut conn)
+        .await
+        .unwrap_or(());
+    let _: () = redis::cmd("EXPIRE")
+        .arg(&initiator_list_key)
+        .arg(ttl_secs)
+        .query_async(&mut conn)
+        .await
+        .unwrap_or(());
+
+    // Notify initiator subscribers via WS
+    state.push.notify(&initiator_state.mailbox_id, join_json).await;
+
     Ok((
         StatusCode::OK,
         Json(ConnectionJoinResponse {
@@ -638,7 +614,7 @@ async fn mailbox_send(
     let ttl_secs = state.config.room_ttl.as_secs();
     let _: () = redis::cmd("RPUSH")
         .arg(&peer_list_key)
-        .arg(msg_json)
+        .arg(&msg_json)
         .query_async(&mut conn)
         .await
         .map_err(|e| {
@@ -649,6 +625,9 @@ async fn mailbox_send(
                 }),
             )
         })?;
+
+    // Push notify subscribers of peer mailbox
+    state.push.notify(&peer_mailbox_id, msg_json).await;
 
     // Ensure TTL is set
     let _: () = redis::cmd("EXPIRE")
@@ -757,4 +736,44 @@ async fn mailbox_recv(
 // Root handler for "/"
 async fn root() -> impl IntoResponse {
     (StatusCode::OK, "Server OK!")
+}
+
+// WebSocket endpoint: subscribe to mailbox events
+async fn ws_upgrade(
+    State(state): State<AppState>,
+    Path(mailbox_id): Path<String>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    // Verify mailbox exists before upgrading
+    let mut conn = match state.redis.get_multiplexed_async_connection().await {
+        Ok(c) => c,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+
+    let meta_key = format!("{}:mailbox_meta:{}", state.config.redis_key_prefix, mailbox_id);
+    let meta_json: Option<String> = match redis::cmd("GET").arg(&meta_key).query_async(&mut conn).await {
+        Ok(v) => v,
+        Err(_) => None,
+    };
+
+    if meta_json.is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    ws.on_upgrade(move |socket| handle_ws(socket, state, mailbox_id))
+}
+
+async fn handle_ws(mut socket: WebSocket, state: AppState, mailbox_id: String) {
+    let mut rx = state.push.subscribe(&mailbox_id).await;
+    // Forward broadcast events to WebSocket client
+    loop {
+        match rx.recv().await {
+            Ok(msg) => {
+                if socket.send(Message::Text(msg.into())).await.is_err() {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
 }

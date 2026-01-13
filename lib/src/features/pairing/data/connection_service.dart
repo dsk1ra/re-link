@@ -1,6 +1,8 @@
 import 'package:application/src/rust/api/connection.dart' as rust_connection;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 /// Service for managing connection-based blind rendezvous pairing
 class ConnectionService {
@@ -121,6 +123,24 @@ class ConnectionService {
     return messagesList
         .map((msg) => msg as Map<String, dynamic>)
         .toList();
+  }
+
+  /// Subscribe to mailbox push events over WebSocket
+  /// Emits each message as a decoded Map
+  Stream<Map<String, dynamic>> subscribeMailbox({
+    required String mailboxId,
+  }) {
+    final wsBase = signalingBaseUrl.replaceFirst(RegExp('^http'), 'ws');
+    final uri = Uri.parse('$wsBase/ws/$mailboxId');
+    final channel = WebSocketChannel.connect(uri);
+
+    // Map text frames into JSON maps
+    return channel.stream.where((e) => e is String).map((e) {
+      final text = e as String;
+      final decoded = jsonDecode(text);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return <String, dynamic>{};
+    });
   }
 
   void dispose() {
