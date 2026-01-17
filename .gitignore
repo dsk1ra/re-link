@@ -199,4 +199,12 @@ yarn.lock
 # Remove any ignore rules that hide them.
 ########################################
 
+# Local development artifacts
+run_local.sh
+test_stress.sh
+
+# AWS CLI installer artifacts
+awscliv2.zip
+aws/
+
 # End of consolidated .gitignore

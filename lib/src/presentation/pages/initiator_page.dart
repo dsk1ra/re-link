@@ -40,6 +40,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
   Timer? _pollTimer;
   String? _incomingRequestFrom;
   bool _peerAccepted = false;
+  StreamSubscription? _mailboxSubscription;
 
   @override
   void initState() {
@@ -54,6 +55,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
   void dispose() {
     _connectionService.dispose();
     _pollTimer?.cancel();
+    _mailboxSubscription?.cancel();
     _webrtcManager?.dispose();
     super.dispose();
   }
@@ -90,17 +92,20 @@ class _InitiatorPageState extends State<InitiatorPage> {
   }
 
   void _startListeningForPeer(String mailboxId) {
-    _pollTimer?.cancel();
+    _mailboxSubscription?.cancel();
     setState(() => _pollingPeer = true);
 
-    final stream = _connectionService.subscribeMailbox(mailboxId: mailboxId);
-    stream.first.then((evt) {
-      setState(() {
-        _pollingPeer = false;
-        _incomingRequestFrom = evt['from_mailbox_id'] as String?;
-      });
-      _showIncomingDialog();
-    }).catchError((_) {
+    _mailboxSubscription = _connectionService.subscribeMailbox(mailboxId: mailboxId).listen((evt) {
+      if (!_peerAccepted && _incomingRequestFrom == null) {
+        setState(() {
+          _pollingPeer = false;
+          _incomingRequestFrom = evt['from_mailbox_id'] as String?;
+        });
+        _showIncomingDialog();
+      } else if (_peerAccepted) {
+        _handleIncomingSignal(evt);
+      }
+    }, onError: (_) {
       setState(() => _pollingPeer = false);
     });
   }
@@ -157,6 +162,37 @@ class _InitiatorPageState extends State<InitiatorPage> {
     );
   }
 
+  void _handleIncomingSignal(Map<String, dynamic> msg) async {
+    final payloadB64 = msg['ciphertext_b64'] as String?;
+    if (payloadB64 == null || payloadB64.isEmpty) return;
+
+    try {
+      final normalized = base64Url.normalize(payloadB64);
+      final decoded = utf8.decode(base64Url.decode(normalized));
+      print('Initiator: Received Signal: $decoded');
+      final signalingMsg = SignalingMessage.fromJsonString(decoded);
+
+      if (signalingMsg.type == 'answer') {
+        print('Initiator: Processing Answer...');
+        final answer = RTCSessionDescription(
+          signalingMsg.data['sdp'] as String,
+          signalingMsg.data['type'] as String,
+        );
+        await _webrtcManager!.setRemoteAnswer(answer);
+      } else if (signalingMsg.type == 'ice') {
+        print('Initiator: Processing ICE Candidate...');
+        final candidate = RTCIceCandidate(
+          signalingMsg.data['candidate'] as String,
+          signalingMsg.data['sdpMid'] as String,
+          signalingMsg.data['sdpMLineIndex'] as int,
+        );
+        await _webrtcManager!.addIceCandidate(candidate);
+      }
+    } catch (e) {
+      print('Initiator: Error handling signal: $e');
+    }
+  }
+
   Future<void> _startWebRTCHandshake() async {
     try {
       _webrtcManager = WebRTCManager();
@@ -179,63 +215,22 @@ class _InitiatorPageState extends State<InitiatorPage> {
       );
 
       final offer = await _webrtcManager!.createOffer();
+      print('Initiator: Created Offer');
 
       final offerMsg = SignalingMessage(
         type: 'offer',
         data: {'sdp': offer.sdp, 'type': offer.type},
       );
       final offerB64 = base64Url.encode(utf8.encode(offerMsg.toJsonString()));
+      print('Initiator: Sending Offer...');
       await _connectionService.sendSignal(
         mailboxId: _initiatorServerMailboxId!,
         ciphertextB64: offerB64,
       );
-
-      _startPollingForWebRTCMessages();
     } catch (e) {
+      print('Initiator: WebRTC Error: $e');
       _showSnackBar('WebRTC error: $e');
     }
-  }
-
-  void _startPollingForWebRTCMessages() {
-    Timer.periodic(const Duration(milliseconds: 500), (timer) async {
-      if (_webrtcState ==
-          RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-        timer.cancel();
-        return;
-      }
-
-      try {
-        final messages = await _connectionService.fetchMessages(
-          mailboxId: _initiatorServerMailboxId!,
-        );
-
-        for (final msg in messages) {
-          final payloadB64 = msg['ciphertext_b64'] as String?;
-          if (payloadB64 == null || payloadB64.isEmpty) continue;
-
-          try {
-            final normalized = base64Url.normalize(payloadB64);
-            final decoded = utf8.decode(base64Url.decode(normalized));
-            final signalingMsg = SignalingMessage.fromJsonString(decoded);
-
-            if (signalingMsg.type == 'answer') {
-              final answer = RTCSessionDescription(
-                signalingMsg.data['sdp'] as String,
-                signalingMsg.data['type'] as String,
-              );
-              await _webrtcManager!.setRemoteAnswer(answer);
-            } else if (signalingMsg.type == 'ice') {
-              final candidate = RTCIceCandidate(
-                signalingMsg.data['candidate'] as String,
-                signalingMsg.data['sdpMid'] as String,
-                signalingMsg.data['sdpMLineIndex'] as int,
-              );
-              await _webrtcManager!.addIceCandidate(candidate);
-            }
-          } catch (_) {}
-        }
-      } catch (_) {}
-    });
   }
 
   Future<void> _sendIceCandidate(RTCIceCandidate candidate) async {

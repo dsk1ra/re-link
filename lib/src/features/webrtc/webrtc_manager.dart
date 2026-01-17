@@ -19,9 +19,14 @@ class WebRTCManager {
     _peerConnection?.connectionState == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
   
   Future<void> initialize() async {
+    print('WebRTC: Initializing...');
     final config = {
       'iceServers': [
         {'urls': 'stun:stun.l.google.com:19302'},
+        {'urls': 'stun:stun1.l.google.com:19302'},
+        {'urls': 'stun:stun2.l.google.com:19302'},
+        {'urls': 'stun:stun3.l.google.com:19302'},
+        {'urls': 'stun:stun4.l.google.com:19302'},
       ],
       'sdpSemantics': 'unified-plan',
     };
@@ -29,25 +34,27 @@ class WebRTCManager {
     _peerConnection = await createPeerConnection(config);
     
     _peerConnection!.onConnectionState = (state) {
-      // Post to main isolate event loop
+      print('WebRTC: Connection State changed to $state');
       Future(() => _onStateChangeController.add(state));
     };
     
     _peerConnection!.onIceCandidate = (candidate) {
-      // Post to main isolate event loop
+      print('WebRTC: Generated ICE Candidate: ${candidate.candidate}');
       Future(() => _onIceCandidateController.add(candidate));
     };
     
-    // Add all other state change callbacks with thread safety
     _peerConnection!.onIceConnectionState = (state) {
+      print('WebRTC: ICE Connection State changed to $state');
       Future(() {});
     };
     
     _peerConnection!.onIceGatheringState = (state) {
+      print('WebRTC: ICE Gathering State changed to $state');
       Future(() {});
     };
     
     _peerConnection!.onSignalingState = (state) {
+      print('WebRTC: Signaling State changed to $state');
       Future(() {});
     };
   }

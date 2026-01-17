@@ -19,12 +19,13 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::{info, instrument};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tower_governor::{governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer};
 
 #[derive(Clone)]
 struct AppState {
     registry: Arc<SessionRegistry>,
     config: Arc<SignalingServerConfig>,
-    redis: redis::Client,
+    redis: redis::aio::ConnectionManager,
     push: Arc<PushHub>,
 }
 
@@ -69,13 +70,27 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
             config.redis_url
         );
     }
-    let redis = redis::Client::open(config.redis_url.clone())?;
+    let redis_client = redis::Client::open(config.redis_url.clone())?;
+    let redis_conn = redis_client.get_connection_manager().await?;
+
     let state = AppState {
         registry,
         config: Arc::new(config),
-        redis,
+        redis: redis_conn,
         push: Arc::new(PushHub::new()),
     };
+
+    // Rate limiting configuration
+    // Allow a burst of 500 requests, refilling at 100 requests per second.
+    // Use SmartIpKeyExtractor to handle X-Forwarded-For headers (crucial for AWS ALB).
+    let governor_conf = Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(100)
+            .burst_size(500)
+            .key_extractor(SmartIpKeyExtractor)
+            .finish()
+            .unwrap(),
+    );
 
     let router = Router::new()
         .route("/", get(root))
@@ -90,13 +105,16 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         .route("/connection/send", post(mailbox_send))
         .route("/connection/recv", post(mailbox_recv))
         // websocket push for mailbox
-        .route("/ws/{mailbox_id}", get(ws_upgrade))
+        .route("/ws/:mailbox_id", get(ws_upgrade))
+        .layer(GovernorLayer {
+            config: governor_conf,
+        })
         .with_state(state.clone());
 
     let listen_addr = state.config.listen_addr;
     let listener = TcpListener::bind(listen_addr).await?;
     info!(address = %listen_addr, "Starting signaling server");
-    axum::serve(listener, router.into_make_service()).await?;
+    axum::serve(listener, router.into_make_service_with_connect_info::<std::net::SocketAddr>()).await?;
     Ok(())
 }
 
@@ -224,18 +242,7 @@ async fn connection_init(
         expires_at_epoch_ms: expires_ms,
     };
     
-    let mut conn = state
-        .redis
-        .get_multiplexed_async_connection()
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    message: e.to_string(),
-                }),
-            )
-        })?;
+    let mut conn = state.redis.clone();
 
     let ttl_secs = state.config.room_ttl.as_secs();
     let meta_key = format!("{}:mailbox_meta:{}", state.config.redis_key_prefix, mailbox_id);
@@ -307,18 +314,7 @@ async fn connection_join(
     Json(payload): Json<ConnectionJoinRequest>,
 ) -> Result<(StatusCode, Json<ConnectionJoinResponse>), (StatusCode, Json<ErrorResponse>)> {
     // Lookup mailbox_id from rendezvous token
-    let mut conn = state
-        .redis
-        .get_multiplexed_async_connection()
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    message: e.to_string(),
-                }),
-            )
-        })?;
+    let mut conn = state.redis.clone();
 
     let rendezvous_key = format!("{}:rendezvous:{}", state.config.redis_key_prefix, payload.token_b64);
     let initiator_mailbox_id: Option<String> = redis::cmd("GET")
@@ -512,18 +508,7 @@ async fn mailbox_send(
     State(state): State<AppState>,
     Json(payload): Json<MailboxSendRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let mut conn = state
-        .redis
-        .get_multiplexed_async_connection()
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    message: e.to_string(),
-                }),
-            )
-        })?;
+    let mut conn = state.redis.clone();
 
     // Get mailbox metadata
     let meta_key = format!("{}:mailbox_meta:{}", state.config.redis_key_prefix, payload.mailbox_id);
@@ -645,18 +630,7 @@ async fn mailbox_recv(
     State(state): State<AppState>,
     Json(payload): Json<MailboxSendRequest>,
 ) -> Result<(StatusCode, Json<MailboxRecvResponse>), (StatusCode, Json<ErrorResponse>)> {
-    let mut conn = state
-        .redis
-        .get_multiplexed_async_connection()
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    message: e.to_string(),
-                }),
-            )
-        })?;
+    let mut conn = state.redis.clone();
 
     // Get mailbox metadata to verify it exists
     let meta_key = format!("{}:mailbox_meta:{}", state.config.redis_key_prefix, payload.mailbox_id);
@@ -745,10 +719,7 @@ async fn ws_upgrade(
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     // Verify mailbox exists before upgrading
-    let mut conn = match state.redis.get_multiplexed_async_connection().await {
-        Ok(c) => c,
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    };
+    let mut conn = state.redis.clone();
 
     let meta_key = format!("{}:mailbox_meta:{}", state.config.redis_key_prefix, mailbox_id);
     let meta_json: Option<String> = match redis::cmd("GET").arg(&meta_key).query_async(&mut conn).await {

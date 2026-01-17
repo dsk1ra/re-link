@@ -47,10 +47,25 @@ class MyApp extends StatelessWidget {
           fillColor: const Color(0xFFffffff),
         ),
       ),
-      home: ConnectionPairingPage(
-        signalingBaseUrl: 'http://127.0.0.1:8080',
-        backend: HttpSignalingBackend('http://127.0.0.1:8080'),
-      ),
+      home: const _Home(),
+    );
+  }
+}
+
+class _Home extends StatelessWidget {
+  const _Home();
+
+  @override
+  Widget build(BuildContext context) {
+    // defined via --dart-define=SIGNALING_URL=...
+    const signalingUrl = String.fromEnvironment(
+      'SIGNALING_URL',
+      defaultValue: 'http://p2p-signaling-alb-887076349.eu-north-1.elb.amazonaws.com',
+    );
+    
+    return ConnectionPairingPage(
+      signalingBaseUrl: signalingUrl,
+      backend: HttpSignalingBackend(signalingUrl),
     );
   }
 }

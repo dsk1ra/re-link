@@ -54,6 +54,7 @@ class ConnectionService {
     );
 
     if (response.statusCode != 200) {
+      print('Connection Init Failed: ${response.statusCode} - ${response.body}');
       throw Exception('Failed to init connection: ${response.statusCode}');
     }
 
@@ -84,18 +85,35 @@ class ConnectionService {
   Future<void> sendSignal({
     required String mailboxId,
     required String ciphertextB64,
+    int retries = 3,
   }) async {
-    final response = await httpClient.post(
-      Uri.parse('$signalingBaseUrl/connection/send'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'mailbox_id': mailboxId,
-        'ciphertext_b64': ciphertextB64,
-      }),
-    );
+    int attempt = 0;
+    while (attempt < retries) {
+      attempt++;
+      try {
+        final response = await httpClient.post(
+          Uri.parse('$signalingBaseUrl/connection/send'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'mailbox_id': mailboxId,
+            'ciphertext_b64': ciphertextB64,
+          }),
+        );
 
-    if (response.statusCode != 202) {
-      throw Exception('Failed to send signal: ${response.statusCode}');
+        if (response.statusCode == 202) return; // Success
+
+        if (response.statusCode == 500 && attempt < retries) {
+          print('Send signal 500 (Attempt $attempt), retrying...');
+          await Future.delayed(Duration(milliseconds: 500 * attempt));
+          continue;
+        }
+
+        throw Exception('Failed to send signal: ${response.statusCode}');
+      } catch (e) {
+        if (attempt >= retries) rethrow;
+        print('Send signal error (Attempt $attempt): $e, retrying...');
+        await Future.delayed(Duration(milliseconds: 500 * attempt));
+      }
     }
   }
 
@@ -130,8 +148,17 @@ class ConnectionService {
   Stream<Map<String, dynamic>> subscribeMailbox({
     required String mailboxId,
   }) {
-    final wsBase = signalingBaseUrl.replaceFirst(RegExp('^http'), 'ws');
-    final uri = Uri.parse('$wsBase/ws/$mailboxId');
+    String wsUrl;
+    if (signalingBaseUrl.startsWith('https://')) {
+      wsUrl = signalingBaseUrl.replaceFirst('https://', 'wss://');
+    } else if (signalingBaseUrl.startsWith('http://')) {
+      wsUrl = signalingBaseUrl.replaceFirst('http://', 'ws://');
+    } else {
+      wsUrl = signalingBaseUrl; // Fallback
+    }
+    
+    final uri = Uri.parse('$wsUrl/ws/$mailboxId');
+    print('Connecting to WebSocket: $uri');
     final channel = WebSocketChannel.connect(uri);
 
     // Map text frames into JSON maps

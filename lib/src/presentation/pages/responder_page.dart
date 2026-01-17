@@ -49,10 +49,13 @@ class _ResponderPageState extends State<ResponderPage> {
     }
   }
 
+  StreamSubscription? _mailboxSubscription;
+
   @override
   void dispose() {
     _connectionService.dispose();
     _tokenController.dispose();
+    _mailboxSubscription?.cancel();
     _webrtcManager?.dispose();
     super.dispose();
   }
@@ -129,64 +132,81 @@ class _ResponderPageState extends State<ResponderPage> {
         (candidate) => _sendIceCandidate(candidate),
       );
 
-      _startPollingForWebRTCMessages();
+      // 1. Process any messages already waiting in the mailbox (e.g. the Offer)
+      await _fetchAndProcessExistingMessages();
+
+      // 2. Listen for new messages (e.g. ICE candidates)
+      _startListeningForSignals();
     } catch (e) {
       _showSnackBar('WebRTC error: $e');
     }
   }
 
-  void _startPollingForWebRTCMessages() {
-    Timer.periodic(const Duration(milliseconds: 500), (timer) async {
-      if (_webrtcState ==
-          RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-        timer.cancel();
-        return;
+  Future<void> _fetchAndProcessExistingMessages() async {
+    try {
+      final messages = await _connectionService.fetchMessages(
+        mailboxId: _responderMailboxId!,
+      );
+      for (final msg in messages) {
+        _handleIncomingSignal(msg);
       }
+    } catch (e) {
+      print('Failed to fetch existing messages: $e');
+    }
+  }
 
-      try {
-        final messages = await _connectionService.fetchMessages(
-          mailboxId: _responderMailboxId!,
-        );
-
-        for (final msg in messages) {
-          final payloadB64 = msg['ciphertext_b64'] as String?;
-          if (payloadB64 == null || payloadB64.isEmpty) continue;
-
-          try {
-            final normalized = base64Url.normalize(payloadB64);
-            final decoded = utf8.decode(base64Url.decode(normalized));
-            final signalingMsg = SignalingMessage.fromJsonString(decoded);
-
-            if (signalingMsg.type == 'offer') {
-              final offer = RTCSessionDescription(
-                signalingMsg.data['sdp'] as String,
-                signalingMsg.data['type'] as String,
-              );
-              final answer = await _webrtcManager!.createAnswer(offer);
-
-              final answerMsg = SignalingMessage(
-                type: 'answer',
-                data: {'sdp': answer.sdp, 'type': answer.type},
-              );
-              final answerB64 = base64Url.encode(
-                utf8.encode(answerMsg.toJsonString()),
-              );
-              await _connectionService.sendSignal(
-                mailboxId: _responderMailboxId!,
-                ciphertextB64: answerB64,
-              );
-            } else if (signalingMsg.type == 'ice') {
-              final candidate = RTCIceCandidate(
-                signalingMsg.data['candidate'] as String,
-                signalingMsg.data['sdpMid'] as String,
-                signalingMsg.data['sdpMLineIndex'] as int,
-              );
-              await _webrtcManager!.addIceCandidate(candidate);
-            }
-          } catch (_) {}
-        }
-      } catch (_) {}
+  void _startListeningForSignals() {
+    _mailboxSubscription?.cancel();
+    _mailboxSubscription = _connectionService
+        .subscribeMailbox(mailboxId: _responderMailboxId!)
+        .listen((msg) {
+      _handleIncomingSignal(msg);
     });
+  }
+
+  void _handleIncomingSignal(Map<String, dynamic> msg) async {
+    final payloadB64 = msg['ciphertext_b64'] as String?;
+    if (payloadB64 == null || payloadB64.isEmpty) return;
+
+    try {
+      final normalized = base64Url.normalize(payloadB64);
+      final decoded = utf8.decode(base64Url.decode(normalized));
+      print('Responder: Received Signal: $decoded');
+      final signalingMsg = SignalingMessage.fromJsonString(decoded);
+
+      if (signalingMsg.type == 'offer') {
+        print('Responder: Processing Offer...');
+        final offer = RTCSessionDescription(
+          signalingMsg.data['sdp'] as String,
+          signalingMsg.data['type'] as String,
+        );
+        final answer = await _webrtcManager!.createAnswer(offer);
+        print('Responder: Created Answer');
+
+        final answerMsg = SignalingMessage(
+          type: 'answer',
+          data: {'sdp': answer.sdp, 'type': answer.type},
+        );
+        final answerB64 = base64Url.encode(
+          utf8.encode(answerMsg.toJsonString()),
+        );
+        await _connectionService.sendSignal(
+          mailboxId: _responderMailboxId!,
+          ciphertextB64: answerB64,
+        );
+        print('Responder: Sent Answer');
+      } else if (signalingMsg.type == 'ice') {
+        print('Responder: Processing ICE Candidate...');
+        final candidate = RTCIceCandidate(
+          signalingMsg.data['candidate'] as String,
+          signalingMsg.data['sdpMid'] as String,
+          signalingMsg.data['sdpMLineIndex'] as int,
+        );
+        await _webrtcManager!.addIceCandidate(candidate);
+      }
+    } catch (e) {
+      print('Responder: Error handling signal: $e');
+    }
   }
 
   Future<void> _sendIceCandidate(RTCIceCandidate candidate) async {
