@@ -13,18 +13,45 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 ConnectionInitLocalResult connectionInitLocal() =>
     RustLib.instance.api.crateApiConnectionConnectionInitLocal();
 
+/// Derive keys from a shared secret (Client B)
+ConnectionInitLocalResult connectionDeriveKeys({required String secretHex}) =>
+    RustLib.instance.api.crateApiConnectionConnectionDeriveKeys(
+      secretHex: secretHex,
+    );
+
 /// Generate a connection link URL
 String generateConnectionLink({
   required String baseUrl,
   required String rendezvousId,
+  required String secret,
 }) => RustLib.instance.api.crateApiConnectionGenerateConnectionLink(
   baseUrl: baseUrl,
   rendezvousId: rendezvousId,
+  secret: secret,
+);
+
+/// Encrypt signaling payload using the shared session key (AES-GCM)
+String connectionEncrypt({
+  required String keyHex,
+  required List<int> plaintext,
+}) => RustLib.instance.api.crateApiConnectionConnectionEncrypt(
+  keyHex: keyHex,
+  plaintext: plaintext,
+);
+
+/// Decrypt signaling payload using the shared session key (AES-GCM)
+Uint8List connectionDecrypt({
+  required String keyHex,
+  required String ciphertextB64,
+}) => RustLib.instance.api.crateApiConnectionConnectionDecrypt(
+  keyHex: keyHex,
+  ciphertextB64: ciphertextB64,
 );
 
 class ConnectionInitLocalResult {
   final String rendezvousId;
   final String mailboxId;
+  final String secret;
   final String kSig;
   final String kMac;
   final String sas;
@@ -32,6 +59,7 @@ class ConnectionInitLocalResult {
   const ConnectionInitLocalResult({
     required this.rendezvousId,
     required this.mailboxId,
+    required this.secret,
     required this.kSig,
     required this.kMac,
     required this.sas,
@@ -41,6 +69,7 @@ class ConnectionInitLocalResult {
   int get hashCode =>
       rendezvousId.hashCode ^
       mailboxId.hashCode ^
+      secret.hashCode ^
       kSig.hashCode ^
       kMac.hashCode ^
       sas.hashCode;
@@ -52,6 +81,7 @@ class ConnectionInitLocalResult {
           runtimeType == other.runtimeType &&
           rendezvousId == other.rendezvousId &&
           mailboxId == other.mailboxId &&
+          secret == other.secret &&
           kSig == other.kSig &&
           kMac == other.kMac &&
           sas == other.sas;

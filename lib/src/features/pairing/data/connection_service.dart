@@ -22,6 +22,7 @@ class ConnectionService {
     return ConnectionInitResult(
       rendezvousId: result.rendezvousId,
       mailboxId: result.mailboxId,
+      secret: result.secret,
       kSig: result.kSig,
       kMac: result.kMac,
       sas: result.sas,
@@ -29,10 +30,11 @@ class ConnectionService {
   }
 
   /// Generate a shareable connection link
-  String generateConnectionLink(String rendezvousId) {
+  String generateConnectionLink(String rendezvousId, String secret) {
     return rust_connection.generateConnectionLink(
       baseUrl: signalingBaseUrl,
       rendezvousId: rendezvousId,
+      secret: secret,
     );
   }
 
@@ -179,6 +181,7 @@ class ConnectionService {
 class ConnectionInitResult {
   final String rendezvousId;  // Share via link
   final String mailboxId;     // Keep private
+  final String secret;        // Shared secret (hex)
   final String kSig;          // Encryption key (hex)
   final String kMac;          // MAC key (hex)
   final String sas;           // Short auth string (hex)
@@ -186,6 +189,7 @@ class ConnectionInitResult {
   ConnectionInitResult({
     required this.rendezvousId,
     required this.mailboxId,
+    required this.secret,
     required this.kSig,
     required this.kMac,
     required this.sas,

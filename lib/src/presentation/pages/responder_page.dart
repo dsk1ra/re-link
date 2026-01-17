@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
+import 'package:application/src/rust/api/connection.dart' as rust_connection;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 /// Responder screen - joins using connection link
@@ -33,6 +34,7 @@ class _ResponderPageState extends State<ResponderPage> {
 
   final TextEditingController _tokenController = TextEditingController();
   String? _responderMailboxId;
+  String? _kSig; // Session encryption key
   bool _joiningConnection = false;
   String? _joinError;
   bool _joined = false;
@@ -63,17 +65,31 @@ class _ResponderPageState extends State<ResponderPage> {
   Future<void> _joinWithToken() async {
     final input = _tokenController.text.trim();
     if (input.isEmpty) {
-      _showSnackBar('Enter connection token');
+      _showSnackBar('Enter connection link');
       return;
     }
 
     String token = input;
+    String? secret;
+
     try {
       final uri = Uri.parse(input);
       if (uri.hasQuery && uri.queryParameters.containsKey('token')) {
         token = uri.queryParameters['token']!;
       }
+      // Extract secret from fragment (e.g. #secret_hex)
+      if (uri.hasFragment && uri.fragment.isNotEmpty) {
+        secret = uri.fragment;
+      }
     } catch (_) {}
+
+    // If we have no secret, we cannot derive keys for E2EE
+    if (secret == null) {
+      setState(() {
+        _joinError = 'Invalid link: Missing security key (fragment)';
+      });
+      return;
+    }
 
     setState(() {
       _joiningConnection = true;
@@ -81,6 +97,10 @@ class _ResponderPageState extends State<ResponderPage> {
     });
 
     try {
+      // Derive keys locally
+      final keys = await rust_connection.connectionDeriveKeys(secretHex: secret);
+      _kSig = keys.kSig;
+
       final joinResult = await _connectionService.joinConnection(
         tokenB64: token,
       );
@@ -90,7 +110,12 @@ class _ResponderPageState extends State<ResponderPage> {
         'type': 'connect_request',
         'note': 'Peer wants to connect',
       });
-      final helloB64 = base64Url.encode(utf8.encode(hello));
+      
+      final helloB64 = await rust_connection.connectionEncrypt(
+        keyHex: _kSig!,
+        plaintext: utf8.encode(hello),
+      );
+      
       await _connectionService.sendSignal(
         mailboxId: mailboxId,
         ciphertextB64: helloB64,
@@ -168,9 +193,14 @@ class _ResponderPageState extends State<ResponderPage> {
     final payloadB64 = msg['ciphertext_b64'] as String?;
     if (payloadB64 == null || payloadB64.isEmpty) return;
 
+    if (_kSig == null) return;
+
     try {
-      final normalized = base64Url.normalize(payloadB64);
-      final decoded = utf8.decode(base64Url.decode(normalized));
+      final decryptedBytes = await rust_connection.connectionDecrypt(
+        keyHex: _kSig!,
+        ciphertextB64: payloadB64,
+      );
+      final decoded = utf8.decode(decryptedBytes);
       print('Responder: Received Signal: $decoded');
       final signalingMsg = SignalingMessage.fromJsonString(decoded);
 
@@ -187,8 +217,9 @@ class _ResponderPageState extends State<ResponderPage> {
           type: 'answer',
           data: {'sdp': answer.sdp, 'type': answer.type},
         );
-        final answerB64 = base64Url.encode(
-          utf8.encode(answerMsg.toJsonString()),
+        final answerB64 = await rust_connection.connectionEncrypt(
+          keyHex: _kSig!,
+          plaintext: utf8.encode(answerMsg.toJsonString()),
         );
         await _connectionService.sendSignal(
           mailboxId: _responderMailboxId!,
@@ -210,6 +241,8 @@ class _ResponderPageState extends State<ResponderPage> {
   }
 
   Future<void> _sendIceCandidate(RTCIceCandidate candidate) async {
+    if (_kSig == null) return;
+    
     final iceMsg = SignalingMessage(
       type: 'ice',
       data: {
@@ -218,7 +251,10 @@ class _ResponderPageState extends State<ResponderPage> {
         'sdpMLineIndex': candidate.sdpMLineIndex,
       },
     );
-    final iceB64 = base64Url.encode(utf8.encode(iceMsg.toJsonString()));
+    final iceB64 = await rust_connection.connectionEncrypt(
+      keyHex: _kSig!,
+      plaintext: utf8.encode(iceMsg.toJsonString()),
+    );
     await _connectionService.sendSignal(
       mailboxId: _responderMailboxId!,
       ciphertextB64: iceB64,
@@ -372,7 +408,7 @@ class _ResponderPageState extends State<ResponderPage> {
                                 RTCPeerConnectionState
                                     .RTCPeerConnectionStateConnected
                             ? 'Connected!'
-                            : 'Establishing Connection...',
+                            : 'Establishing Connection...', 
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,

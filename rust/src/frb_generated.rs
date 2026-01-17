@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1134428197;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1035762181;
 
 // Section: executor
 
@@ -45,6 +45,108 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__api__connection__connection_decrypt_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "connection_decrypt",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_key_hex = <String>::sse_decode(&mut deserializer);
+            let api_ciphertext_b64 = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::connection::connection_decrypt(
+                        api_key_hex,
+                        api_ciphertext_b64,
+                    )?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__connection__connection_derive_keys_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "connection_derive_keys",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_secret_hex = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::connection::connection_derive_keys(api_secret_hex)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__connection__connection_encrypt_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "connection_encrypt",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_key_hex = <String>::sse_decode(&mut deserializer);
+            let api_plaintext = <Vec<u8>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok =
+                        crate::api::connection::connection_encrypt(api_key_hex, api_plaintext)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
 fn wire__crate__api__connection__connection_init_local_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -98,12 +200,14 @@ fn wire__crate__api__connection__generate_connection_link_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_base_url = <String>::sse_decode(&mut deserializer);
             let api_rendezvous_id = <String>::sse_decode(&mut deserializer);
+            let api_secret = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, ()>((move || {
                 let output_ok =
                     Result::<_, ()>::Ok(crate::api::connection::generate_connection_link(
                         api_base_url,
                         api_rendezvous_id,
+                        api_secret,
                     ))?;
                 Ok(output_ok)
             })())
@@ -268,6 +372,14 @@ fn wire__crate__api__client__reset_signaling_client_config_impl(
 
 // Section: dart2rust
 
+impl SseDecode for flutter_rust_bridge::for_generated::anyhow::Error {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return flutter_rust_bridge::for_generated::anyhow::anyhow!("{}", inner);
+    }
+}
+
 impl SseDecode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -281,12 +393,14 @@ impl SseDecode for crate::api::connection::ConnectionInitLocalResult {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_rendezvousId = <String>::sse_decode(deserializer);
         let mut var_mailboxId = <String>::sse_decode(deserializer);
+        let mut var_secret = <String>::sse_decode(deserializer);
         let mut var_kSig = <String>::sse_decode(deserializer);
         let mut var_kMac = <String>::sse_decode(deserializer);
         let mut var_sas = <String>::sse_decode(deserializer);
         return crate::api::connection::ConnectionInitLocalResult {
             rendezvous_id: var_rendezvousId,
             mailbox_id: var_mailboxId,
+            secret: var_secret,
             k_sig: var_kSig,
             k_mac: var_kMac,
             sas: var_sas,
@@ -360,7 +474,7 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        4 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -373,18 +487,21 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__connection__connection_init_local_impl(ptr, rust_vec_len, data_len),
-        2 => {
+        1 => wire__crate__api__connection__connection_decrypt_impl(ptr, rust_vec_len, data_len),
+        2 => wire__crate__api__connection__connection_derive_keys_impl(ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__connection__connection_encrypt_impl(ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__connection__connection_init_local_impl(ptr, rust_vec_len, data_len),
+        5 => {
             wire__crate__api__connection__generate_connection_link_impl(ptr, rust_vec_len, data_len)
         }
-        3 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-        5 => {
+        6 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
+        8 => {
             wire__crate__api__client__load_signaling_client_config_impl(ptr, rust_vec_len, data_len)
         }
-        6 => {
+        9 => {
             wire__crate__api__client__override_signaling_base_url_impl(ptr, rust_vec_len, data_len)
         }
-        7 => wire__crate__api__client__reset_signaling_client_config_impl(
+        10 => wire__crate__api__client__reset_signaling_client_config_impl(
             ptr,
             rust_vec_len,
             data_len,
@@ -401,6 +518,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::connection::ConnectionInitLoc
         [
             self.rendezvous_id.into_into_dart().into_dart(),
             self.mailbox_id.into_into_dart().into_dart(),
+            self.secret.into_into_dart().into_dart(),
             self.k_sig.into_into_dart().into_dart(),
             self.k_mac.into_into_dart().into_dart(),
             self.sas.into_into_dart().into_dart(),
@@ -441,6 +559,13 @@ impl flutter_rust_bridge::IntoIntoDart<crate::shared::models::SignalingClientCon
     }
 }
 
+impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(format!("{:?}", self), serializer);
+    }
+}
+
 impl SseEncode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -453,6 +578,7 @@ impl SseEncode for crate::api::connection::ConnectionInitLocalResult {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.rendezvous_id, serializer);
         <String>::sse_encode(self.mailbox_id, serializer);
+        <String>::sse_encode(self.secret, serializer);
         <String>::sse_encode(self.k_sig, serializer);
         <String>::sse_encode(self.k_mac, serializer);
         <String>::sse_encode(self.sas, serializer);

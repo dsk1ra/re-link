@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
+import 'package:application/src/rust/api/connection.dart' as rust_connection;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 /// Initiator screen - creates and shares connection link
@@ -66,6 +67,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
       final initResult = await _connectionService.initializeConnectionLocally();
       final link = _connectionService.generateConnectionLink(
         initResult.rendezvousId,
+        initResult.secret,
       );
 
       final initResp = await _connectionService.sendConnectionInit(
@@ -167,8 +169,11 @@ class _InitiatorPageState extends State<InitiatorPage> {
     if (payloadB64 == null || payloadB64.isEmpty) return;
 
     try {
-      final normalized = base64Url.normalize(payloadB64);
-      final decoded = utf8.decode(base64Url.decode(normalized));
+      final decryptedBytes = await rust_connection.connectionDecrypt(
+        keyHex: _initiatorResult!.kSig,
+        ciphertextB64: payloadB64,
+      );
+      final decoded = utf8.decode(decryptedBytes);
       print('Initiator: Received Signal: $decoded');
       final signalingMsg = SignalingMessage.fromJsonString(decoded);
 
@@ -221,7 +226,10 @@ class _InitiatorPageState extends State<InitiatorPage> {
         type: 'offer',
         data: {'sdp': offer.sdp, 'type': offer.type},
       );
-      final offerB64 = base64Url.encode(utf8.encode(offerMsg.toJsonString()));
+      final offerB64 = await rust_connection.connectionEncrypt(
+        keyHex: _initiatorResult!.kSig,
+        plaintext: utf8.encode(offerMsg.toJsonString()),
+      );
       print('Initiator: Sending Offer...');
       await _connectionService.sendSignal(
         mailboxId: _initiatorServerMailboxId!,
@@ -242,7 +250,10 @@ class _InitiatorPageState extends State<InitiatorPage> {
         'sdpMLineIndex': candidate.sdpMLineIndex,
       },
     );
-    final iceB64 = base64Url.encode(utf8.encode(iceMsg.toJsonString()));
+    final iceB64 = await rust_connection.connectionEncrypt(
+      keyHex: _initiatorResult!.kSig,
+      plaintext: utf8.encode(iceMsg.toJsonString()),
+    );
     await _connectionService.sendSignal(
       mailboxId: _initiatorServerMailboxId!,
       ciphertextB64: iceB64,

@@ -208,3 +208,4 @@ awscliv2.zip
 aws/
 
 # End of consolidated .gitignore
+/config/dev.json
