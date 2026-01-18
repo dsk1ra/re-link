@@ -38,6 +38,7 @@ class _ResponderPageState extends State<ResponderPage> {
   bool _joiningConnection = false;
   String? _joinError;
   bool _joined = false;
+  bool _isPeerDisconnected = false;
 
   @override
   void initState() {
@@ -234,6 +235,15 @@ class _ResponderPageState extends State<ResponderPage> {
           signalingMsg.data['sdpMLineIndex'] as int,
         );
         await _webrtcManager!.addIceCandidate(candidate);
+      } else if (signalingMsg.type == 'disconnect') {
+        print('Responder: Peer disconnected');
+        _showSnackBar('Peer has disconnected.');
+        await _webrtcManager?.dispose();
+        setState(() {
+          _webrtcManager = null;
+          _webrtcState = null;
+          _isPeerDisconnected = true;
+        });
       }
     } catch (e) {
       print('Responder: Error handling signal: $e');
@@ -277,6 +287,7 @@ class _ResponderPageState extends State<ResponderPage> {
   }
 
   String _webrtcStateText() {
+    if (_isPeerDisconnected) return 'Disconnected';
     switch (_webrtcState) {
       case RTCPeerConnectionState.RTCPeerConnectionStateConnecting:
         return 'Connecting';
@@ -289,11 +300,74 @@ class _ResponderPageState extends State<ResponderPage> {
     }
   }
 
+  Future<void> _sendDisconnectSignal() async {
+    if (_kSig == null || _responderMailboxId == null) return;
+    try {
+      final msg = SignalingMessage(type: 'disconnect', data: {});
+      final encryptedB64 = await rust_connection.connectionEncrypt(
+        keyHex: _kSig!,
+        plaintext: utf8.encode(msg.toJsonString()),
+      );
+      await _connectionService.sendSignal(
+        mailboxId: _responderMailboxId!,
+        ciphertextB64: encryptedB64,
+      );
+    } catch (e) {
+      print('Error sending disconnect signal: $e');
+    }
+  }
+
+  Future<bool> _showExitConfirmation() async {
+    if (_webrtcState != RTCPeerConnectionState.RTCPeerConnectionStateConnected &&
+        _webrtcState !=
+            RTCPeerConnectionState.RTCPeerConnectionStateConnecting) {
+      return true;
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('End Connection?'),
+        content: const Text(
+          'You are currently in an active secure session. Disconnecting will end the peer-to-end connection for both parties.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Keep Connected'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFcc3f0c),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Disconnect'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      await _sendDisconnectSignal();
+    }
+    return result ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFd8cbc7),
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldPop = await _showExitConfirmation();
+        if (shouldPop && mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFd8cbc7),
+        appBar: AppBar(
         title: const Text(
           'Join Connection',
           style: TextStyle(color: Color(0xFFffffff)),
@@ -387,40 +461,51 @@ class _ResponderPageState extends State<ResponderPage> {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
-                    children: [
-                      Icon(
-                        _webrtcState ==
-                                RTCPeerConnectionState
-                                    .RTCPeerConnectionStateConnected
-                            ? Icons.check_circle
-                            : Icons.sync,
-                        size: 64,
-                        color:
-                            _webrtcState ==
-                                RTCPeerConnectionState
-                                    .RTCPeerConnectionStateConnected
-                            ? const Color(0xFFcc3f0c)
-                            : const Color(0xFF19231a),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _webrtcState ==
-                                RTCPeerConnectionState
-                                    .RTCPeerConnectionStateConnected
-                            ? 'Connected!'
-                            : 'Establishing Connection...', 
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'WebRTC: ${_webrtcStateText()}',
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ],
-                  ),
+                                        children: [
+                                          Icon(
+                                            _isPeerDisconnected
+                                                ? Icons.cancel
+                                                : (_webrtcState ==
+                                                        RTCPeerConnectionState
+                                                            .RTCPeerConnectionStateConnected
+                                                    ? Icons.check_circle
+                                                    : Icons.sync),
+                                            size: 64,
+                                            color: _isPeerDisconnected
+                                                ? Colors.red
+                                                : (_webrtcState ==
+                                                        RTCPeerConnectionState
+                                                            .RTCPeerConnectionStateConnected
+                                                    ? const Color(0xFFcc3f0c)
+                                                    : const Color(0xFF19231a)),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          Text(
+                                            _isPeerDisconnected
+                                                ? 'Connection Ended'
+                                                : (_webrtcState ==
+                                                        RTCPeerConnectionState
+                                                            .RTCPeerConnectionStateConnected
+                                                    ? 'Connected!'
+                                                    : 'Establishing Connection...'),
+                                            style: const TextStyle(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'WebRTC: ${_webrtcStateText()}',
+                                            style: const TextStyle(fontSize: 14),
+                                          ),
+                                          if (_isPeerDisconnected) ...[
+                                            const SizedBox(height: 16),
+                                            ElevatedButton(
+                                              onPressed: () => Navigator.of(context).pop(),
+                                              child: const Text('Return to Home'),
+                                            ),
+                                          ],
+                                        ],                  ),
                 ),
               ),
               if (_webrtcState ==
@@ -467,6 +552,7 @@ class _ResponderPageState extends State<ResponderPage> {
           ],
         ),
       ),
+    ),
     );
   }
 }
