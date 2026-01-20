@@ -1,25 +1,14 @@
 use crate::shared::{
-    ClientId, HeartbeatRequest, HeartbeatResponse, RegisterRequest, RegisterResponse, SignalEnvelope,
+    ClientId, HeartbeatRequest, HeartbeatResponse, RegisterRequest, RegisterResponse,
     SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest
 };
+use crate::repository::session_repository::{InMemorySessionRepository, ClientRecord};
 use std::{
-    collections::HashMap,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
-use tokio::sync::RwLock;
-use tracing::{debug, warn};
+use tracing::debug;
 use uuid::Uuid;
-
-#[derive(Debug)]
-struct ClientRecord {
-    #[allow(dead_code)]
-    device_label: String,
-    session_token: String,
-    #[allow(dead_code)]
-    registered_at: Instant,
-    last_heartbeat: Instant
-}
 
 #[derive(Debug, Error)]
 pub enum RegistryError {
@@ -31,8 +20,7 @@ pub enum RegistryError {
 
 #[derive(Debug)]
 pub struct SessionRegistry {
-    clients: RwLock<HashMap<ClientId, ClientRecord>>,
-    messages: RwLock<Vec<SignalEnvelope>>,
+    repository: InMemorySessionRepository,
     session_ttl: Duration,
     heartbeat_interval: Duration,
 }
@@ -40,15 +28,14 @@ pub struct SessionRegistry {
 impl SessionRegistry {
     pub fn new(session_ttl: Duration, heartbeat_interval: Duration) -> Self {
         Self {
-            clients: RwLock::new(HashMap::new()),
-            messages: RwLock::new(Vec::new()),
+            repository: InMemorySessionRepository::new(),
             session_ttl,
             heartbeat_interval,
         }
     }
 
-    fn verify_client<'a>(&'a self, clients: &'a HashMap<ClientId, ClientRecord>, client_id: &ClientId, session_token: &str) -> Result<&'a ClientRecord, RegistryError> {
-        let record = clients.get(client_id).ok_or(RegistryError::ClientNotFound)?;
+    async fn verify_client(&self, client_id: &ClientId, session_token: &str) -> Result<ClientRecord, RegistryError> {
+        let record = self.repository.get_client(client_id).await.ok_or(RegistryError::ClientNotFound)?;
         if record.session_token != session_token { return Err(RegistryError::InvalidToken); }
         Ok(record)
     }
@@ -60,9 +47,8 @@ impl SessionRegistry {
         let session_token = Uuid::new_v4().to_string();
         // Assign incremental display name based on current active clients count + 1
         let display_name = {
-            let clients = self.clients.read().await;
-            let n = clients.len() + 1;
-            format!("Client {}", n)
+            let count = self.repository.get_client_count().await;
+            format!("Client {}", count + 1)
         };
         let new_record = ClientRecord {
             device_label: request.device_label,
@@ -71,7 +57,7 @@ impl SessionRegistry {
             last_heartbeat: Instant::now(),
         };
 
-        self.clients.write().await.insert(client_id, new_record);
+        self.repository.insert_client(client_id, new_record).await;
 
         RegisterResponse {
             client_id,
@@ -84,12 +70,13 @@ impl SessionRegistry {
     pub async fn heartbeat(&self, request: HeartbeatRequest) -> Result<HeartbeatResponse, RegistryError> {
         self.prune_expired().await;
 
-        let mut clients = self.clients.write().await;
-        let record = clients.get_mut(&request.client_id).ok_or(RegistryError::ClientNotFound)?;
-        if record.session_token != request.session_token {
-            return Err(RegistryError::InvalidToken);
+        // Verify first
+        self.verify_client(&request.client_id, &request.session_token).await?;
+        
+        // Update
+        if !self.repository.update_client_heartbeat(&request.client_id, Instant::now()).await {
+             return Err(RegistryError::ClientNotFound);
         }
-        record.last_heartbeat = Instant::now();
 
         Ok(HeartbeatResponse {
             next_heartbeat_secs: self.heartbeat_interval.as_secs(),
@@ -99,12 +86,7 @@ impl SessionRegistry {
     pub async fn enqueue_signal(&self, submit: SignalSubmitRequest) -> Result<(), RegistryError> {
         self.prune_expired().await;
 
-        let clients = self.clients.read().await;
-        let record = clients.get(&submit.envelope.from).ok_or(RegistryError::ClientNotFound)?;
-        if record.session_token != submit.session_token {
-            return Err(RegistryError::InvalidToken);
-        }
-        drop(clients);
+        self.verify_client(&submit.envelope.from, &submit.session_token).await?;
 
         let mut envelope = submit.envelope;
         envelope.created_at_epoch_ms = SystemTime::now()
@@ -112,65 +94,35 @@ impl SessionRegistry {
             .map(|d| d.as_millis())
             .unwrap_or_default();
 
-        let mut messages = self.messages.write().await;
-        messages.push(envelope);
+        self.repository.add_message(envelope).await;
         Ok(())
     }
 
     pub async fn fetch_signals(&self, request: SignalFetchRequest) -> Result<SignalFetchResponse, RegistryError> {
         self.prune_expired().await;
 
-        let clients = self.clients.read().await;
-        let record = clients.get(&request.client_id).ok_or(RegistryError::ClientNotFound)?;
-        if record.session_token != request.session_token {
-            return Err(RegistryError::InvalidToken);
-        }
-        drop(clients);
+        self.verify_client(&request.client_id, &request.session_token).await?;
 
-        let mut messages = self.messages.write().await;
-        let mut collected = Vec::new();
-        messages.retain(|msg| {
-            if msg.to == request.client_id {
-                collected.push(msg.clone());
-                false
-            } else {
-                true
-            }
-        });
+        let collected = self.repository.get_messages_for_client(&request.client_id).await;
 
         Ok(SignalFetchResponse { messages: collected })
     }
 
     pub async fn verify_session(&self, client_id: &ClientId, session_token: &str) -> Result<(), RegistryError> {
-        let clients = self.clients.read().await;
-        let _ = self.verify_client(&clients, client_id, session_token)?;
+        self.verify_client(client_id, session_token).await?;
         Ok(())
     }
 
     async fn prune_expired(&self) {
         let expiration_threshold = self.session_ttl;
-
-        let mut clients = self.clients.write().await;
-        let mut stale_clients = Vec::new();
-        for (client_id, record) in clients.iter() {
-            if record.last_heartbeat.elapsed() >= expiration_threshold {
-                stale_clients.push(*client_id);
-            }
-        }
+        let stale_clients = self.repository.prune_stale_clients(expiration_threshold).await;
+        
         if !stale_clients.is_empty() {
-            for client_id in &stale_clients {
-                clients.remove(client_id);
-            }
             debug!(?stale_clients, "pruned expired clients");
-
-            let mut messages = self.messages.write().await;
-            messages.retain(|msg| {
-                let drop_msg = stale_clients.contains(&msg.from) || stale_clients.contains(&msg.to);
-                if drop_msg {
-                    warn!(from = %msg.from, to = %msg.to, "dropping signal for expired client");
-                }
-                !drop_msg
-            });
+            // Messages pruning is now handled by the repository helper or we can do it explicitly
+            // Ideally the repository handles the cascade delete or similar logic. 
+            // I added `prune_messages_for_clients` to the repository.
+            self.repository.prune_messages_for_clients(&stale_clients).await;
         }
     }
 }
