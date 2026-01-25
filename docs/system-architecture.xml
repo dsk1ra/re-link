@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0" version="29.2.7">
+  <diagram name="PQC System Architecture" id="MQg354xaJKNGg-Q2j7Cn">
+    <mxGraphModel dx="-633" dy="300" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="100" pageHeight="100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-188" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#455A64;strokeWidth=2;fontSize=14;fontStyle=1;verticalAlign=top;fontColor=#263238;" value="Client A (Initiator)" vertex="1">
+          <mxGeometry height="110" width="220" x="1890" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-189" parent="N1nGf0t9dNJ_-5uwDNRr-188" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#455A64;" value="- Generate Offer&lt;div&gt;- Encrypt Payload&lt;/div&gt;&lt;div&gt;- HTTP Client&lt;/div&gt;&lt;div&gt;- WebSocket Client&lt;/div&gt;" vertex="1">
+          <mxGeometry height="62.85714285714287" width="200" x="10" y="31.428571428571434" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-190" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#455A64;strokeWidth=2;fontSize=14;fontStyle=1;verticalAlign=top;fontColor=#263238;" value="Client B (Joiner)" vertex="1">
+          <mxGeometry height="110" width="220" x="2690" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-191" parent="N1nGf0t9dNJ_-5uwDNRr-190" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#455A64;" value="- Scan QR or use link&lt;div&gt;- Generate Answer&lt;/div&gt;&lt;div&gt;- Encrypt Payload&lt;/div&gt;&lt;div&gt;- HTTP Client&lt;/div&gt;&lt;div&gt;- WebSocket Client&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70.71428571428571" width="200" x="10" y="31.428571428571427" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-192" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8F9FA;strokeColor=#90A4AE;strokeWidth=1;fontSize=14;fontStyle=1;verticalAlign=top;dashed=1;fontColor=#546E7A;" value="Signaling Server" vertex="1">
+          <mxGeometry height="300" width="400" x="2200" y="620" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-193" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2196F3;strokeColor=#1976D2;fontColor=#FFFFFF;fontStyle=1" value="API Controller" vertex="1">
+          <mxGeometry height="60" width="260" x="2270" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-194" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#64B5F6;strokeColor=#1E88E5;fontColor=#FFFFFF;fontStyle=1" value="Rendezvous Service" vertex="1">
+          <mxGeometry height="60" width="260" x="2270" y="750" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-195" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#90CAF9;strokeColor=#42A5F5;fontColor=#0D47A1;fontStyle=1" value="Redis Repository" vertex="1">
+          <mxGeometry height="60" width="260" x="2270" y="830" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-196" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontSize=13;fontStyle=1;fontColor=#263238;" value="" vertex="1">
+          <mxGeometry height="120" width="300" x="2250" y="1040" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-197" parent="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#37474F;" value="&lt;b&gt;rendezvous:{Token}&amp;nbsp;&lt;/b&gt; --&amp;gt;&amp;nbsp; MailboxID_A&lt;div&gt;&lt;b&gt;meta:{MailboxID}&amp;nbsp;&lt;/b&gt; --&amp;gt;&amp;nbsp; { peer_id, expiry }&lt;/div&gt;&lt;div&gt;&lt;b&gt;msgs:{MailboxID}&amp;nbsp;&lt;/b&gt; --&amp;gt;&amp;nbsp; List[EncryptedBlobs]&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="260" x="2270" y="1090" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-198" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-188" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#1976D2;strokeWidth=2;fontColor=#1976D2;fontStyle=1;" target="N1nGf0t9dNJ_-5uwDNRr-193" value="1. POST /init">
+          <mxGeometry relative="1" x="-0.0589" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="2040" y="680" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-199" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-195" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#607D8B;strokeWidth=2;fontColor=#607D8B;" target="N1nGf0t9dNJ_-5uwDNRr-196" value="2. Create Mailbox">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2360" y="930" />
+              <mxPoint x="2320" y="930" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-200" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-188" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#455A64;strokeWidth=2;dashed=1;fontColor=#455A64;" target="N1nGf0t9dNJ_-5uwDNRr-190" value="3. Share Token (QR/Link)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-201" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-190" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#1976D2;strokeWidth=2;fontColor=#1976D2;fontStyle=1;" target="N1nGf0t9dNJ_-5uwDNRr-193" value="4. POST /join">
+          <mxGeometry relative="1" x="0.3333" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="2740" y="670" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-202" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-195" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#607D8B;strokeWidth=2;fontColor=#607D8B;" target="N1nGf0t9dNJ_-5uwDNRr-196" value="5. Verify &amp; Pair">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-203" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-188" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#7E57C2;strokeWidth=2;fontColor=#7E57C2;" target="N1nGf0t9dNJ_-5uwDNRr-193" value="6. WS Connect /ws/MailboxA">
+          <mxGeometry relative="1" x="0.35" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="2000" y="700" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-204" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-190" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#7E57C2;strokeWidth=2;fontColor=#7E57C2;" target="N1nGf0t9dNJ_-5uwDNRr-193" value="7. WS Connect /ws/MailboxB">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2780" y="690" />
+            </Array>
+            <mxPoint x="2780" y="560" as="sourcePoint" />
+            <mxPoint x="2540" y="700" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-205" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-188" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2E7D32;strokeWidth=2;fontColor=#2E7D32;" target="N1nGf0t9dNJ_-5uwDNRr-193" value="8. Send Offer">
+          <mxGeometry relative="1" x="0.3478" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="1960" y="720" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-206" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-195" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#607D8B;strokeWidth=2;fontColor=#607D8B;" target="N1nGf0t9dNJ_-5uwDNRr-196" value="9. Push to msgs:B">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2440" y="930" />
+              <mxPoint x="2480" y="930" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-207" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-193" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2E7D32;strokeWidth=2;dashed=1;fontColor=#2E7D32;exitX=1;exitY=0.9;" target="N1nGf0t9dNJ_-5uwDNRr-190" value="10. WS Notify (New Msg)">
+          <mxGeometry relative="1" x="0.0698" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="2520" y="730" />
+              <mxPoint x="2860" y="730" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-208" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-190" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#00838F;strokeWidth=2;fontColor=#00838F;" target="N1nGf0t9dNJ_-5uwDNRr-193" value="11. Send Answer">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2820" y="710" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-209" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-188" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#1B5E20;strokeWidth=4;dashed=1;fontColor=#1B5E20;fontStyle=1;exitX=0.5;exitY=0;entryX=0.5;entryY=0;" target="N1nGf0t9dNJ_-5uwDNRr-190" value="12. WebRTC P2P CONNECTED">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="2000" y="500" />
+              <mxPoint x="2800" y="500" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-210" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-193" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#90A4AE;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="N1nGf0t9dNJ_-5uwDNRr-194" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-211" edge="1" parent="1" source="N1nGf0t9dNJ_-5uwDNRr-194" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#90A4AE;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="N1nGf0t9dNJ_-5uwDNRr-195" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="N1nGf0t9dNJ_-5uwDNRr-212" parent="1" style="text;whiteSpace=wrap;html=1;align=center;labelBackgroundColor=none;" value="&lt;span style=&quot;color: rgb(38, 50, 56); font-family: Helvetica; font-size: 13px; font-style: normal; font-variant-ligatures: normal; font-variant-caps: normal; font-weight: 700; letter-spacing: normal; orphans: 2; text-indent: 0px; text-transform: none; widows: 2; word-spacing: 0px; -webkit-text-stroke-width: 0px; white-space: normal; text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial; float: none; display: inline !important;&quot;&gt;Redis Persistence Store&lt;/span&gt;" vertex="1">
+          <mxGeometry height="30" width="180" x="2310" y="1070" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

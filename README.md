@@ -1,14 +1,29 @@
-# application
+## Project Structure
 
-A new Flutter project.
+This project is organized as a monorepo:
+
+- **`client/`**: The Flutter Application (Frontend & Client Logic).
+- **`rust/`**: The Rust Workspace containing:
+    - Signaling Server
+    - Core Application Logic (shared with client via FRB)
+- **`scripts/`**: DevOps, build, and setup scripts.
+- **`docs/`**: Project documentation, architecture diagrams, and reports.
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+### Prerequisites
+- Flutter SDK
+- Rust (Cargo)
+- Docker (optional, for server)
 
-A few resources to get you started if this is your first Flutter project:
+### Running the Client
+```bash
+cd client
+flutter run
+```
 
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### Running the Server (Local)
+```bash
+cd rust
+cargo run --bin signaling_server
+```

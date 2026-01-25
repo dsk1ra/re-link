@@ -1,211 +1,110 @@
 ########################################
-# Project-wide .gitignore (Flutter + Rust)
-# Generated: consolidated & expanded for multi-platform setup
+# Root .gitignore (Monorepo)
 ########################################
 
 ########################################
-# General build & miscellaneous
+# General / OS
 ########################################
-*.class
 *.log
-*.pyc
-*.swp
-*.tmp
-*.temp
-*.orig
 .DS_Store
 Thumbs.db
 Desktop.ini
-$RECYCLE.BIN/
-.atom/
-.build/
-.buildlog/
 .history
-.svn/
-.swiftpm/
-migrate_working_dir/
 tmp/
+*.tmp
+*.temp
 
 ########################################
-# IDE / Editor
+# IDEs
 ########################################
-# IntelliJ / Android Studio
+.idea/
+.vscode/
 *.iml
 *.ipr
 *.iws
-.idea/
-
-# VS Code: ignore everything by default, but keep common workspace files
-.vscode/*
 
 ########################################
-# Flutter / Dart
+# Flutter (Client)
 ########################################
-**/doc/api/
-**/ios/Flutter/.last_build_id
+client/.dart_tool/
+client/.flutter-plugins
+client/.flutter-plugins-dependencies
+client/.metadata
+client/.packages
+client/.pub-cache/
+client/.pub/
+client/build/
+client/coverage/
+client/client_dev.json
+client/config/dev.json
+
+# Platform Specifics
+client/android/local.properties
+client/android/.gradle/
+client/ios/Flutter/.last_build_id
+client/ios/DerivedData/
+client/macos/Flutter/ephemeral/
+client/windows/flutter/ephemeral/
+client/linux/flutter/ephemeral/
+
+########################################
+# Rust
+########################################
+rust/target/
+target/
+**/*.rs.bk
+
+########################################
+# Scripts & Logs
+########################################
+server.log
+tunnel.log
+
+########################################
+# Security / Credentials
+########################################
+.env
+GEMINI.md
+*.pem
+*.keystore
+*.jks
+key.properties
+client/keys/
+
+########################################
+# Additional common ignores
+########################################
+# Build outputs
+build/
+**/build/
+
+# Tooling caches
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
-.metadata
-.packages
-.pub-cache/
 .pub/
-/build/
-**/build/
-/coverage/
-coverage/
-lcov.info
-.dart_tool/chrome-device/
+.pub-cache/
 
-# Generated registrants & ephemeral engine bits
-**/GeneratedPluginRegistrant.*
-**/ephemeral/
-
-########################################
-# Rust / Cargo
-########################################
-target/
-**/target/
-**/*.rs.bk
-
-# (Keep Cargo.lock for apps; remove ignore if present elsewhere)
-
-########################################
-# Native / C / C++ / FFI build artifacts
-########################################
-*.o
-*.so
-*.a
-*.dll
-*.dylib
-*.lib
-*.exe
-*.obj
-*.pdb
-*.ilk
-*.exp
-*.iobj
-*.ipdb
-*.pch
-
-########################################
-# CMake
-########################################
-CMakeCache.txt
-CMakeFiles/
-CMakeScripts/
-Testing/
-Makefile
-cmake_install.cmake
-install_manifest.txt
-compile_commands.json
-CTestTestfile.cmake
-cmake-build-*/
-
-########################################
-# Android / Gradle
-########################################
+# Gradle
 .gradle/
 **/.gradle/
-**/local.properties
-local.properties
-captures/
-**/captures/
-android/app/debug/
-android/app/profile/
-android/app/release/
-*.jks
-*.keystore
-key.properties
 
-########################################
-# iOS / Xcode / macOS
-########################################
-DerivedData/
-**/DerivedData/
-*.xcuserstate
-*.xcworkspace/xcuserdata/
-**/xcuserdata/
-*.moved-aside
-*.xcuserdatad
-*.dSYM
-
-########################################
-# Windows specific artifacts
-########################################
-*.pdb
-*.manifest
-*.rsp
-
-########################################
-# Web (Flutter web build already under build/)
-########################################
-
-########################################
-# Symbolication / Obfuscation outputs
-########################################
-app.*.symbols
-app.*.map.json
-
-########################################
-# Security / Credentials / Environment
-########################################
-*.pem
-*.crt
-*.cer
-*.der
-*.p12
-*.pfx
-*.env
-.env.*
-.envrc
-key.properties
-
-########################################
-# Package managers (future tooling)
-########################################
+# Node
 node_modules/
-package-lock.json
-pnpm-lock.yaml
-yarn.lock
 
-########################################
-# Generated native assets (Flutter native assets build dir)
-########################################
-**/native_assets/
+# Python
+__pycache__/
+*.py[cod]
+venv/
+env/
 
-########################################
-# Databases / stateful runtime files
-########################################
-*.sqlite
-*.db
-*.db-wal
-*.db-shm
+# iOS / CocoaPods
+client/ios/Pods/
+client/ios/Runner.xcworkspace/
 
-########################################
-# Tooling / Melos / Monorepo helpers
-########################################
-.melos_tool/
+# macOS
+.DS_Store
 
-########################################
-# Crash dumps
-########################################
-*.dmp
-
-########################################
-# Keep: lock files that ensure reproducible builds
-#   - pubspec.lock (for apps; commit)
-#   - Cargo.lock   (for Rust crates/apps; commit)
-# Remove any ignore rules that hide them.
-########################################
-
-# Local development artifacts
-run_local.sh
-test_stress.sh
-
-# AWS CLI installer artifacts
-awscliv2.zip
-aws/
-
-# End of consolidated .gitignore
-/config/dev.json
+# Misc caches
+.cache/
+.idea/workspace.xml

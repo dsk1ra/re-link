@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-01-19T16:00:00.000Z" agent="Mozilla/5.0" version="29.2.7" type="device">
+  <diagram name="PQC System Architecture" id="MQg354xaJKNGg-Q2j7Cn">
+    <mxGraphModel dx="1000" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3000" pageHeight="2000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- COMPONENTS -->
+        <mxCell id="client_a" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#455A64;strokeWidth=2;fontSize=14;fontStyle=1;verticalAlign=top;fontColor=#263238;" value="Client A (Initiator)" vertex="1">
+          <mxGeometry height="110" width="220" x="1890" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="client_a_details" parent="client_a" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#455A64;" value="- Generate Offer&lt;div&gt;- Encrypt Payload&lt;/div&gt;&lt;div&gt;- HTTP Client&lt;/div&gt;&lt;div&gt;- WebSocket Client&lt;/div&gt;" vertex="1">
+          <mxGeometry height="62" width="200" x="10" y="31" as="geometry" />
+        </mxCell>
+        <mxCell id="client_b" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#455A64;strokeWidth=2;fontSize=14;fontStyle=1;verticalAlign=top;fontColor=#263238;" value="Client B (Joiner)" vertex="1">
+          <mxGeometry height="110" width="220" x="2690" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="client_b_details" parent="client_b" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#455A64;" value="- Scan QR or use link&lt;div&gt;- Generate Answer&lt;/div&gt;&lt;div&gt;- Encrypt Payload&lt;/div&gt;&lt;div&gt;- HTTP Client&lt;/div&gt;&lt;div&gt;- WebSocket Client&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="200" x="10" y="31" as="geometry" />
+        </mxCell>
+        <mxCell id="server_bg" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8F9FA;strokeColor=#90A4AE;strokeWidth=1;fontSize=14;fontStyle=1;verticalAlign=top;dashed=1;fontColor=#546E7A;" value="Signaling Server" vertex="1">
+          <mxGeometry height="300" width="400" x="2200" y="620" as="geometry" />
+        </mxCell>
+        <mxCell id="controller" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2196F3;strokeColor=#1976D2;fontColor=#FFFFFF;fontStyle=1" value="API Controller" vertex="1">
+          <mxGeometry height="60" width="260" x="2270" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="service" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#64B5F6;strokeColor=#1E88E5;fontColor=#FFFFFF;fontStyle=1" value="Rendezvous Service" vertex="1">
+          <mxGeometry height="60" width="260" x="2270" y="750" as="geometry" />
+        </mxCell>
+        <mxCell id="repo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#90CAF9;strokeColor=#42A5F5;fontColor=#0D47A1;fontStyle=1" value="Redis Repository" vertex="1">
+          <mxGeometry height="60" width="260" x="2270" y="830" as="geometry" />
+        </mxCell>
+        <mxCell id="redis" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=2;fontSize=13;fontStyle=1;fontColor=#263238;" value="" vertex="1">
+          <mxGeometry height="120" width="300" x="2250" y="1040" as="geometry" />
+        </mxCell>
+        <mxCell id="redis_text" parent="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#37474F;" value="&lt;b&gt;rendezvous:{Token}&amp;nbsp;&lt;/b&gt; --&amp;gt;&amp;nbsp; MailboxID_A&lt;div&gt;&lt;b&gt;meta:{MailboxID}&amp;nbsp;&lt;/b&gt; --&amp;gt;&amp;nbsp; { peer_id, expiry }&lt;/div&gt;&lt;div&gt;&lt;b&gt;msgs:{MailboxID}&amp;nbsp;&lt;/b&gt; --&amp;gt;&amp;nbsp; List[EncryptedBlobs]&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="260" x="2270" y="1090" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES -->
+
+        <mxCell id="step_1" edge="1" parent="1" source="client_a" target="controller" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#1976D2;strokeWidth=2;fontColor=#1976D2;fontStyle=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="2040" y="680" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_1_label" value="1. POST /init" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_1">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_2" edge="1" parent="1" source="repo" target="redis" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#607D8B;strokeWidth=2;fontColor=#607D8B;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="2360" y="930" /><mxPoint x="2320" y="930" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_2_label" value="2. Create Mailbox A" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_2">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_3" edge="1" parent="1" source="client_a" target="controller" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#7E57C2;strokeWidth=2;fontColor=#7E57C2;dashed=1;">
+          <mxGeometry relative="1" as="geometry">
+             <Array as="points"><mxPoint x="2080" y="700" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_3_label" value="3. WS Connect A" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_3">
+          <mxGeometry x="0" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_4" edge="1" parent="1" source="client_a" target="client_b" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#455A64;strokeWidth=2;dashed=1;fontColor=#455A64;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="2000" y="520" /><mxPoint x="2800" y="520" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_4_label" value="4. Share Token" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_4">
+          <mxGeometry x="0" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_5" edge="1" parent="1" source="client_b" target="controller" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#1976D2;strokeWidth=2;fontColor=#1976D2;fontStyle=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="2740" y="670" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_5_label" value="5. POST /join" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_5">
+          <mxGeometry x="0.1" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_6" edge="1" parent="1" source="repo" target="redis" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#607D8B;strokeWidth=2;fontColor=#607D8B;">
+          <mxGeometry relative="1" as="geometry">
+             <Array as="points"><mxPoint x="2480" y="930" /><mxPoint x="2440" y="930" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_6_label" value="6. Verify &amp; Pair" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_6">
+          <mxGeometry x="0.1" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_7" edge="1" parent="1" source="controller" target="client_a" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#EF6C00;strokeWidth=2;fontColor=#EF6C00;dashed=1;">
+          <mxGeometry relative="1" as="geometry">
+             <Array as="points"><mxPoint x="2270" y="680" /><mxPoint x="2020" y="680" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_7_label" value="7. Notify A (Joined)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_7">
+          <mxGeometry x="0" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_8" edge="1" parent="1" source="client_b" target="controller" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#7E57C2;strokeWidth=2;fontColor=#7E57C2;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="2780" y="690" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_8_label" value="8. WS Connect B" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_8">
+          <mxGeometry x="0" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_9" edge="1" parent="1" source="client_a" target="controller" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2E7D32;strokeWidth=2;fontColor=#2E7D32;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1960" y="720" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_9_label" value="9. Send Offer" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_9">
+          <mxGeometry x="0" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_10" edge="1" parent="1" source="repo" target="redis" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#607D8B;strokeWidth=2;fontColor=#607D8B;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="2360" y="1030" /><mxPoint x="2400" y="1030" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_10_label" value="10. Push to msgs:B" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_10">
+          <mxGeometry x="0" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_11" edge="1" parent="1" source="controller" target="client_b" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#EF6C00;strokeWidth=2;dashed=1;fontColor=#EF6C00;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="2520" y="730" /><mxPoint x="2860" y="730" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_11_label" value="11. Notify B (Offer)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_11">
+          <mxGeometry x="0" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_12" edge="1" parent="1" source="client_b" target="controller" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#00838F;strokeWidth=2;fontColor=#00838F;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="2820" y="710" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_12_label" value="12. Send Answer" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_12">
+          <mxGeometry x="0" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="step_13" edge="1" parent="1" source="client_a" target="client_b" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#1B5E20;strokeWidth=4;dashed=1;fontColor=#1B5E20;fontStyle=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="2000" y="480" /><mxPoint x="2800" y="480" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step_13_label" value="13. WebRTC P2P" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="step_13">
+          <mxGeometry x="0" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+        
+        <!-- Internal Server Connections -->
+        <mxCell id="int_1" edge="1" parent="1" source="controller" target="service" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#90A4AE;strokeWidth=1;">
+           <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="int_2" edge="1" parent="1" source="service" target="repo" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#90A4AE;strokeWidth=1;">
+           <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="redis_label" parent="1" style="text;whiteSpace=wrap;html=1;align=center;labelBackgroundColor=none;" value="&lt;span style=&quot;color: rgb(38, 50, 56); font-family: Helvetica; font-size: 13px; font-style: normal; font-weight: 700;&quot;&gt;Redis Persistence Store&lt;/span&gt;" vertex="1">
+          <mxGeometry height="30" width="180" x="2310" y="1070" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
