@@ -63,7 +63,7 @@ jobs:
           path: |
             ~/.pub-cache
             ${{ env.LOCALAPPDATA }}\Pub\Cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          key: ${{ runner.os }}-pub-${{ hashFiles('client/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pub-
 
@@ -74,9 +74,11 @@ jobs:
         run: flutter precache --windows
 
       - name: Fetch Dart/Flutter dependencies
+        working-directory: client
         run: flutter pub get
 
       - name: Build Windows app (Release)
+        working-directory: client
         run: flutter build windows --release
 
       - name: Archive Windows build output
@@ -84,5 +86,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: build/windows/x64/runner/Release/
+          path: client/build/windows/x64/runner/Release/
           if-no-files-found: warn
