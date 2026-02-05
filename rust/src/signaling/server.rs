@@ -19,23 +19,15 @@ use serde::Serialize;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::{info, instrument};
-use tower_governor::{governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer};
 
 #[derive(Clone)]
-struct AppState {
-    registry: Arc<SessionRegistry>,
-    config: Arc<SignalingServerConfig>,
-    push: Arc<PushHub>,
-    rendezvous_service: Arc<RendezvousService>,
-}
-
 struct PushHub {
-    inner: tokio::sync::Mutex<std::collections::HashMap<String, tokio::sync::broadcast::Sender<String>>>,
+    inner: Arc<tokio::sync::Mutex<std::collections::HashMap<String, tokio::sync::broadcast::Sender<String>>>>,
 }
 
 impl PushHub {
     fn new() -> Self {
-        Self { inner: tokio::sync::Mutex::new(std::collections::HashMap::new()) }
+        Self { inner: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())) }
     }
     async fn subscribe(&self, mailbox_id: &str) -> tokio::sync::broadcast::Receiver<String> {
         let mut guard = self.inner.lock().await;
@@ -57,6 +49,16 @@ impl PushHub {
 struct ErrorResponse {
     message: String,
 }
+
+#[derive(Clone)]
+struct AppState {
+    registry: Arc<SessionRegistry>,
+    config: Arc<SignalingServerConfig>,
+    push: Arc<PushHub>,
+    rendezvous_service: Arc<RendezvousService>,
+}
+
+// ...
 
 pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
     let registry = Arc::new(SessionRegistry::new(
@@ -85,14 +87,14 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
     };
 
     // Rate limiting configuration
-    let governor_conf = Arc::new(
-        GovernorConfigBuilder::default()
-            .per_second(100)
-            .burst_size(500)
-            .key_extractor(SmartIpKeyExtractor)
-            .finish()
-            .unwrap(),
-    );
+    // let governor_conf = Arc::new(
+    //     GovernorConfigBuilder::default()
+    //         .per_second(100)
+    //         .burst_size(500)
+    //         .key_extractor(SmartIpKeyExtractor)
+    //         .finish()
+    //         .unwrap(),
+    // );
 
     let router = Router::new()
         .route("/", get(root))
@@ -108,9 +110,9 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         .route("/connection/recv", post(mailbox_recv))
         // websocket push for mailbox
         .route("/ws/:mailbox_id", get(ws_upgrade))
-        .layer(GovernorLayer {
-            config: governor_conf,
-        })
+        // .layer(GovernorLayer {
+        //     config: governor_conf,
+        // })
         .with_state(state.clone());
 
     let listen_addr = state.config.listen_addr;
@@ -260,6 +262,7 @@ async fn mailbox_send(
         .map_err(rendezvous_err)?;
 
     // Push notify subscribers of peer mailbox
+    info!(mailbox_id = %peer_mailbox_id, "Pushing notification to mailbox");
     state.push.notify(&peer_mailbox_id, msg_json).await;
 
     Ok(StatusCode::ACCEPTED)

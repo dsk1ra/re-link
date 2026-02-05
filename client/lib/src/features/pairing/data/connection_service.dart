@@ -1,8 +1,8 @@
 import 'package:application/src/rust/api/connection.dart' as rust_connection;
 import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'dart:convert';
 import 'dart:async';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
 /// Service for managing connection-based blind rendezvous pairing
 class ConnectionService {
@@ -104,6 +104,12 @@ class ConnectionService {
 
         if (response.statusCode == 202) return; // Success
 
+        if (response.statusCode == 429 && attempt < retries) {
+          print('Send signal 429 (Attempt $attempt), throttling...');
+          await Future.delayed(Duration(milliseconds: 1000 * attempt)); // Longer backoff
+          continue;
+        }
+
         if (response.statusCode == 500 && attempt < retries) {
           print('Send signal 500 (Attempt $attempt), retrying...');
           await Future.delayed(Duration(milliseconds: 500 * attempt));
@@ -145,31 +151,76 @@ class ConnectionService {
         .toList();
   }
 
-  /// Subscribe to mailbox push events over WebSocket
-  /// Emits each message as a decoded Map
+  /// Subscribe to mailbox messages using WebSockets
   Stream<Map<String, dynamic>> subscribeMailbox({
     required String mailboxId,
   }) {
-    String wsUrl;
-    if (signalingBaseUrl.startsWith('https://')) {
-      wsUrl = signalingBaseUrl.replaceFirst('https://', 'wss://');
-    } else if (signalingBaseUrl.startsWith('http://')) {
-      wsUrl = signalingBaseUrl.replaceFirst('http://', 'ws://');
-    } else {
-      wsUrl = signalingBaseUrl; // Fallback
-    }
+    final wsUrl = signalingBaseUrl
+        .replaceFirst('https://', 'wss://')
+        .replaceFirst('http://', 'ws://') + '/ws/$mailboxId';
     
-    final uri = Uri.parse('$wsUrl/ws/$mailboxId');
-    print('Connecting to WebSocket: $uri');
-    final channel = WebSocketChannel.connect(uri);
+    print('Connecting to WebSocket: $wsUrl');
+    
+    final controller = StreamController<Map<String, dynamic>>.broadcast();
+    WebSocketChannel? channel;
+    bool isDisposed = false;
 
-    // Map text frames into JSON maps
-    return channel.stream.where((e) => e is String).map((e) {
-      final text = e as String;
-      final decoded = jsonDecode(text);
-      if (decoded is Map<String, dynamic>) return decoded;
-      return <String, dynamic>{};
-    });
+    // Initial fetch to ensure no messages are missed
+    fetchMessages(mailboxId: mailboxId).then((messages) {
+      for (final msg in messages) {
+        if (!controller.isClosed) {
+          controller.add(msg);
+        }
+      }
+    }).catchError((e) => print('Initial fetch error: $e'));
+
+    void connect() {
+      if (isDisposed) return;
+      
+      try {
+        channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+
+        channel!.stream.listen(
+          (data) {
+            try {
+              final msg = jsonDecode(data as String);
+              if (!controller.isClosed) {
+                controller.add(msg as Map<String, dynamic>);
+              }
+            } catch (e) {
+              print('WS message decode error: $e');
+            }
+          },
+          onError: (e) {
+            print('WS Error: $e');
+            if (!isDisposed) {
+              Future.delayed(const Duration(seconds: 2), () => connect());
+            }
+          },
+          onDone: () {
+            print('WS Closed');
+            if (!isDisposed) {
+               Future.delayed(const Duration(seconds: 2), () => connect());
+            }
+          },
+        );
+      } catch (e) {
+        print('WS Connect Exception: $e');
+        if (!isDisposed) {
+          Future.delayed(const Duration(seconds: 2), () => connect());
+        }
+      }
+    }
+
+    connect();
+
+    controller.onCancel = () {
+      isDisposed = true;
+      channel?.sink.close();
+      controller.close();
+    };
+
+    return controller.stream;
   }
 
   void dispose() {

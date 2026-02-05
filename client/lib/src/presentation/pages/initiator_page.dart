@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:application/src/features/file_transfer/file_transfer_widget.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
@@ -44,6 +45,12 @@ class _InitiatorPageState extends State<InitiatorPage> {
   bool _isPeerDisconnected = false;
   StreamSubscription? _mailboxSubscription;
 
+  final List<RTCIceCandidate> _iceCandidateQueue = [];
+  bool _isSendingIce = false;
+
+  final List<Map<String, dynamic>> _signalQueue = [];
+  bool _isProcessingSignals = false;
+
   @override
   void initState() {
     super.initState();
@@ -52,6 +59,102 @@ class _InitiatorPageState extends State<InitiatorPage> {
     );
     _createInitiatorLink();
   }
+  
+  // ...
+
+  Future<void> _startWebRTCHandshake() async {
+    try {
+      print('Initiator: Starting WebRTC Handshake...');
+      _webrtcManager = WebRTCManager();
+      print('Initiator: Initializing WebRTCManager...');
+      await _webrtcManager!.initialize();
+      print('Initiator: WebRTCManager initialized.');
+
+      _webrtcManager!.onStateChange.listen((state) {
+        print('Initiator: State changed to $state');
+        setState(() => _webrtcState = state);
+        if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          _showSnackBar('WebRTC connected!');
+        }
+      });
+
+      _webrtcManager!.onMessage.listen((message) {
+        setState(() => _receivedMessage = message);
+        _showSnackBar('Received: $message');
+      });
+
+      _webrtcManager!.onIceCandidate.listen(
+        (candidate) => _queueIceCandidate(candidate),
+      );
+
+      print('Initiator: Creating Offer...');
+      final offer = await _webrtcManager!.createOffer();
+      print('Initiator: Created Offer');
+
+      final offerMsg = SignalingMessage(
+        type: 'offer',
+        data: {'sdp': offer.sdp, 'type': offer.type},
+      );
+      final offerB64 = await rust_connection.connectionEncrypt(
+        keyHex: _initiatorResult!.kSig,
+        plaintext: utf8.encode(offerMsg.toJsonString()),
+      );
+      print('Initiator: Sending Offer...');
+      await _connectionService.sendSignal(
+        mailboxId: _initiatorServerMailboxId!,
+        ciphertextB64: offerB64,
+      );
+    } catch (e) {
+      print('Initiator: WebRTC Error: $e');
+      _showSnackBar('WebRTC error: $e');
+    }
+  }
+
+  void _queueIceCandidate(RTCIceCandidate candidate) {
+    _iceCandidateQueue.add(candidate);
+    if (!_isSendingIce) {
+      _processIceQueue();
+    }
+  }
+
+  Future<void> _processIceQueue() async {
+    if (_isSendingIce || _iceCandidateQueue.isEmpty) return;
+
+    _isSendingIce = true;
+    try {
+      while (_iceCandidateQueue.isNotEmpty) {
+        final candidate = _iceCandidateQueue.removeAt(0);
+        await _sendIceCandidate(candidate);
+        // Small delay to be nice to the server
+        await Future.delayed(const Duration(milliseconds: 100)); 
+      }
+    } catch (e) {
+      print('Error sending queued ICE candidate: $e');
+    } finally {
+      _isSendingIce = false;
+      // Double check in case new ones came in
+      if (_iceCandidateQueue.isNotEmpty) _processIceQueue(); 
+    }
+  }
+
+      Future<void> _sendIceCandidate(RTCIceCandidate candidate) async {
+        final iceMsg = SignalingMessage(
+          type: 'ice',
+          data: {
+            'candidate': candidate.candidate,
+            'sdpMid': candidate.sdpMid,
+            'sdpMLineIndex': candidate.sdpMLineIndex,
+          },
+        );
+        final iceB64 = await rust_connection.connectionEncrypt(
+          keyHex: _initiatorResult!.kSig,
+          plaintext: utf8.encode(iceMsg.toJsonString()),
+        );
+        await _connectionService.sendSignal(
+          mailboxId: _initiatorServerMailboxId!,
+          ciphertextB64: iceB64,
+        );
+      }
 
   @override
   void dispose() {
@@ -106,11 +209,35 @@ class _InitiatorPageState extends State<InitiatorPage> {
         });
         _showIncomingDialog();
       } else if (_peerAccepted) {
-        _handleIncomingSignal(evt);
+        _queueIncomingSignal(evt);
       }
     }, onError: (_) {
       setState(() => _pollingPeer = false);
     });
+  }
+
+  void _queueIncomingSignal(Map<String, dynamic> msg) {
+    _signalQueue.add(msg);
+    if (!_isProcessingSignals) {
+      _processSignalQueue();
+    }
+  }
+
+  Future<void> _processSignalQueue() async {
+    if (_isProcessingSignals || _signalQueue.isEmpty) return;
+
+    _isProcessingSignals = true;
+    try {
+      while (_signalQueue.isNotEmpty) {
+        final msg = _signalQueue.removeAt(0);
+        await _handleIncomingSignal(msg);
+      }
+    } catch (e) {
+      print('Error processing signal queue: $e');
+    } finally {
+      _isProcessingSignals = false;
+      if (_signalQueue.isNotEmpty) _processSignalQueue();
+    }
   }
 
   void _showIncomingDialog() {
@@ -165,111 +292,48 @@ class _InitiatorPageState extends State<InitiatorPage> {
     );
   }
 
-  void _handleIncomingSignal(Map<String, dynamic> msg) async {
-    final payloadB64 = msg['ciphertext_b64'] as String?;
-    if (payloadB64 == null || payloadB64.isEmpty) return;
+      Future<void> _handleIncomingSignal(Map<String, dynamic> msg) async {
+      final payloadB64 = msg['ciphertext_b64'] as String?;
+      if (payloadB64 == null || payloadB64.isEmpty) return;
 
-    try {
-      final decryptedBytes = await rust_connection.connectionDecrypt(
-        keyHex: _initiatorResult!.kSig,
-        ciphertextB64: payloadB64,
-      );
-      final decoded = utf8.decode(decryptedBytes);
-      print('Initiator: Received Signal: $decoded');
-      final signalingMsg = SignalingMessage.fromJsonString(decoded);
-
-      if (signalingMsg.type == 'answer') {
-        print('Initiator: Processing Answer...');
-        final answer = RTCSessionDescription(
-          signalingMsg.data['sdp'] as String,
-          signalingMsg.data['type'] as String,
+      try {
+        final decryptedBytes = await rust_connection.connectionDecrypt(
+          keyHex: _initiatorResult!.kSig,
+          ciphertextB64: payloadB64,
         );
-        await _webrtcManager!.setRemoteAnswer(answer);
-      } else if (signalingMsg.type == 'ice') {
-        print('Initiator: Processing ICE Candidate...');
-        final candidate = RTCIceCandidate(
-          signalingMsg.data['candidate'] as String,
-          signalingMsg.data['sdpMid'] as String,
-          signalingMsg.data['sdpMLineIndex'] as int,
-        );
-        await _webrtcManager!.addIceCandidate(candidate);
-      } else if (signalingMsg.type == 'disconnect') {
-        print('Initiator: Peer disconnected');
-        _showSnackBar('Peer has disconnected.');
-        await _webrtcManager?.dispose();
-        setState(() {
-          _webrtcManager = null;
-          _webrtcState = null;
-          _isPeerDisconnected = true;
-        });
-      }
-    } catch (e) {
-      print('Initiator: Error handling signal: $e');
-    }
-  }
+        final decoded = utf8.decode(decryptedBytes);
+        print('Initiator: Received Signal: $decoded');
+        final signalingMsg = SignalingMessage.fromJsonString(decoded);
 
-  Future<void> _startWebRTCHandshake() async {
-    try {
-      _webrtcManager = WebRTCManager();
-      await _webrtcManager!.initialize();
-
-      _webrtcManager!.onStateChange.listen((state) {
-        setState(() => _webrtcState = state);
-        if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-          _showSnackBar('WebRTC connected!');
+        if (signalingMsg.type == 'answer') {
+          print('Initiator: Processing Answer...');
+          final answer = RTCSessionDescription(
+            signalingMsg.data['sdp'] as String,
+            signalingMsg.data['type'] as String,
+          );
+          await _webrtcManager!.setRemoteAnswer(answer);
+        } else if (signalingMsg.type == 'ice') {
+          print('Initiator: Processing ICE Candidate...');
+          final candidate = RTCIceCandidate(
+            signalingMsg.data['candidate'] as String,
+            signalingMsg.data['sdpMid'] as String,
+            signalingMsg.data['sdpMLineIndex'] as int,
+          );
+          await _webrtcManager!.addIceCandidate(candidate);
+        } else if (signalingMsg.type == 'disconnect') {
+          print('Initiator: Peer disconnected');
+          _showSnackBar('Peer has disconnected.');
+          await _webrtcManager?.dispose();
+          setState(() {
+            _webrtcManager = null;
+            _webrtcState = null;
+            _isPeerDisconnected = true;
+          });
         }
-      });
-
-      _webrtcManager!.onMessage.listen((message) {
-        setState(() => _receivedMessage = message);
-        _showSnackBar('Received: $message');
-      });
-
-      _webrtcManager!.onIceCandidate.listen(
-        (candidate) => _sendIceCandidate(candidate),
-      );
-
-      final offer = await _webrtcManager!.createOffer();
-      print('Initiator: Created Offer');
-
-      final offerMsg = SignalingMessage(
-        type: 'offer',
-        data: {'sdp': offer.sdp, 'type': offer.type},
-      );
-      final offerB64 = await rust_connection.connectionEncrypt(
-        keyHex: _initiatorResult!.kSig,
-        plaintext: utf8.encode(offerMsg.toJsonString()),
-      );
-      print('Initiator: Sending Offer...');
-      await _connectionService.sendSignal(
-        mailboxId: _initiatorServerMailboxId!,
-        ciphertextB64: offerB64,
-      );
-    } catch (e) {
-      print('Initiator: WebRTC Error: $e');
-      _showSnackBar('WebRTC error: $e');
+      } catch (e) {
+        print('Initiator: Error handling signal: $e');
+      }
     }
-  }
-
-  Future<void> _sendIceCandidate(RTCIceCandidate candidate) async {
-    final iceMsg = SignalingMessage(
-      type: 'ice',
-      data: {
-        'candidate': candidate.candidate,
-        'sdpMid': candidate.sdpMid,
-        'sdpMLineIndex': candidate.sdpMLineIndex,
-      },
-    );
-    final iceB64 = await rust_connection.connectionEncrypt(
-      keyHex: _initiatorResult!.kSig,
-      plaintext: utf8.encode(iceMsg.toJsonString()),
-    );
-    await _connectionService.sendSignal(
-      mailboxId: _initiatorServerMailboxId!,
-      ciphertextB64: iceB64,
-    );
-  }
-
   Future<void> _sendTestMessage() async {
     try {
       await _webrtcManager?.sendMessage('Hello from initiator!');
@@ -571,11 +635,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
               if (_webrtcState ==
                   RTCPeerConnectionState.RTCPeerConnectionStateConnected) ...[
                 const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: _sendTestMessage,
-                  icon: const Icon(Icons.send),
-                  label: const Text('Send Test Message'),
-                ),
+                if (_webrtcManager != null)
+                  FileTransferWidget(webrtcManager: _webrtcManager!),
                 if (_receivedMessage != null) ...[
                   const SizedBox(height: 16),
                   Card(

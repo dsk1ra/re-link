@@ -57,10 +57,10 @@ class _Home extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // defined via --dart-define=SIGNALING_URL=...
+    // defined via --dart-define=SIGNALING_URL=... or --dart-define-from-file=client/config/dev.json
     const signalingUrl = String.fromEnvironment(
       'SIGNALING_URL',
-      defaultValue: 'http://p2p-signaling-alb-887076349.eu-north-1.elb.amazonaws.com',
+      defaultValue: 'http://localhost:8080',
     );
     
     return ConnectionPairingPage(

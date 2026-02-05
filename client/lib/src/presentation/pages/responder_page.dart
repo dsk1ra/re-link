@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:application/src/features/file_transfer/file_transfer_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
@@ -39,6 +40,9 @@ class _ResponderPageState extends State<ResponderPage> {
   String? _joinError;
   bool _joined = false;
   bool _isPeerDisconnected = false;
+  
+  final List<RTCIceCandidate> _iceCandidateQueue = [];
+  bool _isSendingIce = false;
 
   @override
   void initState() {
@@ -46,13 +50,73 @@ class _ResponderPageState extends State<ResponderPage> {
     _connectionService = ConnectionService(
       signalingBaseUrl: widget.signalingBaseUrl,
     );
-    if (widget.initialToken != null) {
-      _tokenController.text = widget.initialToken!;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _joinWithToken());
+// ...
+  }
+
+// ...
+
+  Future<void> _startWebRTCHandshake() async {
+    try {
+      _webrtcManager = WebRTCManager();
+      await _webrtcManager!.initialize();
+
+      _webrtcManager!.onStateChange.listen((state) {
+        print('Responder: State changed to $state');
+        setState(() => _webrtcState = state);
+        if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          _showSnackBar('WebRTC connected!');
+        }
+      });
+
+      _webrtcManager!.onMessage.listen((message) {
+        setState(() => _receivedMessage = message);
+        _showSnackBar('Received: $message');
+      });
+
+      _webrtcManager!.onIceCandidate.listen(
+        (candidate) => _queueIceCandidate(candidate),
+      );
+
+      // 1. Process any messages already waiting in the mailbox (e.g. the Offer)
+      await _fetchAndProcessExistingMessages();
+
+      // 2. Listen for new messages (e.g. ICE candidates)
+      _startListeningForSignals();
+    } catch (e) {
+      _showSnackBar('WebRTC error: $e');
+    }
+  }
+
+  void _queueIceCandidate(RTCIceCandidate candidate) {
+    _iceCandidateQueue.add(candidate);
+    if (!_isSendingIce) {
+      _processIceQueue();
+    }
+  }
+
+  Future<void> _processIceQueue() async {
+    if (_isSendingIce || _iceCandidateQueue.isEmpty) return;
+
+    _isSendingIce = true;
+    try {
+      while (_iceCandidateQueue.isNotEmpty) {
+        final candidate = _iceCandidateQueue.removeAt(0);
+        await _sendIceCandidate(candidate);
+        // Small delay to be nice to the server
+        await Future.delayed(const Duration(milliseconds: 100)); 
+      }
+    } catch (e) {
+      print('Error sending queued ICE candidate: $e');
+    } finally {
+      _isSendingIce = false;
+      // Double check in case new ones came in
+      if (_iceCandidateQueue.isNotEmpty) _processIceQueue(); 
     }
   }
 
   StreamSubscription? _mailboxSubscription;
+  final List<Map<String, dynamic>> _signalQueue = [];
+  bool _isProcessingSignals = false;
 
   @override
   void dispose() {
@@ -62,7 +126,7 @@ class _ResponderPageState extends State<ResponderPage> {
     _webrtcManager?.dispose();
     super.dispose();
   }
-
+// ...
   Future<void> _joinWithToken() async {
     final input = _tokenController.text.trim();
     if (input.isEmpty) {
@@ -137,44 +201,13 @@ class _ResponderPageState extends State<ResponderPage> {
     }
   }
 
-  Future<void> _startWebRTCHandshake() async {
-    try {
-      _webrtcManager = WebRTCManager();
-      await _webrtcManager!.initialize();
-
-      _webrtcManager!.onStateChange.listen((state) {
-        setState(() => _webrtcState = state);
-        if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-          _showSnackBar('WebRTC connected!');
-        }
-      });
-
-      _webrtcManager!.onMessage.listen((message) {
-        setState(() => _receivedMessage = message);
-        _showSnackBar('Received: $message');
-      });
-
-      _webrtcManager!.onIceCandidate.listen(
-        (candidate) => _sendIceCandidate(candidate),
-      );
-
-      // 1. Process any messages already waiting in the mailbox (e.g. the Offer)
-      await _fetchAndProcessExistingMessages();
-
-      // 2. Listen for new messages (e.g. ICE candidates)
-      _startListeningForSignals();
-    } catch (e) {
-      _showSnackBar('WebRTC error: $e');
-    }
-  }
-
   Future<void> _fetchAndProcessExistingMessages() async {
     try {
       final messages = await _connectionService.fetchMessages(
         mailboxId: _responderMailboxId!,
       );
       for (final msg in messages) {
-        _handleIncomingSignal(msg);
+        await _handleIncomingSignal(msg);
       }
     } catch (e) {
       print('Failed to fetch existing messages: $e');
@@ -186,11 +219,35 @@ class _ResponderPageState extends State<ResponderPage> {
     _mailboxSubscription = _connectionService
         .subscribeMailbox(mailboxId: _responderMailboxId!)
         .listen((msg) {
-      _handleIncomingSignal(msg);
+      _queueIncomingSignal(msg);
     });
   }
 
-  void _handleIncomingSignal(Map<String, dynamic> msg) async {
+  void _queueIncomingSignal(Map<String, dynamic> msg) {
+    _signalQueue.add(msg);
+    if (!_isProcessingSignals) {
+      _processSignalQueue();
+    }
+  }
+
+  Future<void> _processSignalQueue() async {
+    if (_isProcessingSignals || _signalQueue.isEmpty) return;
+
+    _isProcessingSignals = true;
+    try {
+      while (_signalQueue.isNotEmpty) {
+        final msg = _signalQueue.removeAt(0);
+        await _handleIncomingSignal(msg);
+      }
+    } catch (e) {
+      print('Error processing signal queue: $e');
+    } finally {
+      _isProcessingSignals = false;
+      if (_signalQueue.isNotEmpty) _processSignalQueue();
+    }
+  }
+
+  Future<void> _handleIncomingSignal(Map<String, dynamic> msg) async {
     final payloadB64 = msg['ciphertext_b64'] as String?;
     if (payloadB64 == null || payloadB64.isEmpty) return;
 
@@ -511,15 +568,8 @@ class _ResponderPageState extends State<ResponderPage> {
               if (_webrtcState ==
                   RTCPeerConnectionState.RTCPeerConnectionStateConnected) ...[
                 const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: _sendTestMessage,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFcc3f0c),
-                    foregroundColor: const Color(0xFFffffff),
-                  ),
-                  icon: const Icon(Icons.send),
-                  label: const Text('Send Test Message'),
-                ),
+                if (_webrtcManager != null)
+                  FileTransferWidget(webrtcManager: _webrtcManager!),
                 if (_receivedMessage != null) ...[
                   const SizedBox(height: 16),
                   Card(
