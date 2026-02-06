@@ -77,7 +77,7 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
     let redis_client = redis::Client::open(config.redis_url.clone())?;
     let redis_conn = redis_client.get_connection_manager().await?;
     let redis_repo = RedisRepository::new(redis_conn, config.redis_key_prefix.clone());
-    let rendezvous_service = Arc::new(RendezvousService::new(redis_repo, config.room_ttl.as_secs()));
+    let rendezvous_service = Arc::new(RendezvousService::new(redis_repo, config.mailbox_ttl.as_secs()));
 
     let state = AppState {
         registry,

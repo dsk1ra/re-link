@@ -91,3 +91,9 @@ impl InMemorySessionRepository {
         });
     }
 }
+
+impl Default for InMemorySessionRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Clone)]
 pub struct RendezvousService {
     repo: RedisRepository,
-    room_ttl_secs: u64,
+    mailbox_ttl_secs: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -28,10 +28,10 @@ pub enum RendezvousError {
 }
 
 impl RendezvousService {
-    pub fn new(repo: RedisRepository, room_ttl_secs: u64) -> Self {
+    pub fn new(repo: RedisRepository, mailbox_ttl_secs: u64) -> Self {
         Self {
             repo,
-            room_ttl_secs,
+            mailbox_ttl_secs,
         }
     }
 
@@ -39,7 +39,7 @@ impl RendezvousService {
         let mailbox_id = connection::gen_mailbox_id();
         
         let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
-        let expires_ms = now_ms + (self.room_ttl_secs as u128 * 1000);
+        let expires_ms = now_ms + (self.mailbox_ttl_secs as u128 * 1000);
 
         let mailbox_state = MailboxState {
             mailbox_id: mailbox_id.clone(),
@@ -48,7 +48,7 @@ impl RendezvousService {
             expires_at_epoch_ms: expires_ms,
         };
 
-        self.repo.save_mailbox_meta(&mailbox_state, self.room_ttl_secs).await.map_err(RendezvousError::Redis)?;
+        self.repo.save_mailbox_meta(&mailbox_state, self.mailbox_ttl_secs).await.map_err(RendezvousError::Redis)?;
         self.repo.clear_mailbox_messages(&mailbox_id).await.map_err(RendezvousError::Redis)?;
         
         // Store rendezvous mapping (5 mins TTL)
@@ -79,7 +79,7 @@ impl RendezvousService {
         
         // Link them
         initiator_state.peer_mailbox_id = Some(responder_mailbox_id.clone());
-        self.repo.save_mailbox_meta(&initiator_state, self.room_ttl_secs).await.map_err(RendezvousError::Redis)?;
+        self.repo.save_mailbox_meta(&initiator_state, self.mailbox_ttl_secs).await.map_err(RendezvousError::Redis)?;
 
         let responder_state = MailboxState {
             mailbox_id: responder_mailbox_id.clone(),
@@ -87,7 +87,7 @@ impl RendezvousService {
             created_at_epoch_ms: initiator_state.created_at_epoch_ms,
             expires_at_epoch_ms: initiator_state.expires_at_epoch_ms,
         };
-        self.repo.save_mailbox_meta(&responder_state, self.room_ttl_secs).await.map_err(RendezvousError::Redis)?;
+        self.repo.save_mailbox_meta(&responder_state, self.mailbox_ttl_secs).await.map_err(RendezvousError::Redis)?;
         self.repo.clear_mailbox_messages(&responder_mailbox_id).await.map_err(RendezvousError::Redis)?;
 
         // Create join message for initiator
@@ -99,7 +99,7 @@ impl RendezvousService {
             timestamp_epoch_ms: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(),
         };
 
-        self.repo.push_message(&initiator_mailbox_id, &join_msg, self.room_ttl_secs).await.map_err(RendezvousError::Redis)?;
+        self.repo.push_message(&initiator_mailbox_id, &join_msg, self.mailbox_ttl_secs).await.map_err(RendezvousError::Redis)?;
 
         let join_json = serde_json::to_string(&join_msg).unwrap_or_default();
         
@@ -136,7 +136,7 @@ impl RendezvousService {
             timestamp_epoch_ms: now_ms,
         };
 
-        self.repo.push_message(&peer_mailbox_id, &msg, self.room_ttl_secs).await.map_err(RendezvousError::Redis)?;
+        self.repo.push_message(&peer_mailbox_id, &msg, self.mailbox_ttl_secs).await.map_err(RendezvousError::Redis)?;
         
         let msg_json = serde_json::to_string(&msg).unwrap_or_default();
         Ok((peer_mailbox_id, msg_json))

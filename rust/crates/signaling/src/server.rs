@@ -75,7 +75,7 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
     let redis_client = redis::Client::open(config.redis_url.clone())?;
     let redis_conn = redis_client.get_connection_manager().await?;
     let redis_repo = RedisRepository::new(redis_conn, config.redis_key_prefix.clone());
-    let rendezvous_service = Arc::new(RendezvousService::new(redis_repo, config.room_ttl.as_secs()));
+    let rendezvous_service = Arc::new(RendezvousService::new(redis_repo, config.mailbox_ttl.as_secs()));
 
     let state = AppState {
         registry,
@@ -278,8 +278,8 @@ async fn ws_upgrade(
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     // Verify mailbox exists before upgrading
-    if let Err(_) = state.rendezvous_service.verify_mailbox(&mailbox_id).await {
-         return StatusCode::NOT_FOUND.into_response();
+    if state.rendezvous_service.verify_mailbox(&mailbox_id).await.is_err() {
+        return StatusCode::NOT_FOUND.into_response();
     }
 
     ws.on_upgrade(move |socket| handle_ws(socket, state, mailbox_id))
@@ -288,14 +288,9 @@ async fn ws_upgrade(
 async fn handle_ws(mut socket: WebSocket, state: AppState, mailbox_id: String) {
     let mut rx = state.push.subscribe(&mailbox_id).await;
     // Forward broadcast events to WebSocket client
-    loop {
-        match rx.recv().await {
-            Ok(msg) => {
-                if socket.send(Message::Text(msg.into())).await.is_err() {
-                    break;
-                }
-            }
-            Err(_) => break,
+    while let Ok(msg) = rx.recv().await {
+        if socket.send(Message::Text(msg)).await.is_err() {
+            break;
         }
     }
 }

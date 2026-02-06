@@ -88,7 +88,6 @@ impl FileTransferService {
         // Reader Task (Producer)
         let reader_handle = tokio::spawn(async move {
             let mut file = File::open(&file_path).await.map_err(|e| e.to_string())?;
-            let mut seq = 0u64;
             
             loop {
                 let mut buffer = vec![0u8; CHUNK_SIZE];
@@ -99,19 +98,13 @@ impl FileTransferService {
                 }
                 
                 buffer.truncate(n);
-                
-                // Synchronous Validation (BLAKE3)
-                let mut chunk_hasher = Hasher::new();
-                chunk_hasher.update(&buffer);
-                let _chunk_hash = chunk_hasher.finalize().to_string();
 
                 if tx.send(buffer).await.is_err() {
                     error!("Reader failed to send chunk to channel");
                     break;
                 }
-                seq += 1;
             }
-            Ok::<u64, String>(seq)
+            Ok::<(), String>(())
         });
 
         // Writer Task (Consumer)
@@ -146,7 +139,7 @@ impl FileTransferService {
         });
 
         // Wait for tasks to complete
-        let _reader_result = reader_handle.await.map_err(|e| anyhow::anyhow!("Reader task panicked: {}", e))?
+        reader_handle.await.map_err(|e| anyhow::anyhow!("Reader task panicked: {}", e))?
             .map_err(|e| anyhow::anyhow!("Reader error: {}", e))?;
         writer_handle.await.map_err(|e| anyhow::anyhow!("Writer task panicked: {}", e))??;
 

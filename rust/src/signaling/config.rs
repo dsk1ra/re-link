@@ -11,7 +11,7 @@ const DEFAULT_PUBLIC_URL: &str = "http://127.0.0.1:8080";
 const DEFAULT_SESSION_TTL_SECS: u64 = 300;
 const DEFAULT_HEARTBEAT_INTERVAL_SECS: u64 = 30;
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1/";
-const DEFAULT_ROOM_TTL_SECS: u64 = 30;
+const DEFAULT_MAILBOX_TTL_SECS: u64 = 30;
 const DEFAULT_REDIS_REQUIRE_TLS: bool = true;
 const DEFAULT_REDIS_KEY_PREFIX: &str = "sig";
 const DEFAULT_JOINED_FLAG_TTL_SECS: u64 = 60;
@@ -24,7 +24,7 @@ pub struct SignalingServerConfig {
     pub session_ttl: Duration,
     pub heartbeat_interval: Duration,
     pub redis_url: String,
-    pub room_ttl: Duration,
+    pub mailbox_ttl: Duration,
     pub redis_require_tls: bool,
     pub redis_key_prefix: String,
     pub joined_flag_ttl: Duration,
@@ -60,11 +60,11 @@ impl SignalingServerConfig {
             .unwrap_or_else(|| Duration::from_secs(DEFAULT_HEARTBEAT_INTERVAL_SECS));
 
         let redis_url = env::var("SIGNALING_REDIS_URL").unwrap_or_else(|_| DEFAULT_REDIS_URL.to_string());
-        let room_ttl = env::var("SIGNALING_ROOM_TTL_SECS")
+        let mailbox_ttl = env::var("SIGNALING_MAILBOX_TTL_SECS")
             .ok()
             .and_then(|raw| raw.parse::<u64>().ok())
             .map(Duration::from_secs)
-            .unwrap_or_else(|| Duration::from_secs(DEFAULT_ROOM_TTL_SECS));
+            .unwrap_or_else(|| Duration::from_secs(DEFAULT_MAILBOX_TTL_SECS));
 
         // SECURITY: Require TLS for Redis by default. Can be disabled for local dev only.
         let redis_require_tls = env::var("SIGNALING_REDIS_REQUIRE_TLS")
@@ -108,7 +108,7 @@ impl SignalingServerConfig {
             session_ttl,
             heartbeat_interval,
             redis_url,
-            room_ttl,
+            mailbox_ttl,
             redis_require_tls,
             redis_key_prefix,
             joined_flag_ttl,
@@ -130,7 +130,7 @@ impl Default for SignalingServerConfig {
             session_ttl: Duration::from_secs(DEFAULT_SESSION_TTL_SECS),
             heartbeat_interval: Duration::from_secs(DEFAULT_HEARTBEAT_INTERVAL_SECS),
             redis_url: DEFAULT_REDIS_URL.to_string(),
-            room_ttl: Duration::from_secs(DEFAULT_ROOM_TTL_SECS),
+            mailbox_ttl: Duration::from_secs(DEFAULT_MAILBOX_TTL_SECS),
             redis_require_tls: DEFAULT_REDIS_REQUIRE_TLS,
             redis_key_prefix: DEFAULT_REDIS_KEY_PREFIX.to_string(),
             joined_flag_ttl: Duration::from_secs(DEFAULT_JOINED_FLAG_TTL_SECS),
