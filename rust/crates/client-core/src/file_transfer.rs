@@ -81,7 +81,7 @@ impl FileTransferService {
             debug!("Buffered amount low, notifying writer");
             let n = Arc::clone(&notify_clone);
             Box::pin(async move {
-                n.notify_waiters();
+                n.notify_one();
             })
         })).await;
 
