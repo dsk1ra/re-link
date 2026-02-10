@@ -1,9 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
 import 'package:application/src/rust/frb_generated.dart';
 import 'package:application/src/presentation/pages/connection_pairing_page.dart';
 import 'package:application/src/features/pairing/data/http/http_signaling_backend.dart';
 
 Future<void> main() async {
+  Logger.root.level = Level.INFO;
+  Logger.root.onRecord.listen((record) {
+    debugPrint(
+      '${record.level.name}: ${record.time.toIso8601String()} '
+      '${record.loggerName}: ${record.message}',
+    );
+    if (record.error != null) {
+      debugPrint('Error: ${record.error}');
+    }
+    if (record.stackTrace != null) {
+      debugPrint(record.stackTrace.toString());
+    }
+  });
   await RustLib.init();
   runApp(const MyApp());
 }
@@ -21,8 +35,8 @@ class MyApp extends StatelessWidget {
           primary: const Color(0xFF19231a),
           secondary: const Color(0xFFcc3f0c),
           surface: const Color(0xFFd8cbc7),
-          background: const Color(0xFFd8cbc7),
         ),
+        scaffoldBackgroundColor: const Color(0xFFd8cbc7),
         useMaterial3: true,
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
@@ -62,7 +76,7 @@ class _Home extends StatelessWidget {
       'SIGNALING_URL',
       defaultValue: 'http://localhost:8080',
     );
-    
+
     return ConnectionPairingPage(
       signalingBaseUrl: signalingUrl,
       backend: HttpSignalingBackend(signalingUrl),

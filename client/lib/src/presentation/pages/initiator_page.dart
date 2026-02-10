@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:logging/logging.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:application/src/features/file_transfer/file_transfer_widget.dart';
@@ -28,6 +29,7 @@ class InitiatorPage extends StatefulWidget {
 }
 
 class _InitiatorPageState extends State<InitiatorPage> {
+  static final Logger _log = Logger('InitiatorPage');
   late ConnectionService _connectionService;
   WebRTCManager? _webrtcManager;
 
@@ -59,19 +61,19 @@ class _InitiatorPageState extends State<InitiatorPage> {
     );
     _createInitiatorLink();
   }
-  
+
   // ...
 
   Future<void> _startWebRTCHandshake() async {
     try {
-      print('Initiator: Starting WebRTC Handshake...');
+      _log.info('Initiator: Starting WebRTC Handshake...');
       _webrtcManager = WebRTCManager();
-      print('Initiator: Initializing WebRTCManager...');
+      _log.info('Initiator: Initializing WebRTCManager...');
       await _webrtcManager!.initialize();
-      print('Initiator: WebRTCManager initialized.');
+      _log.info('Initiator: WebRTCManager initialized.');
 
       _webrtcManager!.onStateChange.listen((state) {
-        print('Initiator: State changed to $state');
+        _log.info('Initiator: State changed to $state');
         setState(() => _webrtcState = state);
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _showSnackBar('WebRTC connected!');
@@ -87,25 +89,25 @@ class _InitiatorPageState extends State<InitiatorPage> {
         (candidate) => _queueIceCandidate(candidate),
       );
 
-      print('Initiator: Creating Offer...');
+      _log.info('Initiator: Creating Offer...');
       final offer = await _webrtcManager!.createOffer();
-      print('Initiator: Created Offer');
+      _log.info('Initiator: Created Offer');
 
       final offerMsg = SignalingMessage(
         type: 'offer',
         data: {'sdp': offer.sdp, 'type': offer.type},
       );
-      final offerB64 = await rust_connection.connectionEncrypt(
+      final offerB64 = rust_connection.connectionEncrypt(
         keyHex: _initiatorResult!.kSig,
         plaintext: utf8.encode(offerMsg.toJsonString()),
       );
-      print('Initiator: Sending Offer...');
+      _log.info('Initiator: Sending Offer...');
       await _connectionService.sendSignal(
         mailboxId: _initiatorServerMailboxId!,
         ciphertextB64: offerB64,
       );
     } catch (e) {
-      print('Initiator: WebRTC Error: $e');
+      _log.severe('Initiator: WebRTC Error', e);
       _showSnackBar('WebRTC error: $e');
     }
   }
@@ -126,35 +128,35 @@ class _InitiatorPageState extends State<InitiatorPage> {
         final candidate = _iceCandidateQueue.removeAt(0);
         await _sendIceCandidate(candidate);
         // Small delay to be nice to the server
-        await Future.delayed(const Duration(milliseconds: 100)); 
+        await Future.delayed(const Duration(milliseconds: 100));
       }
     } catch (e) {
-      print('Error sending queued ICE candidate: $e');
+      _log.warning('Error sending queued ICE candidate: $e');
     } finally {
       _isSendingIce = false;
       // Double check in case new ones came in
-      if (_iceCandidateQueue.isNotEmpty) _processIceQueue(); 
+      if (_iceCandidateQueue.isNotEmpty) _processIceQueue();
     }
   }
 
-      Future<void> _sendIceCandidate(RTCIceCandidate candidate) async {
-        final iceMsg = SignalingMessage(
-          type: 'ice',
-          data: {
-            'candidate': candidate.candidate,
-            'sdpMid': candidate.sdpMid,
-            'sdpMLineIndex': candidate.sdpMLineIndex,
-          },
-        );
-        final iceB64 = await rust_connection.connectionEncrypt(
-          keyHex: _initiatorResult!.kSig,
-          plaintext: utf8.encode(iceMsg.toJsonString()),
-        );
-        await _connectionService.sendSignal(
-          mailboxId: _initiatorServerMailboxId!,
-          ciphertextB64: iceB64,
-        );
-      }
+  Future<void> _sendIceCandidate(RTCIceCandidate candidate) async {
+    final iceMsg = SignalingMessage(
+      type: 'ice',
+      data: {
+        'candidate': candidate.candidate,
+        'sdpMid': candidate.sdpMid,
+        'sdpMLineIndex': candidate.sdpMLineIndex,
+      },
+    );
+    final iceB64 = rust_connection.connectionEncrypt(
+      keyHex: _initiatorResult!.kSig,
+      plaintext: utf8.encode(iceMsg.toJsonString()),
+    );
+    await _connectionService.sendSignal(
+      mailboxId: _initiatorServerMailboxId!,
+      ciphertextB64: iceB64,
+    );
+  }
 
   @override
   void dispose() {
@@ -201,19 +203,24 @@ class _InitiatorPageState extends State<InitiatorPage> {
     _mailboxSubscription?.cancel();
     setState(() => _pollingPeer = true);
 
-    _mailboxSubscription = _connectionService.subscribeMailbox(mailboxId: mailboxId).listen((evt) {
-      if (!_peerAccepted && _incomingRequestFrom == null) {
-        setState(() {
-          _pollingPeer = false;
-          _incomingRequestFrom = evt['from_mailbox_id'] as String?;
-        });
-        _showIncomingDialog();
-      } else if (_peerAccepted) {
-        _queueIncomingSignal(evt);
-      }
-    }, onError: (_) {
-      setState(() => _pollingPeer = false);
-    });
+    _mailboxSubscription = _connectionService
+        .subscribeMailbox(mailboxId: mailboxId)
+        .listen(
+          (evt) {
+            if (!_peerAccepted && _incomingRequestFrom == null) {
+              setState(() {
+                _pollingPeer = false;
+                _incomingRequestFrom = evt['from_mailbox_id'] as String?;
+              });
+              _showIncomingDialog();
+            } else if (_peerAccepted) {
+              _queueIncomingSignal(evt);
+            }
+          },
+          onError: (_) {
+            setState(() => _pollingPeer = false);
+          },
+        );
   }
 
   void _queueIncomingSignal(Map<String, dynamic> msg) {
@@ -233,7 +240,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
         await _handleIncomingSignal(msg);
       }
     } catch (e) {
-      print('Error processing signal queue: $e');
+      _log.warning('Error processing signal queue: $e');
     } finally {
       _isProcessingSignals = false;
       if (_signalQueue.isNotEmpty) _processSignalQueue();
@@ -292,54 +299,46 @@ class _InitiatorPageState extends State<InitiatorPage> {
     );
   }
 
-      Future<void> _handleIncomingSignal(Map<String, dynamic> msg) async {
-      final payloadB64 = msg['ciphertext_b64'] as String?;
-      if (payloadB64 == null || payloadB64.isEmpty) return;
+  Future<void> _handleIncomingSignal(Map<String, dynamic> msg) async {
+    final payloadB64 = msg['ciphertext_b64'] as String?;
+    if (payloadB64 == null || payloadB64.isEmpty) return;
 
-      try {
-        final decryptedBytes = await rust_connection.connectionDecrypt(
-          keyHex: _initiatorResult!.kSig,
-          ciphertextB64: payloadB64,
-        );
-        final decoded = utf8.decode(decryptedBytes);
-        print('Initiator: Received Signal: $decoded');
-        final signalingMsg = SignalingMessage.fromJsonString(decoded);
-
-        if (signalingMsg.type == 'answer') {
-          print('Initiator: Processing Answer...');
-          final answer = RTCSessionDescription(
-            signalingMsg.data['sdp'] as String,
-            signalingMsg.data['type'] as String,
-          );
-          await _webrtcManager!.setRemoteAnswer(answer);
-        } else if (signalingMsg.type == 'ice') {
-          print('Initiator: Processing ICE Candidate...');
-          final candidate = RTCIceCandidate(
-            signalingMsg.data['candidate'] as String,
-            signalingMsg.data['sdpMid'] as String,
-            signalingMsg.data['sdpMLineIndex'] as int,
-          );
-          await _webrtcManager!.addIceCandidate(candidate);
-        } else if (signalingMsg.type == 'disconnect') {
-          print('Initiator: Peer disconnected');
-          _showSnackBar('Peer has disconnected.');
-          await _webrtcManager?.dispose();
-          setState(() {
-            _webrtcManager = null;
-            _webrtcState = null;
-            _isPeerDisconnected = true;
-          });
-        }
-      } catch (e) {
-        print('Initiator: Error handling signal: $e');
-      }
-    }
-  Future<void> _sendTestMessage() async {
     try {
-      await _webrtcManager?.sendMessage('Hello from initiator!');
-      _showSnackBar('Message sent');
+      final decryptedBytes = rust_connection.connectionDecrypt(
+        keyHex: _initiatorResult!.kSig,
+        ciphertextB64: payloadB64,
+      );
+      final decoded = utf8.decode(decryptedBytes);
+      _log.info('Initiator: Received Signal: $decoded');
+      final signalingMsg = SignalingMessage.fromJsonString(decoded);
+
+      if (signalingMsg.type == 'answer') {
+        _log.info('Initiator: Processing Answer...');
+        final answer = RTCSessionDescription(
+          signalingMsg.data['sdp'] as String,
+          signalingMsg.data['type'] as String,
+        );
+        await _webrtcManager!.setRemoteAnswer(answer);
+      } else if (signalingMsg.type == 'ice') {
+        _log.info('Initiator: Processing ICE Candidate...');
+        final candidate = RTCIceCandidate(
+          signalingMsg.data['candidate'] as String,
+          signalingMsg.data['sdpMid'] as String,
+          signalingMsg.data['sdpMLineIndex'] as int,
+        );
+        await _webrtcManager!.addIceCandidate(candidate);
+      } else if (signalingMsg.type == 'disconnect') {
+        _log.info('Initiator: Peer disconnected');
+        _showSnackBar('Peer has disconnected.');
+        await _webrtcManager?.dispose();
+        setState(() {
+          _webrtcManager = null;
+          _webrtcState = null;
+          _isPeerDisconnected = true;
+        });
+      }
     } catch (e) {
-      _showSnackBar('Send failed: $e');
+      _log.warning('Initiator: Error handling signal: $e');
     }
   }
 
@@ -351,7 +350,9 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
   Future<void> _shareLink() async {
     if (_connectionLink == null) return;
-    await Share.share(_connectionLink!, subject: 'P2P Connection Link');
+    await SharePlus.instance.share(
+      ShareParams(text: _connectionLink!, subject: 'P2P Connection Link'),
+    );
   }
 
   void _showSnackBar(String message) {
@@ -378,7 +379,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
     if (_initiatorResult == null || _initiatorServerMailboxId == null) return;
     try {
       final msg = SignalingMessage(type: 'disconnect', data: {});
-      final encryptedB64 = await rust_connection.connectionEncrypt(
+      final encryptedB64 = rust_connection.connectionEncrypt(
         keyHex: _initiatorResult!.kSig,
         plaintext: utf8.encode(msg.toJsonString()),
       );
@@ -387,12 +388,13 @@ class _InitiatorPageState extends State<InitiatorPage> {
         ciphertextB64: encryptedB64,
       );
     } catch (e) {
-      print('Error sending disconnect signal: $e');
+      _log.warning('Error sending disconnect signal: $e');
     }
   }
 
   Future<bool> _showExitConfirmation() async {
-    if (_webrtcState != RTCPeerConnectionState.RTCPeerConnectionStateConnected &&
+    if (_webrtcState !=
+            RTCPeerConnectionState.RTCPeerConnectionStateConnected &&
         _webrtcState !=
             RTCPeerConnectionState.RTCPeerConnectionStateConnecting) {
       return true;
@@ -435,209 +437,85 @@ class _InitiatorPageState extends State<InitiatorPage> {
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldPop = await _showExitConfirmation();
-        if (shouldPop && mounted) {
+        if (!mounted) return;
+        if (shouldPop) {
           Navigator.of(context).pop();
         }
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFd8cbc7),
         appBar: AppBar(
-        title: const Text(
-          'Create Connection',
-          style: TextStyle(color: Color(0xFFffffff)),
+          title: const Text(
+            'Create Connection',
+            style: TextStyle(color: Color(0xFFffffff)),
+          ),
+          backgroundColor: const Color(0xFF19231a),
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Color(0xFFffffff)),
         ),
-        backgroundColor: const Color(0xFF19231a),
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Color(0xFFffffff)),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_generatingLink)
-              const Center(child: CircularProgressIndicator())
-            else if (_connectionLink != null && !_peerAccepted) ...[
-              const Text(
-                'Share this with your peer',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              Center(
-                child: QrImageView(
-                  data: _connectionLink!,
-                  version: QrVersions.auto,
-                  size: 240,
-                  backgroundColor: Colors.white,
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_generatingLink)
+                const Center(child: CircularProgressIndicator())
+              else if (_connectionLink != null && !_peerAccepted) ...[
+                const Text(
+                  'Share this with your peer',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
                 ),
-              ),
-              const SizedBox(height: 24),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Connection Link',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      SelectableText(
-                        _connectionLink!,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ],
+                const SizedBox(height: 24),
+                Center(
+                  child: QrImageView(
+                    data: _connectionLink!,
+                    version: QrVersions.auto,
+                    size: 240,
+                    backgroundColor: Colors.white,
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _copyLink,
-                      icon: const Icon(Icons.copy),
-                      label: const Text('Copy Link'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _shareLink,
-                      icon: const Icon(Icons.share),
-                      label: const Text('Share'),
-                    ),
-                  ),
-                ],
-              ),
-              if (_initiatorResult != null) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
                 Card(
-                  color: const Color(0xFFffffff),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const Text(
-                          'Verification Code',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF19231a),
-                          ),
+                          'Connection Link',
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 8),
                         SelectableText(
-                          _initiatorResult!.sas.substring(0, 16),
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 16,
-                            letterSpacing: 2,
-                            color: Color(0xFFcc3f0c),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Compare this with your peer',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: const Color(0xFF19231a).withOpacity(0.6),
-                          ),
+                          _connectionLink!,
+                          style: const TextStyle(fontSize: 12),
                         ),
                       ],
                     ),
                   ),
                 ),
-              ],
-              if (_pollingPeer) ...[
-                const SizedBox(height: 24),
-                Card(
-                  color: const Color(0xFFffffff),
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xFFcc3f0c),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        const Text(
-                          'Waiting for peer...',
-                          style: TextStyle(color: Color(0xFF19231a)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ] else if (_peerAccepted) ...[
-              Card(
-                color: const Color(0xFFffffff),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Icon(
-                        _isPeerDisconnected
-                            ? Icons.cancel
-                            : (_webrtcState ==
-                                    RTCPeerConnectionState
-                                        .RTCPeerConnectionStateConnected
-                                ? Icons.check_circle
-                                : Icons.sync),
-                        size: 64,
-                        color: _isPeerDisconnected
-                            ? Colors.red
-                            : (_webrtcState ==
-                                    RTCPeerConnectionState
-                                        .RTCPeerConnectionStateConnected
-                                ? const Color(0xFFcc3f0c)
-                                : const Color(0xFF19231a)),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _isPeerDisconnected
-                            ? 'Connection Ended'
-                            : (_webrtcState ==
-                                    RTCPeerConnectionState
-                                        .RTCPeerConnectionStateConnected
-                                ? 'Connected!'
-                                : 'Establishing Connection...'),
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'WebRTC: ${_webrtcStateText()}',
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                      if (_isPeerDisconnected) ...[
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('Return to Home'),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              if (_webrtcState ==
-                  RTCPeerConnectionState.RTCPeerConnectionStateConnected) ...[
                 const SizedBox(height: 16),
-                if (_webrtcManager != null)
-                  FileTransferWidget(webrtcManager: _webrtcManager!),
-                if (_receivedMessage != null) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _copyLink,
+                        icon: const Icon(Icons.copy),
+                        label: const Text('Copy Link'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _shareLink,
+                        icon: const Icon(Icons.share),
+                        label: const Text('Share'),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_initiatorResult != null) ...[
                   const SizedBox(height: 16),
                   Card(
                     color: const Color(0xFFffffff),
@@ -647,28 +525,153 @@ class _InitiatorPageState extends State<InitiatorPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Received Message',
+                            'Verification Code',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: Color(0xFF19231a),
                             ),
                           ),
                           const SizedBox(height: 8),
+                          SelectableText(
+                            _initiatorResult!.sas.substring(0, 16),
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 16,
+                              letterSpacing: 2,
+                              color: Color(0xFFcc3f0c),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
                           Text(
-                            _receivedMessage!,
-                            style: const TextStyle(color: Color(0xFF19231a)),
+                            'Compare this with your peer',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: const Color(0xFF19231a).withAlpha(153),
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ),
                 ],
+                if (_pollingPeer) ...[
+                  const SizedBox(height: 24),
+                  Card(
+                    color: const Color(0xFFffffff),
+                    elevation: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFFcc3f0c),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          const Text(
+                            'Waiting for peer...',
+                            style: TextStyle(color: Color(0xFF19231a)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ] else if (_peerAccepted) ...[
+                Card(
+                  color: const Color(0xFFffffff),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        Icon(
+                          _isPeerDisconnected
+                              ? Icons.cancel
+                              : (_webrtcState ==
+                                        RTCPeerConnectionState
+                                            .RTCPeerConnectionStateConnected
+                                    ? Icons.check_circle
+                                    : Icons.sync),
+                          size: 64,
+                          color: _isPeerDisconnected
+                              ? Colors.red
+                              : (_webrtcState ==
+                                        RTCPeerConnectionState
+                                            .RTCPeerConnectionStateConnected
+                                    ? const Color(0xFFcc3f0c)
+                                    : const Color(0xFF19231a)),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _isPeerDisconnected
+                              ? 'Connection Ended'
+                              : (_webrtcState ==
+                                        RTCPeerConnectionState
+                                            .RTCPeerConnectionStateConnected
+                                    ? 'Connected!'
+                                    : 'Establishing Connection...'),
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'WebRTC: ${_webrtcStateText()}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        if (_isPeerDisconnected) ...[
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Return to Home'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                if (_webrtcState ==
+                    RTCPeerConnectionState.RTCPeerConnectionStateConnected) ...[
+                  const SizedBox(height: 16),
+                  if (_webrtcManager != null)
+                    FileTransferWidget(webrtcManager: _webrtcManager!),
+                  if (_receivedMessage != null) ...[
+                    const SizedBox(height: 16),
+                    Card(
+                      color: const Color(0xFFffffff),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Received Message',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF19231a),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _receivedMessage!,
+                              style: const TextStyle(color: Color(0xFF19231a)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ],
             ],
-          ],
+          ),
         ),
       ),
-    ),
     );
   }
 }

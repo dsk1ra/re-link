@@ -1,18 +1,18 @@
 import 'package:application/src/rust/api/connection.dart' as rust_connection;
 import 'package:http/http.dart' as http;
+import 'package:logging/logging.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'dart:convert';
 import 'dart:async';
 
 /// Service for managing connection-based blind rendezvous pairing
 class ConnectionService {
+  static final Logger _log = Logger('ConnectionService');
   final String signalingBaseUrl;
   final http.Client httpClient;
 
-  ConnectionService({
-    required this.signalingBaseUrl,
-    http.Client? httpClient,
-  }) : httpClient = httpClient ?? http.Client();
+  ConnectionService({required this.signalingBaseUrl, http.Client? httpClient})
+    : httpClient = httpClient ?? http.Client();
 
   /// Step 1: Initialize a connection locally (Client A)
   /// Generates a high-entropy secret and derives encryption keys
@@ -56,7 +56,9 @@ class ConnectionService {
     );
 
     if (response.statusCode != 200) {
-      print('Connection Init Failed: ${response.statusCode} - ${response.body}');
+      _log.warning(
+        'Connection Init Failed: ${response.statusCode} - ${response.body}',
+      );
       throw Exception('Failed to init connection: ${response.statusCode}');
     }
 
@@ -71,9 +73,7 @@ class ConnectionService {
     final response = await httpClient.post(
       Uri.parse('$signalingBaseUrl/connection/join'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'token_b64': tokenB64,
-      }),
+      body: jsonEncode({'token_b64': tokenB64}),
     );
 
     if (response.statusCode != 200) {
@@ -105,13 +105,15 @@ class ConnectionService {
         if (response.statusCode == 202) return; // Success
 
         if (response.statusCode == 429 && attempt < retries) {
-          print('Send signal 429 (Attempt $attempt), throttling...');
-          await Future.delayed(Duration(milliseconds: 1000 * attempt)); // Longer backoff
+          _log.info('Send signal 429 (Attempt $attempt), throttling...');
+          await Future.delayed(
+            Duration(milliseconds: 1000 * attempt),
+          ); // Longer backoff
           continue;
         }
 
         if (response.statusCode == 500 && attempt < retries) {
-          print('Send signal 500 (Attempt $attempt), retrying...');
+          _log.info('Send signal 500 (Attempt $attempt), retrying...');
           await Future.delayed(Duration(milliseconds: 500 * attempt));
           continue;
         }
@@ -119,7 +121,7 @@ class ConnectionService {
         throw Exception('Failed to send signal: ${response.statusCode}');
       } catch (e) {
         if (attempt >= retries) rethrow;
-        print('Send signal error (Attempt $attempt): $e, retrying...');
+        _log.warning('Send signal error (Attempt $attempt): $e, retrying...');
         await Future.delayed(Duration(milliseconds: 500 * attempt));
       }
     }
@@ -146,37 +148,39 @@ class ConnectionService {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final messagesList = data['messages'] as List<dynamic>? ?? [];
 
-    return messagesList
-        .map((msg) => msg as Map<String, dynamic>)
-        .toList();
+    return messagesList.map((msg) => msg as Map<String, dynamic>).toList();
   }
 
   /// Subscribe to mailbox messages using WebSockets
-  Stream<Map<String, dynamic>> subscribeMailbox({
-    required String mailboxId,
-  }) {
-    final wsUrl = signalingBaseUrl
+  Stream<Map<String, dynamic>> subscribeMailbox({required String mailboxId}) {
+    final wsBaseUrl = signalingBaseUrl
         .replaceFirst('https://', 'wss://')
-        .replaceFirst('http://', 'ws://') + '/ws/$mailboxId';
-    
-    print('Connecting to WebSocket: $wsUrl');
-    
+        .replaceFirst('http://', 'ws://');
+    final wsUrl = '$wsBaseUrl/ws/$mailboxId';
+
+    _log.info('Connecting to WebSocket: $wsUrl');
+
     final controller = StreamController<Map<String, dynamic>>.broadcast();
     WebSocketChannel? channel;
     bool isDisposed = false;
 
     // Initial fetch to ensure no messages are missed
-    fetchMessages(mailboxId: mailboxId).then((messages) {
-      for (final msg in messages) {
-        if (!controller.isClosed) {
-          controller.add(msg);
-        }
-      }
-    }).catchError((e) => print('Initial fetch error: $e'));
+    fetchMessages(mailboxId: mailboxId)
+        .then((messages) {
+          for (final msg in messages) {
+            if (!controller.isClosed) {
+              controller.add(msg);
+            }
+          }
+        })
+        .catchError((e, st) {
+          _log.warning('Initial fetch error', e, st);
+          return null;
+        });
 
     void connect() {
       if (isDisposed) return;
-      
+
       try {
         channel = WebSocketChannel.connect(Uri.parse(wsUrl));
 
@@ -188,24 +192,24 @@ class ConnectionService {
                 controller.add(msg as Map<String, dynamic>);
               }
             } catch (e) {
-              print('WS message decode error: $e');
+              _log.warning('WS message decode error: $e');
             }
           },
           onError: (e) {
-            print('WS Error: $e');
+            _log.warning('WS Error: $e');
             if (!isDisposed) {
               Future.delayed(const Duration(seconds: 2), () => connect());
             }
           },
           onDone: () {
-            print('WS Closed');
+            _log.info('WS Closed');
             if (!isDisposed) {
-               Future.delayed(const Duration(seconds: 2), () => connect());
+              Future.delayed(const Duration(seconds: 2), () => connect());
             }
           },
         );
       } catch (e) {
-        print('WS Connect Exception: $e');
+        _log.warning('WS Connect Exception: $e');
         if (!isDisposed) {
           Future.delayed(const Duration(seconds: 2), () => connect());
         }
@@ -230,12 +234,12 @@ class ConnectionService {
 
 /// Local result from connection initialization
 class ConnectionInitResult {
-  final String rendezvousId;  // Share via link
-  final String mailboxId;     // Keep private
-  final String secret;        // Shared secret (hex)
-  final String kSig;          // Encryption key (hex)
-  final String kMac;          // MAC key (hex)
-  final String sas;           // Short auth string (hex)
+  final String rendezvousId; // Share via link
+  final String mailboxId; // Keep private
+  final String secret; // Shared secret (hex)
+  final String kSig; // Encryption key (hex)
+  final String kMac; // MAC key (hex)
+  final String sas; // Short auth string (hex)
 
   ConnectionInitResult({
     required this.rendezvousId,

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
+import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 
 enum TransferStatus {
@@ -73,6 +74,7 @@ class FileTransferSession {
 }
 
 class FileTransferService {
+  static final Logger _log = Logger('FileTransferService');
   final WebRTCManager _webrtcManager;
   final StreamController<FileTransferState> _stateController =
       StreamController.broadcast();
@@ -141,13 +143,13 @@ class FileTransferService {
   // Better implementation of _startTransfer with backpressure
   Future<void> _startTransferRobust() async {
     if (_currentSession == null || !_currentSession!.isSender) {
-      print(
+      _log.warning(
         'FileTransfer: Cannot start transfer - session is null or not a sender',
       );
       return;
     }
 
-    print(
+    _log.info(
       'FileTransfer: Starting robust transfer for ${_currentSession!.fileName}',
     );
     _updateState(_currentState.copyWith(status: TransferStatus.transferring));
@@ -163,21 +165,23 @@ class FileTransferService {
       _webrtcManager.setFileChannelBufferedAmountLowThreshold(_lowWaterMark);
       _webrtcManager.setOnFileChannelBufferedAmountLow(() {
         if (lowWaterCompleter != null && !lowWaterCompleter.isCompleted) {
-          print('FileTransfer: Buffered amount low event received');
+          _log.info('FileTransfer: Buffered amount low event received');
           lowWaterCompleter.complete();
         }
       });
 
       while (offset < len) {
         if (_currentState.status != TransferStatus.transferring) {
-          print('FileTransfer: Transfer aborted by state change');
+          _log.warning('FileTransfer: Transfer aborted by state change');
           break;
         }
 
         // Backpressure Guard (Rendezvous behavior)
         int buffered = _webrtcManager.fileChannelBufferedAmount ?? 0;
         if (buffered > _highWaterMark) {
-          print('FileTransfer: HighWaterMark reached ($buffered), pausing...');
+          _log.info(
+            'FileTransfer: HighWaterMark reached ($buffered), pausing...',
+          );
           lowWaterCompleter = Completer();
           await lowWaterCompleter.future;
         }
@@ -193,14 +197,14 @@ class FileTransferService {
 
         offset += chunk.length;
         if (offset % (1024 * 1024) == 0 || offset == len) {
-          print('FileTransfer: Sent $offset / $len bytes');
+          _log.info('FileTransfer: Sent $offset / $len bytes');
         }
         _updateState(_currentState.copyWith(bytesTransferred: offset));
       }
 
       // Send complete message
       if (_currentState.status == TransferStatus.transferring) {
-        print('FileTransfer: Sending file_complete signal');
+        _log.info('FileTransfer: Sending file_complete signal');
         final completeMsg = {
           'type': 'file_complete',
           'id': _currentSession!.id,
@@ -208,8 +212,8 @@ class FileTransferService {
         await _webrtcManager.sendControlMessage(jsonEncode(completeMsg));
         _updateState(_currentState.copyWith(status: TransferStatus.completed));
       }
-    } catch (e) {
-      print('FileTransfer: Send error: $e');
+    } catch (e, st) {
+      _log.severe('FileTransfer: Send error', e, st);
       _endSession(error: 'Send error: $e');
     } finally {
       await raf?.close();
@@ -273,7 +277,7 @@ class FileTransferService {
           break;
       }
     } catch (e) {
-      print('FileTransfer: Error parsing control msg: $e');
+      _log.warning('FileTransfer: Error parsing control msg', e);
     }
   }
 
@@ -351,7 +355,7 @@ class FileTransferService {
         ),
       );
 
-      print('File saved to $finalPath');
+      _log.info('File saved to $finalPath');
       _currentSession = null;
     } catch (e) {
       _endSession(error: 'Finalization failed: $e');

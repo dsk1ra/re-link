@@ -39,7 +39,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
     setState(() {
       _connecting = true;
     });
-    
+
     try {
       await widget.backend.register(deviceLabel: 'Flutter P2P Client');
       setState(() => _connecting = false);
@@ -82,19 +82,22 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     final connected = widget.backend.isRegistered;
-    
+
     return Scaffold(
       backgroundColor: const Color(0xFFd8cbc7),
       appBar: AppBar(
-        title: const Text('P2P Connect', style: TextStyle(color: Color(0xFFffffff))),
+        title: const Text(
+          'P2P Connect',
+          style: TextStyle(color: Color(0xFFffffff)),
+        ),
         centerTitle: true,
         backgroundColor: const Color(0xFF19231a),
         elevation: 0,
@@ -105,9 +108,11 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
-            color: connected 
+            color: connected
                 ? const Color(0xFF19231a)
-                : (_connecting ? const Color(0xFFcc3f0c) : const Color(0xFF19231a).withOpacity(0.7)),
+                : (_connecting
+                      ? const Color(0xFFcc3f0c)
+                      : const Color(0xFF19231a).withAlpha(179)),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -115,15 +120,29 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                   const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFffffff)),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFFffffff),
+                    ),
                   ),
                   const SizedBox(width: 12),
-                  const Text('Connecting to server...', style: TextStyle(color: Color(0xFFffffff))),
-                ] else if (connected) ...[  
-                  Text(widget.backend.displayName ?? 'Connected to server', 
-                    style: const TextStyle(color: Color(0xFFffffff), fontWeight: FontWeight.w500)),
-                ] else ...[  
-                  const Text('Not connected', style: TextStyle(color: Color(0xFFffffff))),
+                  const Text(
+                    'Connecting to server...',
+                    style: TextStyle(color: Color(0xFFffffff)),
+                  ),
+                ] else if (connected) ...[
+                  Text(
+                    widget.backend.displayName ?? 'Connected to server',
+                    style: const TextStyle(
+                      color: Color(0xFFffffff),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ] else ...[
+                  const Text(
+                    'Not connected',
+                    style: TextStyle(color: Color(0xFFffffff)),
+                  ),
                   const SizedBox(width: 12),
                   ElevatedButton(
                     onPressed: _connectToServer,
@@ -137,7 +156,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
               ],
             ),
           ),
-          
+
           // Main options
           Expanded(
             child: Center(
@@ -159,14 +178,11 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                     const SizedBox(height: 16),
                     const Text(
                       'Secure, direct connection with minimal server involvement',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF19231a),
-                      ),
+                      style: TextStyle(fontSize: 14, color: Color(0xFF19231a)),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 48),
-                    
+
                     // Create Connection button
                     SizedBox(
                       width: 300,
@@ -176,7 +192,9 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                           side: BorderSide(
-                            color: connected ? const Color(0xFFcc3f0c) : const Color(0xFF19231a).withOpacity(0.3),
+                            color: connected
+                                ? const Color(0xFFcc3f0c)
+                                : const Color(0xFF19231a).withAlpha(77),
                             width: 2,
                           ),
                         ),
@@ -192,7 +210,11 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                                   style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
-                                    color: connected ? const Color(0xFF19231a) : const Color(0xFF19231a).withOpacity(0.4),
+                                    color: connected
+                                        ? const Color(0xFF19231a)
+                                        : const Color(
+                                            0xFF19231a,
+                                          ).withAlpha(102),
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -200,7 +222,9 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                                   'Generate a link to share',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: connected ? const Color(0xFF19231a).withOpacity(0.7) : const Color(0xFF19231a).withOpacity(0.3),
+                                    color: connected
+                                        ? const Color(0xFF19231a).withAlpha(179)
+                                        : const Color(0xFF19231a).withAlpha(77),
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
@@ -210,9 +234,9 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 24),
-                    
+
                     const Text(
                       'OR',
                       style: TextStyle(
@@ -220,9 +244,9 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    
+
                     const SizedBox(height: 24),
-                    
+
                     // Join Connection button
                     SizedBox(
                       width: 300,
@@ -232,7 +256,9 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                           side: BorderSide(
-                            color: connected ? const Color(0xFFcc3f0c) : const Color(0xFF19231a).withOpacity(0.3),
+                            color: connected
+                                ? const Color(0xFFcc3f0c)
+                                : const Color(0xFF19231a).withAlpha(77),
                             width: 2,
                           ),
                         ),
@@ -248,7 +274,11 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                                   style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
-                                    color: connected ? const Color(0xFF19231a) : const Color(0xFF19231a).withOpacity(0.4),
+                                    color: connected
+                                        ? const Color(0xFF19231a)
+                                        : const Color(
+                                            0xFF19231a,
+                                          ).withAlpha(102),
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -256,7 +286,9 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                                   'Use a shared link',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: connected ? const Color(0xFF19231a).withOpacity(0.7) : const Color(0xFF19231a).withOpacity(0.3),
+                                    color: connected
+                                        ? const Color(0xFF19231a).withAlpha(179)
+                                        : const Color(0xFF19231a).withAlpha(77),
                                   ),
                                   textAlign: TextAlign.center,
                                 ),

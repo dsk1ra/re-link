@@ -2,31 +2,42 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:logging/logging.dart';
 
 /// Manages WebRTC peer connection with minimal signaling
 class WebRTCManager {
+  static final Logger _log = Logger('WebRTCManager');
   RTCPeerConnection? _peerConnection;
   RTCDataChannel? _controlChannel;
   RTCDataChannel? _fileTransferChannel;
-  
-  final _onMessageController = StreamController<String>.broadcast(); // For control messages
-  final _onFileChunkController = StreamController<List<int>>.broadcast(); // For binary file data
-  final _onStateChangeController = StreamController<RTCPeerConnectionState>.broadcast();
-  final _onIceConnectionStateController = StreamController<RTCIceConnectionState>.broadcast();
-  final _onIceCandidateController = StreamController<RTCIceCandidate>.broadcast();
-  
+
+  final _onMessageController =
+      StreamController<String>.broadcast(); // For control messages
+  final _onFileChunkController =
+      StreamController<List<int>>.broadcast(); // For binary file data
+  final _onStateChangeController =
+      StreamController<RTCPeerConnectionState>.broadcast();
+  final _onIceConnectionStateController =
+      StreamController<RTCIceConnectionState>.broadcast();
+  final _onIceCandidateController =
+      StreamController<RTCIceCandidate>.broadcast();
+
   Stream<String> get onMessage => _onMessageController.stream;
   Stream<List<int>> get onFileChunk => _onFileChunkController.stream;
-  Stream<RTCPeerConnectionState> get onStateChange => _onStateChangeController.stream;
-  Stream<RTCIceConnectionState> get onIceConnectionState => _onIceConnectionStateController.stream;
-  Stream<RTCIceCandidate> get onIceCandidate => _onIceCandidateController.stream;
-  
-  bool get isConnected => 
-    _peerConnection?.connectionState == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+  Stream<RTCPeerConnectionState> get onStateChange =>
+      _onStateChangeController.stream;
+  Stream<RTCIceConnectionState> get onIceConnectionState =>
+      _onIceConnectionStateController.stream;
+  Stream<RTCIceCandidate> get onIceCandidate =>
+      _onIceCandidateController.stream;
+
+  bool get isConnected =>
+      _peerConnection?.connectionState ==
+      RTCPeerConnectionState.RTCPeerConnectionStateConnected;
 
   // Buffered amount support
   int? get fileChannelBufferedAmount => _fileTransferChannel?.bufferedAmount;
-  
+
   void setFileChannelBufferedAmountLowThreshold(int threshold) {
     _fileTransferChannel?.bufferedAmountLowThreshold = threshold;
   }
@@ -36,9 +47,9 @@ class WebRTCManager {
       callback();
     };
   }
-  
+
   Future<void> initialize() async {
-    print('WebRTC: Initializing...');
+    _log.info('WebRTC: Initializing...');
     final config = {
       'iceServers': [
         {'urls': 'stun:stun.l.google.com:19302'},
@@ -49,39 +60,39 @@ class WebRTCManager {
       ],
       'sdpSemantics': 'unified-plan',
     };
-    
-    print('WebRTC: Calling createPeerConnection...');
+
+    _log.info('WebRTC: Calling createPeerConnection...');
     _peerConnection = await createPeerConnection(config);
-    print('WebRTC: PeerConnection created.');
-    
+    _log.info('WebRTC: PeerConnection created.');
+
     _peerConnection!.onConnectionState = (state) {
-      print('WebRTC: Connection State changed to $state');
+      _log.info('WebRTC: Connection State changed to $state');
       Future(() => _onStateChangeController.add(state));
     };
 
     _peerConnection!.onIceConnectionState = (state) {
-      print('WebRTC: ICE Connection State changed to $state');
+      _log.info('WebRTC: ICE Connection State changed to $state');
       Future(() => _onIceConnectionStateController.add(state));
     };
 
     _peerConnection!.onSignalingState = (state) {
-      print('WebRTC: Signaling State changed to $state');
+      _log.info('WebRTC: Signaling State changed to $state');
     };
-    
+
     _peerConnection!.onIceCandidate = (candidate) {
-      print('WebRTC: Generated ICE Candidate: ${candidate.candidate}');
+      _log.info('WebRTC: Generated ICE Candidate: ${candidate.candidate}');
       Future(() => _onIceCandidateController.add(candidate));
     };
-    
+
     _peerConnection!.onDataChannel = (channel) {
       _setupIncomingChannel(channel);
     };
-    
-    print('WebRTC: Initialization complete.');
+
+    _log.info('WebRTC: Initialization complete.');
   }
-  
+
   void _setupIncomingChannel(RTCDataChannel channel) {
-    print('WebRTC: Received DataChannel: ${channel.label}');
+    _log.info('WebRTC: Received DataChannel: ${channel.label}');
     if (channel.label == 'control' || channel.label == 'data') {
       _controlChannel = channel;
       _setupControlChannel(channel);
@@ -93,26 +104,32 @@ class WebRTCManager {
 
   /// Create offer (initiator side)
   Future<RTCSessionDescription> createOffer() async {
-    print('WebRTC: createOffer called');
+    _log.info('WebRTC: createOffer called');
     if (_peerConnection == null) await initialize();
-    
+
     // Create Control Channel
-    print('WebRTC: Creating control channel...');
+    _log.info('WebRTC: Creating control channel...');
     final controlInit = RTCDataChannelInit()..ordered = true;
-    _controlChannel = await _peerConnection!.createDataChannel('control', controlInit);
+    _controlChannel = await _peerConnection!.createDataChannel(
+      'control',
+      controlInit,
+    );
     _setupControlChannel(_controlChannel!);
-    
+
     // Create File Transfer Channel upfront
-    print('WebRTC: Creating file transfer channel...');
+    _log.info('WebRTC: Creating file transfer channel...');
     final fileInit = RTCDataChannelInit()..ordered = true;
-    _fileTransferChannel = await _peerConnection!.createDataChannel('file_transfer', fileInit);
+    _fileTransferChannel = await _peerConnection!.createDataChannel(
+      'file_transfer',
+      fileInit,
+    );
     _setupFileChannel(_fileTransferChannel!);
-    
-    print('WebRTC: Channels created. Creating offer SDP...');
+
+    _log.info('WebRTC: Channels created. Creating offer SDP...');
     final offer = await _peerConnection!.createOffer();
-    print('WebRTC: Offer SDP created. Setting local description...');
+    _log.info('WebRTC: Offer SDP created. Setting local description...');
     await _peerConnection!.setLocalDescription(offer);
-    print('WebRTC: Local description set.');
+    _log.info('WebRTC: Local description set.');
     return offer;
   }
 
@@ -121,40 +138,44 @@ class WebRTCManager {
     if (_peerConnection == null) return;
     if (_fileTransferChannel != null) return; // Already created
 
-    print('WebRTC: Creating file transfer channel on demand...');
-    final fileInit = RTCDataChannelInit()
-      ..ordered = true;
-    _fileTransferChannel = await _peerConnection!.createDataChannel('file_transfer', fileInit);
+    _log.info('WebRTC: Creating file transfer channel on demand...');
+    final fileInit = RTCDataChannelInit()..ordered = true;
+    _fileTransferChannel = await _peerConnection!.createDataChannel(
+      'file_transfer',
+      fileInit,
+    );
     _setupFileChannel(_fileTransferChannel!);
-    print('WebRTC: File transfer channel created.');
-    
+    _log.info('WebRTC: File transfer channel created.');
+
     // Negotiate if needed (WebRTC usually handles this if negotiationneeded event fires)
     // However, if we are the Offerer (Initiator), we might need to create a new Offer.
     // Ideally, we rely on `onRenegotiationNeeded`.
   }
-  
+
   /// Handle offer and create answer (responder side)
-  Future<RTCSessionDescription> createAnswer(RTCSessionDescription offer) async {
+  Future<RTCSessionDescription> createAnswer(
+    RTCSessionDescription offer,
+  ) async {
     if (_peerConnection == null) await initialize();
-    
+
     await _peerConnection!.setRemoteDescription(offer);
     // onDataChannel will fire when channels are established
-    
+
     final answer = await _peerConnection!.createAnswer();
     await _peerConnection!.setLocalDescription(answer);
     return answer;
   }
-  
+
   /// Set remote answer (initiator side)
   Future<void> setRemoteAnswer(RTCSessionDescription answer) async {
     await _peerConnection?.setRemoteDescription(answer);
   }
-  
+
   /// Add ICE candidate from peer
   Future<void> addIceCandidate(RTCIceCandidate candidate) async {
     await _peerConnection?.addCandidate(candidate);
   }
-  
+
   /// Send control message (JSON/Text)
   Future<void> sendControlMessage(String message) => sendMessage(message);
 
@@ -162,7 +183,7 @@ class WebRTCManager {
     if (_controlChannel?.state == RTCDataChannelState.RTCDataChannelOpen) {
       await _controlChannel!.send(RTCDataChannelMessage(message));
     } else {
-      print('WebRTC Warning: Control channel not open');
+      _log.warning('WebRTC Warning: Control channel not open');
     }
   }
 
@@ -173,38 +194,50 @@ class WebRTCManager {
     }
 
     if (_fileTransferChannel!.state != RTCDataChannelState.RTCDataChannelOpen) {
-      print('WebRTC: Waiting for file channel to open (Current: ${_fileTransferChannel!.state})...');
+      _log.info(
+        'WebRTC: Waiting for file channel to open '
+        '(Current: ${_fileTransferChannel!.state})...',
+      );
       await _waitForFileChannelOpen();
     }
 
-    await _fileTransferChannel!.send(RTCDataChannelMessage.fromBinary(Uint8List.fromList(data)));
+    await _fileTransferChannel!.send(
+      RTCDataChannelMessage.fromBinary(Uint8List.fromList(data)),
+    );
   }
 
   Future<void> _waitForFileChannelOpen() async {
     if (_fileTransferChannel == null) return;
-    if (_fileTransferChannel!.state == RTCDataChannelState.RTCDataChannelOpen) return;
+    if (_fileTransferChannel!.state == RTCDataChannelState.RTCDataChannelOpen) {
+      return;
+    }
 
     final completer = Completer<void>();
     _fileTransferChannel!.onDataChannelState = (state) {
-      if (state == RTCDataChannelState.RTCDataChannelOpen && !completer.isCompleted) {
+      if (state == RTCDataChannelState.RTCDataChannelOpen &&
+          !completer.isCompleted) {
         completer.complete();
       }
     };
 
     // Also check periodically in case the callback doesn't fire as expected
     Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (_fileTransferChannel?.state == RTCDataChannelState.RTCDataChannelOpen) {
+      if (_fileTransferChannel?.state ==
+          RTCDataChannelState.RTCDataChannelOpen) {
         if (!completer.isCompleted) completer.complete();
         timer.cancel();
       }
       if (completer.isCompleted) timer.cancel();
     });
 
-    await completer.future.timeout(const Duration(seconds: 10), onTimeout: () {
-      throw Exception('Timeout waiting for file transfer channel to open');
-    });
+    await completer.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        throw Exception('Timeout waiting for file transfer channel to open');
+      },
+    );
   }
-  
+
   void _setupControlChannel(RTCDataChannel channel) {
     channel.onMessage = (message) {
       if (!message.isBinary) {
@@ -220,7 +253,7 @@ class WebRTCManager {
       }
     };
   }
-  
+
   Future<void> dispose() async {
     await _controlChannel?.close();
     await _fileTransferChannel?.close();
@@ -237,23 +270,20 @@ class WebRTCManager {
 class SignalingMessage {
   final String type; // 'offer', 'answer', 'ice'
   final Map<String, dynamic> data;
-  
+
   SignalingMessage({required this.type, required this.data});
-  
+
   factory SignalingMessage.fromJson(Map<String, dynamic> json) {
     return SignalingMessage(
       type: json['type'] as String,
       data: json['data'] as Map<String, dynamic>,
     );
   }
-  
-  Map<String, dynamic> toJson() => {
-    'type': type,
-    'data': data,
-  };
-  
+
+  Map<String, dynamic> toJson() => {'type': type, 'data': data};
+
   String toJsonString() => jsonEncode(toJson());
-  
+
   static SignalingMessage fromJsonString(String json) {
     return SignalingMessage.fromJson(jsonDecode(json));
   }
