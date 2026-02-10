@@ -437,7 +437,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldPop = await _showExitConfirmation();
-        if (!mounted) return;
+        if (!context.mounted) return;
         if (shouldPop) {
           Navigator.of(context).pop();
         }
