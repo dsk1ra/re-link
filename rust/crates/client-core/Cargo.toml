@@ -9,7 +9,9 @@ tokio = { workspace = true, features = ["full"] }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-blake3 = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
 tracing = { workspace = true }
 webrtc = { workspace = true }
 once_cell = "1.21.3"

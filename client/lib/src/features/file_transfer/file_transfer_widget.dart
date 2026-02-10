@@ -146,6 +146,14 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
           ),
           const SizedBox(height: 8),
           Text('${(state.progress * 100).toStringAsFixed(1)}%'),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () => _service.cancelTransfer(reason: 'user_cancel'),
+            child: const Text(
+              'Cancel Transfer',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
         ],
       );
     }
@@ -166,7 +174,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
           const CircularProgressIndicator(color: Color(0xFFcc3f0c)),
           const SizedBox(height: 16),
           TextButton(
-            onPressed: () => _service.rejectOffer(),
+            onPressed: () => _service.cancelTransfer(reason: 'user_cancel'),
             child: const Text(
               'Cancel Request',
               style: TextStyle(color: Colors.red),

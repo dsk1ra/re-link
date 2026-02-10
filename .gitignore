@@ -64,7 +64,7 @@ tunnel.log
 # Security / Credentials
 ########################################
 .env
-GEMINI.md
+AGENTS.md
 *.pem
 *.keystore
 *.jks

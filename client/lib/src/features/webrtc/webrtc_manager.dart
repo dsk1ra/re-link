@@ -15,6 +15,10 @@ class WebRTCManager {
       StreamController<String>.broadcast(); // For control messages
   final _onFileChunkController =
       StreamController<List<int>>.broadcast(); // For binary file data
+  final _onFileMessageController =
+      StreamController<String>.broadcast(); // For file channel control messages
+  final _onFileChannelStateController =
+      StreamController<RTCDataChannelState>.broadcast();
   final _onStateChangeController =
       StreamController<RTCPeerConnectionState>.broadcast();
   final _onIceConnectionStateController =
@@ -24,6 +28,9 @@ class WebRTCManager {
 
   Stream<String> get onMessage => _onMessageController.stream;
   Stream<List<int>> get onFileChunk => _onFileChunkController.stream;
+  Stream<String> get onFileMessage => _onFileMessageController.stream;
+  Stream<RTCDataChannelState> get onFileChannelState =>
+      _onFileChannelStateController.stream;
   Stream<RTCPeerConnectionState> get onStateChange =>
       _onStateChangeController.stream;
   Stream<RTCIceConnectionState> get onIceConnectionState =>
@@ -206,31 +213,45 @@ class WebRTCManager {
     );
   }
 
+  /// Send file channel control message (JSON/Text)
+  Future<void> sendFileMessage(String message) async {
+    if (_fileTransferChannel == null) {
+      throw Exception('File transfer channel not initialized');
+    }
+
+    if (_fileTransferChannel!.state != RTCDataChannelState.RTCDataChannelOpen) {
+      _log.info(
+        'WebRTC: Waiting for file channel to open '
+        '(Current: ${_fileTransferChannel!.state})...',
+      );
+      await _waitForFileChannelOpen();
+    }
+
+    await _fileTransferChannel!.send(RTCDataChannelMessage(message));
+  }
+
   Future<void> _waitForFileChannelOpen() async {
     if (_fileTransferChannel == null) return;
     if (_fileTransferChannel!.state == RTCDataChannelState.RTCDataChannelOpen) {
       return;
     }
 
-    final completer = Completer<void>();
-    _fileTransferChannel!.onDataChannelState = (state) {
-      if (state == RTCDataChannelState.RTCDataChannelOpen &&
-          !completer.isCompleted) {
-        completer.complete();
-      }
-    };
+    final waitForOpen = onFileChannelState.firstWhere(
+      (state) => state == RTCDataChannelState.RTCDataChannelOpen,
+    );
 
-    // Also check periodically in case the callback doesn't fire as expected
+    final pollCompleter = Completer<void>();
     Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (_fileTransferChannel?.state ==
           RTCDataChannelState.RTCDataChannelOpen) {
-        if (!completer.isCompleted) completer.complete();
+        if (!pollCompleter.isCompleted) {
+          pollCompleter.complete();
+        }
         timer.cancel();
       }
-      if (completer.isCompleted) timer.cancel();
     });
 
-    await completer.future.timeout(
+    await Future.any([waitForOpen, pollCompleter.future]).timeout(
       const Duration(seconds: 10),
       onTimeout: () {
         throw Exception('Timeout waiting for file transfer channel to open');
@@ -250,7 +271,12 @@ class WebRTCManager {
     channel.onMessage = (message) {
       if (message.isBinary) {
         Future(() => _onFileChunkController.add(message.binary));
+      } else {
+        Future(() => _onFileMessageController.add(message.text));
       }
+    };
+    channel.onDataChannelState = (state) {
+      Future(() => _onFileChannelStateController.add(state));
     };
   }
 
@@ -260,6 +286,8 @@ class WebRTCManager {
     await _peerConnection?.close();
     await _onMessageController.close();
     await _onFileChunkController.close();
+    await _onFileMessageController.close();
+    await _onFileChannelStateController.close();
     await _onStateChangeController.close();
     await _onIceConnectionStateController.close();
     await _onIceCandidateController.close();
