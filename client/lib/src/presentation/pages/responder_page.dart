@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:application/src/features/file_transfer/file_transfer_widget.dart';
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
@@ -26,6 +28,7 @@ class ResponderPage extends StatefulWidget {
 }
 
 class _ResponderPageState extends State<ResponderPage> {
+  static final Logger _log = Logger('ResponderPage');
   late ConnectionService _connectionService;
   WebRTCManager? _webrtcManager;
 
@@ -40,19 +43,82 @@ class _ResponderPageState extends State<ResponderPage> {
   bool _joined = false;
   bool _isPeerDisconnected = false;
 
+  final List<RTCIceCandidate> _iceCandidateQueue = [];
+  bool _isSendingIce = false;
+
   @override
   void initState() {
     super.initState();
     _connectionService = ConnectionService(
       signalingBaseUrl: widget.signalingBaseUrl,
     );
-    if (widget.initialToken != null) {
-      _tokenController.text = widget.initialToken!;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _joinWithToken());
+    // ...
+  }
+
+  // ...
+
+  Future<void> _startWebRTCHandshake() async {
+    try {
+      _webrtcManager = WebRTCManager();
+      await _webrtcManager!.initialize();
+
+      _webrtcManager!.onStateChange.listen((state) {
+        _log.info('Responder: State changed to $state');
+        setState(() => _webrtcState = state);
+        if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          _showSnackBar('WebRTC connected!');
+        }
+      });
+
+      _webrtcManager!.onMessage.listen((message) {
+        setState(() => _receivedMessage = message);
+        _showSnackBar('Received: $message');
+      });
+
+      _webrtcManager!.onIceCandidate.listen(
+        (candidate) => _queueIceCandidate(candidate),
+      );
+
+      // 1. Process any messages already waiting in the mailbox (e.g. the Offer)
+      await _fetchAndProcessExistingMessages();
+
+      // 2. Listen for new messages (e.g. ICE candidates)
+      _startListeningForSignals();
+    } catch (e) {
+      _showSnackBar('WebRTC error: $e');
+    }
+  }
+
+  void _queueIceCandidate(RTCIceCandidate candidate) {
+    _iceCandidateQueue.add(candidate);
+    if (!_isSendingIce) {
+      _processIceQueue();
+    }
+  }
+
+  Future<void> _processIceQueue() async {
+    if (_isSendingIce || _iceCandidateQueue.isEmpty) return;
+
+    _isSendingIce = true;
+    try {
+      while (_iceCandidateQueue.isNotEmpty) {
+        final candidate = _iceCandidateQueue.removeAt(0);
+        await _sendIceCandidate(candidate);
+        // Small delay to be nice to the server
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+    } catch (e) {
+      _log.warning('Error sending queued ICE candidate: $e');
+    } finally {
+      _isSendingIce = false;
+      // Double check in case new ones came in
+      if (_iceCandidateQueue.isNotEmpty) _processIceQueue();
     }
   }
 
   StreamSubscription? _mailboxSubscription;
+  final List<Map<String, dynamic>> _signalQueue = [];
+  bool _isProcessingSignals = false;
 
   @override
   void dispose() {
@@ -63,6 +129,7 @@ class _ResponderPageState extends State<ResponderPage> {
     super.dispose();
   }
 
+  // ...
   Future<void> _joinWithToken() async {
     final input = _tokenController.text.trim();
     if (input.isEmpty) {
@@ -99,7 +166,7 @@ class _ResponderPageState extends State<ResponderPage> {
 
     try {
       // Derive keys locally
-      final keys = await rust_connection.connectionDeriveKeys(secretHex: secret);
+      final keys = rust_connection.connectionDeriveKeys(secretHex: secret);
       _kSig = keys.kSig;
 
       final joinResult = await _connectionService.joinConnection(
@@ -111,12 +178,12 @@ class _ResponderPageState extends State<ResponderPage> {
         'type': 'connect_request',
         'note': 'Peer wants to connect',
       });
-      
-      final helloB64 = await rust_connection.connectionEncrypt(
+
+      final helloB64 = rust_connection.connectionEncrypt(
         keyHex: _kSig!,
         plaintext: utf8.encode(hello),
       );
-      
+
       await _connectionService.sendSignal(
         mailboxId: mailboxId,
         ciphertextB64: helloB64,
@@ -137,47 +204,16 @@ class _ResponderPageState extends State<ResponderPage> {
     }
   }
 
-  Future<void> _startWebRTCHandshake() async {
-    try {
-      _webrtcManager = WebRTCManager();
-      await _webrtcManager!.initialize();
-
-      _webrtcManager!.onStateChange.listen((state) {
-        setState(() => _webrtcState = state);
-        if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-          _showSnackBar('WebRTC connected!');
-        }
-      });
-
-      _webrtcManager!.onMessage.listen((message) {
-        setState(() => _receivedMessage = message);
-        _showSnackBar('Received: $message');
-      });
-
-      _webrtcManager!.onIceCandidate.listen(
-        (candidate) => _sendIceCandidate(candidate),
-      );
-
-      // 1. Process any messages already waiting in the mailbox (e.g. the Offer)
-      await _fetchAndProcessExistingMessages();
-
-      // 2. Listen for new messages (e.g. ICE candidates)
-      _startListeningForSignals();
-    } catch (e) {
-      _showSnackBar('WebRTC error: $e');
-    }
-  }
-
   Future<void> _fetchAndProcessExistingMessages() async {
     try {
       final messages = await _connectionService.fetchMessages(
         mailboxId: _responderMailboxId!,
       );
       for (final msg in messages) {
-        _handleIncomingSignal(msg);
+        await _handleIncomingSignal(msg);
       }
     } catch (e) {
-      print('Failed to fetch existing messages: $e');
+      _log.warning('Failed to fetch existing messages: $e');
     }
   }
 
@@ -186,39 +222,63 @@ class _ResponderPageState extends State<ResponderPage> {
     _mailboxSubscription = _connectionService
         .subscribeMailbox(mailboxId: _responderMailboxId!)
         .listen((msg) {
-      _handleIncomingSignal(msg);
-    });
+          _queueIncomingSignal(msg);
+        });
   }
 
-  void _handleIncomingSignal(Map<String, dynamic> msg) async {
+  void _queueIncomingSignal(Map<String, dynamic> msg) {
+    _signalQueue.add(msg);
+    if (!_isProcessingSignals) {
+      _processSignalQueue();
+    }
+  }
+
+  Future<void> _processSignalQueue() async {
+    if (_isProcessingSignals || _signalQueue.isEmpty) return;
+
+    _isProcessingSignals = true;
+    try {
+      while (_signalQueue.isNotEmpty) {
+        final msg = _signalQueue.removeAt(0);
+        await _handleIncomingSignal(msg);
+      }
+    } catch (e) {
+      _log.warning('Error processing signal queue: $e');
+    } finally {
+      _isProcessingSignals = false;
+      if (_signalQueue.isNotEmpty) _processSignalQueue();
+    }
+  }
+
+  Future<void> _handleIncomingSignal(Map<String, dynamic> msg) async {
     final payloadB64 = msg['ciphertext_b64'] as String?;
     if (payloadB64 == null || payloadB64.isEmpty) return;
 
     if (_kSig == null) return;
 
     try {
-      final decryptedBytes = await rust_connection.connectionDecrypt(
+      final decryptedBytes = rust_connection.connectionDecrypt(
         keyHex: _kSig!,
         ciphertextB64: payloadB64,
       );
       final decoded = utf8.decode(decryptedBytes);
-      print('Responder: Received Signal: $decoded');
+      _log.info('Responder: Received Signal: $decoded');
       final signalingMsg = SignalingMessage.fromJsonString(decoded);
 
       if (signalingMsg.type == 'offer') {
-        print('Responder: Processing Offer...');
+        _log.info('Responder: Processing Offer...');
         final offer = RTCSessionDescription(
           signalingMsg.data['sdp'] as String,
           signalingMsg.data['type'] as String,
         );
         final answer = await _webrtcManager!.createAnswer(offer);
-        print('Responder: Created Answer');
+        _log.info('Responder: Created Answer');
 
         final answerMsg = SignalingMessage(
           type: 'answer',
           data: {'sdp': answer.sdp, 'type': answer.type},
         );
-        final answerB64 = await rust_connection.connectionEncrypt(
+        final answerB64 = rust_connection.connectionEncrypt(
           keyHex: _kSig!,
           plaintext: utf8.encode(answerMsg.toJsonString()),
         );
@@ -226,9 +286,9 @@ class _ResponderPageState extends State<ResponderPage> {
           mailboxId: _responderMailboxId!,
           ciphertextB64: answerB64,
         );
-        print('Responder: Sent Answer');
+        _log.info('Responder: Sent Answer');
       } else if (signalingMsg.type == 'ice') {
-        print('Responder: Processing ICE Candidate...');
+        _log.info('Responder: Processing ICE Candidate...');
         final candidate = RTCIceCandidate(
           signalingMsg.data['candidate'] as String,
           signalingMsg.data['sdpMid'] as String,
@@ -236,7 +296,7 @@ class _ResponderPageState extends State<ResponderPage> {
         );
         await _webrtcManager!.addIceCandidate(candidate);
       } else if (signalingMsg.type == 'disconnect') {
-        print('Responder: Peer disconnected');
+        _log.info('Responder: Peer disconnected');
         _showSnackBar('Peer has disconnected.');
         await _webrtcManager?.dispose();
         setState(() {
@@ -246,13 +306,13 @@ class _ResponderPageState extends State<ResponderPage> {
         });
       }
     } catch (e) {
-      print('Responder: Error handling signal: $e');
+      _log.warning('Responder: Error handling signal: $e');
     }
   }
 
   Future<void> _sendIceCandidate(RTCIceCandidate candidate) async {
     if (_kSig == null) return;
-    
+
     final iceMsg = SignalingMessage(
       type: 'ice',
       data: {
@@ -261,7 +321,7 @@ class _ResponderPageState extends State<ResponderPage> {
         'sdpMLineIndex': candidate.sdpMLineIndex,
       },
     );
-    final iceB64 = await rust_connection.connectionEncrypt(
+    final iceB64 = rust_connection.connectionEncrypt(
       keyHex: _kSig!,
       plaintext: utf8.encode(iceMsg.toJsonString()),
     );
@@ -269,15 +329,6 @@ class _ResponderPageState extends State<ResponderPage> {
       mailboxId: _responderMailboxId!,
       ciphertextB64: iceB64,
     );
-  }
-
-  Future<void> _sendTestMessage() async {
-    try {
-      await _webrtcManager?.sendMessage('Hello from responder!');
-      _showSnackBar('Message sent');
-    } catch (e) {
-      _showSnackBar('Send failed: $e');
-    }
   }
 
   void _showSnackBar(String message) {
@@ -304,7 +355,7 @@ class _ResponderPageState extends State<ResponderPage> {
     if (_kSig == null || _responderMailboxId == null) return;
     try {
       final msg = SignalingMessage(type: 'disconnect', data: {});
-      final encryptedB64 = await rust_connection.connectionEncrypt(
+      final encryptedB64 = rust_connection.connectionEncrypt(
         keyHex: _kSig!,
         plaintext: utf8.encode(msg.toJsonString()),
       );
@@ -313,12 +364,13 @@ class _ResponderPageState extends State<ResponderPage> {
         ciphertextB64: encryptedB64,
       );
     } catch (e) {
-      print('Error sending disconnect signal: $e');
+      _log.warning('Error sending disconnect signal: $e');
     }
   }
 
   Future<bool> _showExitConfirmation() async {
-    if (_webrtcState != RTCPeerConnectionState.RTCPeerConnectionStateConnected &&
+    if (_webrtcState !=
+            RTCPeerConnectionState.RTCPeerConnectionStateConnected &&
         _webrtcState !=
             RTCPeerConnectionState.RTCPeerConnectionStateConnecting) {
       return true;
@@ -361,185 +413,97 @@ class _ResponderPageState extends State<ResponderPage> {
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldPop = await _showExitConfirmation();
-        if (shouldPop && mounted) {
+        if (!context.mounted) return;
+        if (shouldPop) {
           Navigator.of(context).pop();
         }
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFd8cbc7),
         appBar: AppBar(
-        title: const Text(
-          'Join Connection',
-          style: TextStyle(color: Color(0xFFffffff)),
+          title: const Text(
+            'Join Connection',
+            style: TextStyle(color: Color(0xFFffffff)),
+          ),
+          backgroundColor: const Color(0xFF19231a),
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Color(0xFFffffff)),
         ),
-        backgroundColor: const Color(0xFF19231a),
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Color(0xFFffffff)),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (!_joined) ...[
-              const Text(
-                'Enter connection link',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              TextField(
-                controller: _tokenController,
-                style: const TextStyle(color: Color(0xFF19231a)),
-                decoration: const InputDecoration(
-                  labelText: 'Paste link or token',
-                  labelStyle: TextStyle(color: Color(0xFF19231a)),
-                  border: OutlineInputBorder(),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Color(0xFF19231a)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Color(0xFFcc3f0c), width: 2),
-                  ),
-                  prefixIcon: Icon(Icons.link, color: Color(0xFF19231a)),
-                  filled: true,
-                  fillColor: Color(0xFFffffff),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (!_joined) ...[
+                const Text(
+                  'Enter connection link',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
                 ),
-                maxLines: 3,
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _joiningConnection ? null : _joinWithToken,
-                icon: _joiningConnection
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.login),
-                label: Text(
-                  _joiningConnection ? 'Joining...' : 'Join Connection',
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFcc3f0c),
-                  foregroundColor: const Color(0xFFffffff),
-                  disabledBackgroundColor: const Color(
-                    0xFF19231a,
-                  ).withOpacity(0.3),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
-              if (_joinError != null) ...[
-                const SizedBox(height: 16),
-                Card(
-                  color: const Color(0xFFffffff),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Error',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFcc3f0c),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _joinError!,
-                          style: const TextStyle(color: Color(0xFF19231a)),
-                        ),
-                      ],
+                const SizedBox(height: 24),
+                TextField(
+                  controller: _tokenController,
+                  style: const TextStyle(color: Color(0xFF19231a)),
+                  decoration: const InputDecoration(
+                    labelText: 'Paste link or token',
+                    labelStyle: TextStyle(color: Color(0xFF19231a)),
+                    border: OutlineInputBorder(),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xFF19231a)),
                     ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: Color(0xFFcc3f0c),
+                        width: 2,
+                      ),
+                    ),
+                    prefixIcon: Icon(Icons.link, color: Color(0xFF19231a)),
+                    filled: true,
+                    fillColor: Color(0xFFffffff),
                   ),
+                  maxLines: 3,
                 ),
-              ],
-            ] else ...[
-              Card(
-                color: const Color(0xFFffffff),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                                        children: [
-                                          Icon(
-                                            _isPeerDisconnected
-                                                ? Icons.cancel
-                                                : (_webrtcState ==
-                                                        RTCPeerConnectionState
-                                                            .RTCPeerConnectionStateConnected
-                                                    ? Icons.check_circle
-                                                    : Icons.sync),
-                                            size: 64,
-                                            color: _isPeerDisconnected
-                                                ? Colors.red
-                                                : (_webrtcState ==
-                                                        RTCPeerConnectionState
-                                                            .RTCPeerConnectionStateConnected
-                                                    ? const Color(0xFFcc3f0c)
-                                                    : const Color(0xFF19231a)),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          Text(
-                                            _isPeerDisconnected
-                                                ? 'Connection Ended'
-                                                : (_webrtcState ==
-                                                        RTCPeerConnectionState
-                                                            .RTCPeerConnectionStateConnected
-                                                    ? 'Connected!'
-                                                    : 'Establishing Connection...'),
-                                            style: const TextStyle(
-                                              fontSize: 20,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'WebRTC: ${_webrtcStateText()}',
-                                            style: const TextStyle(fontSize: 14),
-                                          ),
-                                          if (_isPeerDisconnected) ...[
-                                            const SizedBox(height: 16),
-                                            ElevatedButton(
-                                              onPressed: () => Navigator.of(context).pop(),
-                                              child: const Text('Return to Home'),
-                                            ),
-                                          ],
-                                        ],                  ),
-                ),
-              ),
-              if (_webrtcState ==
-                  RTCPeerConnectionState.RTCPeerConnectionStateConnected) ...[
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
-                  onPressed: _sendTestMessage,
+                  onPressed: _joiningConnection ? null : _joinWithToken,
+                  icon: _joiningConnection
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.login),
+                  label: Text(
+                    _joiningConnection ? 'Joining...' : 'Join Connection',
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFcc3f0c),
                     foregroundColor: const Color(0xFFffffff),
+                    disabledBackgroundColor: const Color(
+                      0xFF19231a,
+                    ).withAlpha(77),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
-                  icon: const Icon(Icons.send),
-                  label: const Text('Send Test Message'),
                 ),
-                if (_receivedMessage != null) ...[
+                if (_joinError != null) ...[
                   const SizedBox(height: 16),
                   Card(
                     color: const Color(0xFFffffff),
-                    elevation: 2,
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Received Message',
+                            'Error',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF19231a),
+                              color: Color(0xFFcc3f0c),
                             ),
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            _receivedMessage!,
+                            _joinError!,
                             style: const TextStyle(color: Color(0xFF19231a)),
                           ),
                         ],
@@ -547,12 +511,98 @@ class _ResponderPageState extends State<ResponderPage> {
                     ),
                   ),
                 ],
+              ] else ...[
+                Card(
+                  color: const Color(0xFFffffff),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        Icon(
+                          _isPeerDisconnected
+                              ? Icons.cancel
+                              : (_webrtcState ==
+                                        RTCPeerConnectionState
+                                            .RTCPeerConnectionStateConnected
+                                    ? Icons.check_circle
+                                    : Icons.sync),
+                          size: 64,
+                          color: _isPeerDisconnected
+                              ? Colors.red
+                              : (_webrtcState ==
+                                        RTCPeerConnectionState
+                                            .RTCPeerConnectionStateConnected
+                                    ? const Color(0xFFcc3f0c)
+                                    : const Color(0xFF19231a)),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _isPeerDisconnected
+                              ? 'Connection Ended'
+                              : (_webrtcState ==
+                                        RTCPeerConnectionState
+                                            .RTCPeerConnectionStateConnected
+                                    ? 'Connected!'
+                                    : 'Establishing Connection...'),
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'WebRTC: ${_webrtcStateText()}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        if (_isPeerDisconnected) ...[
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Return to Home'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                if (_webrtcState ==
+                    RTCPeerConnectionState.RTCPeerConnectionStateConnected) ...[
+                  const SizedBox(height: 16),
+                  if (_webrtcManager != null)
+                    FileTransferWidget(webrtcManager: _webrtcManager!),
+                  if (_receivedMessage != null) ...[
+                    const SizedBox(height: 16),
+                    Card(
+                      color: const Color(0xFFffffff),
+                      elevation: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Received Message',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF19231a),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _receivedMessage!,
+                              style: const TextStyle(color: Color(0xFF19231a)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ],
             ],
-          ],
+          ),
         ),
       ),
-    ),
     );
   }
 }
