@@ -73,6 +73,17 @@ jobs:
       - name: Pre-cache Windows artifacts
         run: flutter precache --windows
 
+      - name: Install flutter_rust_bridge_codegen
+        run: dart pub global activate flutter_rust_bridge_codegen 2.11.1
+
+      - name: Add Dart pub bin to PATH
+        run: |
+          "${env:LOCALAPPDATA}\Pub\Cache\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Generate rust_builder (Cargokit)
+        working-directory: client
+        run: flutter_rust_bridge_codegen --config flutter_rust_bridge.yaml --cargokit-out rust_builder
+
       - name: Fetch Dart/Flutter dependencies
         working-directory: client
         run: flutter pub get
