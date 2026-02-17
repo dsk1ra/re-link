@@ -41,11 +41,37 @@ client/config/dev.json
 # Platform Specifics
 client/android/local.properties
 client/android/.gradle/
+client/android/.cxx/
+client/android/app/.cxx/
+client/android/app/build/
+client/android/**/build/
+client/android/app/*.apk
+client/android/app/*.aab
 client/ios/Flutter/.last_build_id
+client/ios/Flutter/ephemeral/
 client/ios/DerivedData/
+client/ios/Build/
 client/macos/Flutter/ephemeral/
+client/macos/Build/
 client/windows/flutter/ephemeral/
+client/windows/flutter/generated_plugin_registrant.cc
+client/windows/flutter/generated_plugin_registrant.h
+client/windows/flutter/generated_plugins.cmake
+client/windows/runner/Debug/
+client/windows/runner/Release/
+client/windows/runner/RelWithDebInfo/
+client/windows/runner/MinSizeRel/
+client/windows/runner/**/CMakeFiles/
+client/windows/runner/**/cmake_install.cmake
+client/windows/runner/**/Makefile
+client/windows/x64/
 client/linux/flutter/ephemeral/
+client/linux/flutter/generated_plugin_registrant.cc
+client/linux/flutter/generated_plugin_registrant.h
+client/linux/flutter/generated_plugins.cmake
+client/linux/**/CMakeFiles/
+client/linux/**/cmake_install.cmake
+client/linux/**/Makefile
 
 ########################################
 # Rust
@@ -101,6 +127,8 @@ env/
 # iOS / CocoaPods
 client/ios/Pods/
 client/ios/Runner.xcworkspace/
+client/ios/Runner/GeneratedPluginRegistrant.h
+client/ios/Runner/GeneratedPluginRegistrant.m
 
 # macOS
 .DS_Store
