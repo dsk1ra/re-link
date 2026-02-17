@@ -77,8 +77,14 @@ jobs:
         working-directory: client
         run: flutter pub get
 
+      - name: Build Rust library (Release)
+        working-directory: rust
+        run: cargo build -p rust_lib_application --release --verbose
+
       - name: Build Windows app (Release)
         working-directory: client
+        env:
+          RUST_BACKTRACE: 1
         run: flutter build windows --release
 
       - name: Archive Windows build output
