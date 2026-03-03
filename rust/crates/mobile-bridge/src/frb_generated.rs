@@ -29,6 +29,8 @@ use crate::api::transfer::*;
 use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
 use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
 use flutter_rust_bridge::{Handler, IntoIntoDart};
+use webrtc::data_channel::RTCDataChannel;
+use webrtc::peer_connection::RTCPeerConnection;
 
 // Section: boilerplate
 
