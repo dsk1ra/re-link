@@ -1,10 +1,10 @@
+use base64::Engine as _;
 use shared::models::SignalingClientConfigDto;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::Duration,
 };
-use base64::Engine as _;
 
 const DEFAULT_LISTEN_PORT: u16 = 8080;
 const DEFAULT_PUBLIC_URL: &str = "http://127.0.0.1:8080";
@@ -43,9 +43,13 @@ impl SignalingServerConfig {
             .ok()
             .and_then(|raw| raw.parse::<IpAddr>().ok())
             .map(|ip| SocketAddr::new(ip, listen_port))
-            .unwrap_or(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), listen_port));
+            .unwrap_or(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                listen_port,
+            ));
 
-        let public_base_url = env::var("SIGNALING_PUBLIC_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_URL.to_string());
+        let public_base_url =
+            env::var("SIGNALING_PUBLIC_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_URL.to_string());
 
         let session_ttl = env::var("SIGNALING_SESSION_TTL_SECS")
             .ok()
@@ -59,7 +63,8 @@ impl SignalingServerConfig {
             .map(Duration::from_secs)
             .unwrap_or_else(|| Duration::from_secs(DEFAULT_HEARTBEAT_INTERVAL_SECS));
 
-        let redis_url = env::var("SIGNALING_REDIS_URL").unwrap_or_else(|_| DEFAULT_REDIS_URL.to_string());
+        let redis_url =
+            env::var("SIGNALING_REDIS_URL").unwrap_or_else(|_| DEFAULT_REDIS_URL.to_string());
         let mailbox_ttl = env::var("SIGNALING_MAILBOX_TTL_SECS")
             .ok()
             .and_then(|raw| raw.parse::<u64>().ok())

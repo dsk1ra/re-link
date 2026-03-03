@@ -1,13 +1,14 @@
-use shared::models::{
-    HeartbeatRequest, RegisterRequest, SignalFetchRequest,
-    SignalFetchResponse, SignalSubmitRequest, ConnectionInitRequest, ConnectionInitResponse,
-    ConnectionJoinRequest, ConnectionJoinResponse, MailboxSendRequest, MailboxRecvResponse,
-};
-use crate::registry::{RegistryError, SessionRegistry};
 use crate::config::SignalingServerConfig;
+use crate::registry::{RegistryError, SessionRegistry};
 use crate::repository::redis_repository::RedisRepository;
-use crate::services::rendezvous_service::{RendezvousService, RendezvousError};
+use crate::services::rendezvous_service::{RendezvousError, RendezvousService};
+use shared::models::{
+    ConnectionCloseRequest, ConnectionInitRequest, ConnectionInitResponse, ConnectionJoinRequest,
+    ConnectionJoinResponse, HeartbeatRequest, MailboxRecvResponse, MailboxSendRequest,
+    RegisterRequest, SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest,
+};
 
+use axum::extract::ws::{Message, WebSocket};
 use axum::{
     extract::{Path, State, WebSocketUpgrade},
     http::StatusCode,
@@ -15,7 +16,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use axum::extract::ws::{Message, WebSocket};
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -23,12 +23,18 @@ use tracing::{info, instrument};
 
 #[derive(Clone)]
 struct PushHub {
-    inner: Arc<tokio::sync::Mutex<std::collections::HashMap<String, tokio::sync::broadcast::Sender<String>>>>,
+    inner: Arc<
+        tokio::sync::Mutex<
+            std::collections::HashMap<String, tokio::sync::broadcast::Sender<String>>,
+        >,
+    >,
 }
 
 impl PushHub {
     fn new() -> Self {
-        Self { inner: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())) }
+        Self {
+            inner: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        }
     }
     async fn subscribe(&self, mailbox_id: &str) -> tokio::sync::broadcast::Receiver<String> {
         let mut guard = self.inner.lock().await;
@@ -64,18 +70,21 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         config.session_ttl,
         config.heartbeat_interval,
     ));
-    
+
     if config.redis_require_tls && !config.redis_url.starts_with("rediss://") {
         anyhow::bail!(
             "Redis TLS required but URL is not rediss:// (got: {}). Set SIGNALING_REDIS_REQUIRE_TLS=false only for local development.",
             config.redis_url
         );
     }
-    
+
     let redis_client = redis::Client::open(config.redis_url.clone())?;
     let redis_conn = redis_client.get_connection_manager().await?;
     let redis_repo = RedisRepository::new(redis_conn, config.redis_key_prefix.clone());
-    let rendezvous_service = Arc::new(RendezvousService::new(redis_repo, config.mailbox_ttl.as_secs()));
+    let rendezvous_service = Arc::new(RendezvousService::new(
+        redis_repo,
+        config.mailbox_ttl.as_secs(),
+    ));
 
     let state = AppState {
         registry,
@@ -96,6 +105,7 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
         .route("/connection/join", post(connection_join))
         .route("/connection/send", post(mailbox_send))
         .route("/connection/recv", post(mailbox_recv))
+        .route("/connection/close", post(connection_close))
         // websocket push for mailbox
         .route("/ws/:mailbox_id", get(ws_upgrade))
         .with_state(state.clone());
@@ -103,7 +113,11 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
     let listen_addr = state.config.listen_addr;
     let listener = TcpListener::bind(listen_addr).await?;
     info!(address = %listen_addr, "Starting signaling server");
-    axum::serve(listener, router.into_make_service_with_connect_info::<std::net::SocketAddr>()).await?;
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -213,7 +227,9 @@ async fn connection_init(
         .await
         .map_err(registry_err)?;
 
-    let response = state.rendezvous_service.init_connection(payload.rendezvous_id_b64)
+    let response = state
+        .rendezvous_service
+        .init_connection(payload.rendezvous_id_b64)
         .await
         .map_err(rendezvous_err)?;
 
@@ -225,8 +241,9 @@ async fn connection_join(
     State(state): State<AppState>,
     Json(payload): Json<ConnectionJoinRequest>,
 ) -> Result<(StatusCode, Json<ConnectionJoinResponse>), (StatusCode, Json<ErrorResponse>)> {
-    
-    let (response, initiator_mailbox_id, join_json) = state.rendezvous_service.join_connection(payload.token_b64)
+    let (response, initiator_mailbox_id, join_json) = state
+        .rendezvous_service
+        .join_connection(payload.token_b64)
         .await
         .map_err(rendezvous_err)?;
 
@@ -241,8 +258,9 @@ async fn mailbox_send(
     State(state): State<AppState>,
     Json(payload): Json<MailboxSendRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    
-    let (peer_mailbox_id, msg_json) = state.rendezvous_service.send_message(payload.mailbox_id, payload.ciphertext_b64)
+    let (peer_mailbox_id, msg_json) = state
+        .rendezvous_service
+        .send_message(payload.mailbox_id, payload.ciphertext_b64)
         .await
         .map_err(rendezvous_err)?;
 
@@ -258,12 +276,27 @@ async fn mailbox_recv(
     State(state): State<AppState>,
     Json(payload): Json<MailboxSendRequest>,
 ) -> Result<(StatusCode, Json<MailboxRecvResponse>), (StatusCode, Json<ErrorResponse>)> {
-    
-    let response = state.rendezvous_service.recv_messages(payload.mailbox_id)
+    let response = state
+        .rendezvous_service
+        .recv_messages(payload.mailbox_id)
         .await
         .map_err(rendezvous_err)?;
 
     Ok((StatusCode::OK, Json(response)))
+}
+
+#[instrument(skip(state, payload))]
+async fn connection_close(
+    State(state): State<AppState>,
+    Json(payload): Json<ConnectionCloseRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    state
+        .rendezvous_service
+        .close_connection(payload.mailbox_id)
+        .await
+        .map_err(rendezvous_err)?;
+
+    Ok(StatusCode::ACCEPTED)
 }
 
 // Root handler for "/"
@@ -278,7 +311,12 @@ async fn ws_upgrade(
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     // Verify mailbox exists before upgrading
-    if state.rendezvous_service.verify_mailbox(&mailbox_id).await.is_err() {
+    if state
+        .rendezvous_service
+        .verify_mailbox(&mailbox_id)
+        .await
+        .is_err()
+    {
         return StatusCode::NOT_FOUND.into_response();
     }
 

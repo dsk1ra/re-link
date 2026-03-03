@@ -1,18 +1,18 @@
+use hex::encode as hex_encode;
+use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::{mpsc, Notify, Mutex, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex, Notify};
 use tokio::time::{timeout, Duration};
-use webrtc::data_channel::RTCDataChannel;
-use webrtc::data_channel::data_channel_state::RTCDataChannelState;
-use serde::{Serialize, Deserialize};
-use sha2::{Digest, Sha256};
-use hex::encode as hex_encode;
-use tracing::{info, error, debug};
-use once_cell::sync::Lazy;
+use tracing::{debug, error, info};
 use uuid::Uuid;
+use webrtc::data_channel::data_channel_state::RTCDataChannelState;
+use webrtc::data_channel::RTCDataChannel;
 
 const CHUNK_SIZE: usize = 64 * 1024; // 64KB
 const HIGH_WATER_MARK: usize = 1024 * 1024; // 1MB
@@ -41,11 +41,23 @@ pub enum TransferMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         mime: Option<String>,
     },
-    Accept { id: String },
-    Reject { id: String, reason: Option<String> },
-    Cancel { id: String, reason: Option<String> },
-    Chunk { data: Vec<u8> },
-    Eof { id: String },
+    Accept {
+        id: String,
+    },
+    Reject {
+        id: String,
+        reason: Option<String>,
+    },
+    Cancel {
+        id: String,
+        reason: Option<String>,
+    },
+    Chunk {
+        data: Vec<u8>,
+    },
+    Eof {
+        id: String,
+    },
 }
 
 pub struct FileTransferService;
@@ -61,7 +73,7 @@ impl FileTransferService {
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
-        
+
         let file = File::open(&file_path).await?;
         let metadata = file.metadata().await?;
         let file_size = metadata.len();
@@ -72,13 +84,18 @@ impl FileTransferService {
 
         let transfer_id = Uuid::new_v4().to_string();
 
-        info!("Starting file transfer: {} ({} bytes)", file_name, file_size);
+        info!(
+            "Starting file transfer: {} ({} bytes)",
+            file_name, file_size
+        );
 
         let mut hasher = Sha256::new();
         let mut file_for_hash = File::open(&file_path).await?;
         let mut buffer = vec![0u8; CHUNK_SIZE];
         while let Ok(n) = file_for_hash.read(&mut buffer).await {
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             hasher.update(&buffer[..n]);
         }
         let global_hash = hex_encode(hasher.finalize());
@@ -119,7 +136,8 @@ impl FileTransferService {
                                 if id == accept_id {
                                     cancel_flag.store(true, Ordering::SeqCst);
                                     if let Some(tx) = tx_guard.take() {
-                                        let _ = tx.send(Err(reason.unwrap_or("cancelled".to_string())));
+                                        let _ =
+                                            tx.send(Err(reason.unwrap_or("cancelled".to_string())));
                                     }
                                 }
                                 return;
@@ -131,7 +149,8 @@ impl FileTransferService {
                                         let _ = tx.send(Ok(()));
                                     }
                                     TransferMessage::Reject { id, reason } if id == accept_id => {
-                                        let _ = tx.send(Err(reason.unwrap_or("rejected".to_string())));
+                                        let _ =
+                                            tx.send(Err(reason.unwrap_or("rejected".to_string())));
                                     }
                                     _ => {}
                                 }
@@ -161,15 +180,19 @@ impl FileTransferService {
         let notify_clone = Arc::clone(&notify);
         let cancel_flag_reader = Arc::clone(&cancelled);
         let cancel_flag_writer = Arc::clone(&cancelled);
-        
-        data_channel.set_buffered_amount_low_threshold(BUFFERED_LOW_THRESHOLD).await;
-        data_channel.on_buffered_amount_low(Box::new(move || {
-            debug!("Buffered amount low, notifying writer");
-            let n = Arc::clone(&notify_clone);
-            Box::pin(async move {
-                n.notify_one();
-            })
-        })).await;
+
+        data_channel
+            .set_buffered_amount_low_threshold(BUFFERED_LOW_THRESHOLD)
+            .await;
+        data_channel
+            .on_buffered_amount_low(Box::new(move || {
+                debug!("Buffered amount low, notifying writer");
+                let n = Arc::clone(&notify_clone);
+                Box::pin(async move {
+                    n.notify_one();
+                })
+            }))
+            .await;
 
         // Reader Task (Producer)
         let reader_handle = tokio::spawn(async move {
@@ -214,26 +237,34 @@ impl FileTransferService {
                     if buffered <= HIGH_WATER_MARK {
                         break;
                     }
-                    
+
                     debug!("High buffered amount ({}), waiting...", buffered);
                     notify.notified().await;
                 }
 
                 // Send chunk
-                dc.send(&chunk.into()).await.map_err(|e| anyhow::anyhow!("DC send failed: {}", e))?;
+                dc.send(&chunk.into())
+                    .await
+                    .map_err(|e| anyhow::anyhow!("DC send failed: {}", e))?;
             }
-            
+
             // Send EOF or equivalent
             let eof_json = serde_json::to_string(&TransferMessage::Eof { id: transfer_id })?;
-            dc.send_text(eof_json).await.map_err(|e| anyhow::anyhow!("DC send EOF failed: {}", e))?;
-            
+            dc.send_text(eof_json)
+                .await
+                .map_err(|e| anyhow::anyhow!("DC send EOF failed: {}", e))?;
+
             Ok::<(), anyhow::Error>(())
         });
 
         // Wait for tasks to complete
-        reader_handle.await.map_err(|e| anyhow::anyhow!("Reader task panicked: {}", e))?
+        reader_handle
+            .await
+            .map_err(|e| anyhow::anyhow!("Reader task panicked: {}", e))?
             .map_err(|e| anyhow::anyhow!("Reader error: {}", e))?;
-        writer_handle.await.map_err(|e| anyhow::anyhow!("Writer task panicked: {}", e))??;
+        writer_handle
+            .await
+            .map_err(|e| anyhow::anyhow!("Writer task panicked: {}", e))??;
 
         info!("File transfer completed successfully");
         Ok(())
@@ -245,7 +276,7 @@ impl FileTransferService {
     ) -> anyhow::Result<()> {
         let _permit = TRANSFER_SEMAPHORE.acquire().await?;
         let (tx, mut rx) = mpsc::channel::<TransferMessage>(100);
-        
+
         data_channel.on_message(Box::new(move |msg| {
             let tx = tx.clone();
             Box::pin(async move {
@@ -257,7 +288,11 @@ impl FileTransferService {
                     }
                 } else {
                     // Binary chunk
-                    let _ = tx.send(TransferMessage::Chunk { data: msg.data.to_vec() }).await;
+                    let _ = tx
+                        .send(TransferMessage::Chunk {
+                            data: msg.data.to_vec(),
+                        })
+                        .await;
                 }
             })
         }));
@@ -278,14 +313,22 @@ impl FileTransferService {
             };
 
             match msg {
-                TransferMessage::Metadata { id, name, size, sha256, .. } => {
+                TransferMessage::Metadata {
+                    id,
+                    name,
+                    size,
+                    sha256,
+                    ..
+                } => {
                     info!("Receiving file: {} ({} bytes)", name, size);
                     if size > MAX_FILE_SIZE {
                         let reject = TransferMessage::Reject {
                             id: id.clone(),
                             reason: Some("size_limit".to_string()),
                         };
-                        let _ = data_channel.send_text(serde_json::to_string(&reject)?).await;
+                        let _ = data_channel
+                            .send_text(serde_json::to_string(&reject)?)
+                            .await;
                         anyhow::bail!("File exceeds max size");
                     }
                     let sanitized_name = sanitize_file_name(&name);
@@ -296,16 +339,19 @@ impl FileTransferService {
                     final_name = Some(sanitized_name);
                     metadata = Some(FileMetadata { name, size, sha256 });
                     let accept = TransferMessage::Accept { id };
-                    data_channel.send_text(serde_json::to_string(&accept)?).await?;
+                    data_channel
+                        .send_text(serde_json::to_string(&accept)?)
+                        .await?;
                 }
                 TransferMessage::Chunk { data } => {
                     if let Some(ref mut f) = file {
                         f.write_all(&data).await?;
                         hasher.update(&data);
                         received_size += data.len() as u64;
-                        debug!("Received chunk: {} bytes (total {}/{})", 
-                            data.len(), 
-                            received_size, 
+                        debug!(
+                            "Received chunk: {} bytes (total {}/{})",
+                            data.len(),
+                            received_size,
                             metadata.as_ref().map(|m| m.size).unwrap_or(0)
                         );
                     }
@@ -348,7 +394,10 @@ impl FileTransferService {
                 if let Some(path) = temp_path {
                     let _ = tokio::fs::remove_file(path).await;
                 }
-                error!("Integrity check failed! Expected {}, got {}", m.sha256, final_hash);
+                error!(
+                    "Integrity check failed! Expected {}, got {}",
+                    m.sha256, final_hash
+                );
                 anyhow::bail!("Integrity check failed");
             }
         }

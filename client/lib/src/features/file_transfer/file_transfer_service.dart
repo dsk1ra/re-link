@@ -9,7 +9,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 
-class _DigestSink implements Sink<Digest> {
+class DigestSink implements Sink<Digest> {
   Digest? digest;
 
   @override
@@ -80,7 +80,7 @@ class FileTransferSession {
   String? tempPath;
   int bytesReceived = 0;
   ByteConversionSink? hashInput;
-  _DigestSink? hashDigestSink;
+  DigestSink? hashDigestSink;
   Timer? acceptTimeoutTimer;
   Timer? inactivityTimer;
 
@@ -281,7 +281,7 @@ class FileTransferService {
       final file = File(tempPath);
       _currentSession!.writeSink = file.openWrite();
 
-      final hashSink = _DigestSink();
+      final hashSink = DigestSink();
       _currentSession!.hashDigestSink = hashSink;
       _currentSession!.hashInput = sha256.startChunkedConversion(hashSink);
 
@@ -577,7 +577,7 @@ class FileTransferService {
 }
 
 Future<String> _computeSha256OnPath(String path) async {
-  final sink = _DigestSink();
+  final sink = DigestSink();
   final input = sha256.startChunkedConversion(sink);
   final raf = await File(path).open(mode: FileMode.read);
   try {

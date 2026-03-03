@@ -46,6 +46,12 @@ class _InitiatorPageState extends State<InitiatorPage> {
   bool _peerAccepted = false;
   bool _isPeerDisconnected = false;
   StreamSubscription? _mailboxSubscription;
+  bool _signalingClosed = false;
+  Timer? _heartbeatTimer;
+  DateTime? _lastPongAt;
+  Timer? _sessionClosedAckTimer;
+  String? _sessionClosedId;
+  bool _sessionClosedAcked = false;
 
   final List<RTCIceCandidate> _iceCandidateQueue = [];
   bool _isSendingIce = false;
@@ -77,13 +83,12 @@ class _InitiatorPageState extends State<InitiatorPage> {
         setState(() => _webrtcState = state);
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _showSnackBar('WebRTC connected!');
+          _closeSignalingAfterConnect();
+          _startHeartbeat();
         }
       });
 
-      _webrtcManager!.onMessage.listen((message) {
-        setState(() => _receivedMessage = message);
-        _showSnackBar('Received: $message');
-      });
+      _webrtcManager!.onMessage.listen(_handleControlMessage);
 
       _webrtcManager!.onIceCandidate.listen(
         (candidate) => _queueIceCandidate(candidate),
@@ -140,6 +145,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
   }
 
   Future<void> _sendIceCandidate(RTCIceCandidate candidate) async {
+    if (_signalingClosed) return;
     final iceMsg = SignalingMessage(
       type: 'ice',
       data: {
@@ -163,6 +169,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
     _connectionService.dispose();
     _pollTimer?.cancel();
     _mailboxSubscription?.cancel();
+    _heartbeatTimer?.cancel();
+    _sessionClosedAckTimer?.cancel();
     _webrtcManager?.dispose();
     super.dispose();
   }
@@ -302,6 +310,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
   Future<void> _handleIncomingSignal(Map<String, dynamic> msg) async {
     final payloadB64 = msg['ciphertext_b64'] as String?;
     if (payloadB64 == null || payloadB64.isEmpty) return;
+    if (_signalingClosed) return;
 
     try {
       final decryptedBytes = rust_connection.connectionDecrypt(
@@ -361,6 +370,62 @@ class _InitiatorPageState extends State<InitiatorPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _handleControlMessage(String message) {
+    try {
+      final decoded = jsonDecode(message) as Map<String, dynamic>;
+      final type = decoded['type'];
+      if (type == 'session_closed') {
+        _sendSessionClosedAck(decoded['id']?.toString());
+        _handlePeerSessionClosed();
+        return;
+      }
+      if (type == 'session_closed_ack') {
+        _handleSessionClosedAck(decoded['id']?.toString());
+        return;
+      }
+      if (type == 'ping') {
+        _sendPong(decoded['ts']?.toString());
+        return;
+      }
+      if (type == 'pong') {
+        _lastPongAt = DateTime.now();
+        return;
+      }
+    } catch (_) {}
+
+    setState(() => _receivedMessage = message);
+    _showSnackBar('Received: $message');
+  }
+
+  Future<void> _closeSignalingAfterConnect() async {
+    if (_signalingClosed) return;
+    final mailboxId = _initiatorServerMailboxId;
+    if (mailboxId == null) return;
+
+    _signalingClosed = true;
+    _iceCandidateQueue.clear();
+    await _mailboxSubscription?.cancel();
+    _mailboxSubscription = null;
+
+    try {
+      await _connectionService.closeConnection(mailboxId: mailboxId);
+    } catch (e) {
+      _log.warning('Failed to close signaling mailbox: $e');
+    }
+  }
+
+  Future<void> _handlePeerSessionClosed() async {
+    _log.info('Initiator: Peer session closed over WebRTC');
+    _showSnackBar('Peer has disconnected.');
+    _stopHeartbeat();
+    await _webrtcManager?.dispose();
+    setState(() {
+      _webrtcManager = null;
+      _webrtcState = null;
+      _isPeerDisconnected = true;
+    });
+  }
+
   String _webrtcStateText() {
     if (_isPeerDisconnected) return 'Disconnected';
     switch (_webrtcState) {
@@ -376,6 +441,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
   }
 
   Future<void> _sendDisconnectSignal() async {
+    if (_signalingClosed) return;
     if (_initiatorResult == null || _initiatorServerMailboxId == null) return;
     try {
       final msg = SignalingMessage(type: 'disconnect', data: {});
@@ -426,8 +492,96 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
     if (result == true) {
       await _sendDisconnectSignal();
+      await _sendSessionClosedMessage();
     }
     return result ?? false;
+  }
+
+  Future<void> _sendSessionClosedMessage() async {
+    try {
+      _sessionClosedId = DateTime.now().millisecondsSinceEpoch.toString();
+      _sessionClosedAcked = false;
+      _startSessionClosedAckTimer();
+      final msg = jsonEncode({
+        'type': 'session_closed',
+        'id': _sessionClosedId,
+        'reason': 'local_disconnect',
+      });
+      await _webrtcManager?.sendControlMessage(msg);
+    } catch (e) {
+      _log.warning('Error sending session closed message: $e');
+    }
+  }
+
+  void _startHeartbeat() {
+    _stopHeartbeat();
+    _lastPongAt = DateTime.now();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      final last = _lastPongAt;
+      if (last != null &&
+          DateTime.now().difference(last) > const Duration(seconds: 15)) {
+        _handleHeartbeatTimeout();
+        return;
+      }
+
+      _sendPing();
+    });
+  }
+
+  void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+  }
+
+  void _handleHeartbeatTimeout() {
+    _log.warning('Initiator: Heartbeat timeout, closing session');
+    _stopHeartbeat();
+    unawaited(_handlePeerSessionClosed());
+  }
+
+  Future<void> _sendPing() async {
+    try {
+      final msg = jsonEncode({
+        'type': 'ping',
+        'ts': DateTime.now().millisecondsSinceEpoch.toString(),
+      });
+      await _webrtcManager?.sendControlMessage(msg);
+    } catch (e) {
+      _log.warning('Error sending ping: $e');
+    }
+  }
+
+  Future<void> _sendPong(String? ts) async {
+    try {
+      final msg = jsonEncode({'type': 'pong', 'ts': ts});
+      await _webrtcManager?.sendControlMessage(msg);
+    } catch (e) {
+      _log.warning('Error sending pong: $e');
+    }
+  }
+
+  void _startSessionClosedAckTimer() {
+    _sessionClosedAckTimer?.cancel();
+    _sessionClosedAckTimer = Timer(const Duration(seconds: 5), () {
+      if (_sessionClosedAcked) return;
+      _log.warning('Initiator: Session closed ack not received');
+    });
+  }
+
+  void _handleSessionClosedAck(String? id) {
+    if (_sessionClosedId == null || _sessionClosedId != id) return;
+    _sessionClosedAcked = true;
+    _sessionClosedAckTimer?.cancel();
+  }
+
+  Future<void> _sendSessionClosedAck(String? id) async {
+    if (id == null) return;
+    try {
+      final msg = jsonEncode({'type': 'session_closed_ack', 'id': id});
+      await _webrtcManager?.sendControlMessage(msg);
+    } catch (e) {
+      _log.warning('Error sending session closed ack: $e');
+    }
   }
 
   @override
@@ -515,45 +669,6 @@ class _InitiatorPageState extends State<InitiatorPage> {
                     ),
                   ],
                 ),
-                if (_initiatorResult != null) ...[
-                  const SizedBox(height: 16),
-                  Card(
-                    color: const Color(0xFFffffff),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Verification Code',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF19231a),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          SelectableText(
-                            _initiatorResult!.sas.substring(0, 16),
-                            style: const TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 16,
-                              letterSpacing: 2,
-                              color: Color(0xFFcc3f0c),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Compare this with your peer',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: const Color(0xFF19231a).withAlpha(153),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
                 if (_pollingPeer) ...[
                   const SizedBox(height: 24),
                   Card(
