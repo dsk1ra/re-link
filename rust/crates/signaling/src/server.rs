@@ -23,6 +23,7 @@ use tracing::{info, instrument};
 
 #[derive(Clone)]
 struct PushHub {
+    buffer_capacity: usize,
     inner: Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<String, tokio::sync::broadcast::Sender<String>>,
@@ -31,15 +32,16 @@ struct PushHub {
 }
 
 impl PushHub {
-    fn new() -> Self {
+    fn new(buffer_capacity: usize) -> Self {
         Self {
+            buffer_capacity,
             inner: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
     async fn subscribe(&self, mailbox_id: &str) -> tokio::sync::broadcast::Receiver<String> {
         let mut guard = self.inner.lock().await;
         let tx = guard.entry(mailbox_id.to_string()).or_insert_with(|| {
-            let (tx, _rx) = tokio::sync::broadcast::channel(100);
+            let (tx, _rx) = tokio::sync::broadcast::channel(self.buffer_capacity);
             tx
         });
         tx.subscribe()
@@ -83,13 +85,15 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
     let redis_repo = RedisRepository::new(redis_conn, config.redis_key_prefix.clone());
     let rendezvous_service = Arc::new(RendezvousService::new(
         redis_repo,
-        config.mailbox_ttl.as_secs(),
+        config.mailbox_ttl,
+        config.rendezvous_ttl,
     ));
+    let ws_push_buffer_capacity = config.ws_push_buffer_capacity;
 
     let state = AppState {
         registry,
         config: Arc::new(config),
-        push: Arc::new(PushHub::new()),
+        push: Arc::new(PushHub::new(ws_push_buffer_capacity)),
         rendezvous_service,
     };
 
@@ -310,16 +314,6 @@ async fn ws_upgrade(
     Path(mailbox_id): Path<String>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    // Verify mailbox exists before upgrading
-    if state
-        .rendezvous_service
-        .verify_mailbox(&mailbox_id)
-        .await
-        .is_err()
-    {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-
     ws.on_upgrade(move |socket| handle_ws(socket, state, mailbox_id))
 }
 

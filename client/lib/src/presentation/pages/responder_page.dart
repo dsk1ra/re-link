@@ -31,6 +31,8 @@ class _ResponderPageState extends State<ResponderPage> {
   static final Logger _log = Logger('ResponderPage');
   late ConnectionService _connectionService;
   WebRTCManager? _webrtcManager;
+  final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
+  StreamSubscription<MediaStream>? _remoteStreamSubscription;
 
   RTCPeerConnectionState? _webrtcState;
   String? _receivedMessage;
@@ -58,7 +60,19 @@ class _ResponderPageState extends State<ResponderPage> {
     _connectionService = ConnectionService(
       signalingBaseUrl: widget.signalingBaseUrl,
     );
+    unawaited(_initRemoteRenderer());
     // ...
+  }
+
+  Future<void> _initRemoteRenderer() async {
+    await _remoteRenderer.initialize();
+  }
+
+  Future<void> _attachRemoteStream(MediaStream stream) async {
+    _remoteRenderer.srcObject = stream;
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   // ...
@@ -68,11 +82,22 @@ class _ResponderPageState extends State<ResponderPage> {
       _webrtcManager = WebRTCManager();
       await _webrtcManager!.initialize();
 
+      _remoteStreamSubscription?.cancel();
+      _remoteStreamSubscription = _webrtcManager!.onRemoteStream.listen((
+        stream,
+      ) {
+        _attachRemoteStream(stream);
+      });
+
+      final existingStream = _webrtcManager!.remoteStream;
+      if (existingStream != null) {
+        await _attachRemoteStream(existingStream);
+      }
+
       _webrtcManager!.onStateChange.listen((state) {
         _log.info('Responder: State changed to $state');
         setState(() => _webrtcState = state);
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-          _showSnackBar('WebRTC connected!');
           _closeSignalingAfterConnect();
           _startHeartbeat();
         }
@@ -80,9 +105,13 @@ class _ResponderPageState extends State<ResponderPage> {
 
       _webrtcManager!.onMessage.listen(_handleControlMessage);
 
-      _webrtcManager!.onIceCandidate.listen(
-        (candidate) => _queueIceCandidate(candidate),
-      );
+      _webrtcManager!.onIceCandidate.listen((candidate) {
+        if (_signalingClosed) {
+          unawaited(_sendDataChannelIce(candidate));
+        } else {
+          _queueIceCandidate(candidate);
+        }
+      });
 
       // 1. Process any messages already waiting in the mailbox (e.g. the Offer)
       await _fetchAndProcessExistingMessages();
@@ -130,8 +159,10 @@ class _ResponderPageState extends State<ResponderPage> {
     _connectionService.dispose();
     _tokenController.dispose();
     _mailboxSubscription?.cancel();
+    _remoteStreamSubscription?.cancel();
     _heartbeatTimer?.cancel();
     _sessionClosedAckTimer?.cancel();
+    _remoteRenderer.dispose();
     _webrtcManager?.dispose();
     super.dispose();
   }
@@ -367,6 +398,34 @@ class _ResponderPageState extends State<ResponderPage> {
         _lastPongAt = DateTime.now();
         return;
       }
+      if (type == 'webrtc_offer') {
+        final data = (decoded['data'] as Map).cast<String, dynamic>();
+        final offer = RTCSessionDescription(
+          data['sdp'] as String,
+          data['type'] as String,
+        );
+        unawaited(_handleIncomingRenegotiationOffer(offer));
+        return;
+      }
+      if (type == 'webrtc_answer') {
+        final data = (decoded['data'] as Map).cast<String, dynamic>();
+        final answer = RTCSessionDescription(
+          data['sdp'] as String,
+          data['type'] as String,
+        );
+        unawaited(_webrtcManager?.setRemoteAnswer(answer));
+        return;
+      }
+      if (type == 'webrtc_ice') {
+        final data = (decoded['data'] as Map).cast<String, dynamic>();
+        final candidate = RTCIceCandidate(
+          data['candidate'] as String,
+          data['sdpMid'] as String?,
+          data['sdpMLineIndex'] as int?,
+        );
+        unawaited(_webrtcManager?.addIceCandidate(candidate));
+        return;
+      }
     } catch (_) {}
 
     setState(() => _receivedMessage = message);
@@ -560,6 +619,30 @@ class _ResponderPageState extends State<ResponderPage> {
     }
   }
 
+  Future<void> _handleIncomingRenegotiationOffer(
+    RTCSessionDescription offer,
+  ) async {
+    if (_webrtcManager == null) return;
+    final answer = await _webrtcManager!.createAnswer(offer);
+    final msg = jsonEncode({
+      'type': 'webrtc_answer',
+      'data': {'sdp': answer.sdp, 'type': answer.type},
+    });
+    await _webrtcManager?.sendControlMessage(msg);
+  }
+
+  Future<void> _sendDataChannelIce(RTCIceCandidate candidate) async {
+    final msg = jsonEncode({
+      'type': 'webrtc_ice',
+      'data': {
+        'candidate': candidate.candidate,
+        'sdpMid': candidate.sdpMid,
+        'sdpMLineIndex': candidate.sdpMLineIndex,
+      },
+    });
+    await _webrtcManager?.sendControlMessage(msg);
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -579,7 +662,7 @@ class _ResponderPageState extends State<ResponderPage> {
             'Join Connection',
             style: TextStyle(color: Color(0xFFffffff)),
           ),
-          backgroundColor: const Color(0xFF19231a),
+          backgroundColor: const Color(0xFF1C0F13),
           elevation: 0,
           iconTheme: const IconThemeData(color: Color(0xFFffffff)),
         ),
@@ -597,13 +680,13 @@ class _ResponderPageState extends State<ResponderPage> {
                 const SizedBox(height: 24),
                 TextField(
                   controller: _tokenController,
-                  style: const TextStyle(color: Color(0xFF19231a)),
+                  style: const TextStyle(color: Color(0xFF1C0F13)),
                   decoration: const InputDecoration(
                     labelText: 'Paste link or token',
-                    labelStyle: TextStyle(color: Color(0xFF19231a)),
+                    labelStyle: TextStyle(color: Color(0xFF1C0F13)),
                     border: OutlineInputBorder(),
                     enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: Color(0xFF19231a)),
+                      borderSide: BorderSide(color: Color(0xFF1C0F13)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderSide: BorderSide(
@@ -611,7 +694,7 @@ class _ResponderPageState extends State<ResponderPage> {
                         width: 2,
                       ),
                     ),
-                    prefixIcon: Icon(Icons.link, color: Color(0xFF19231a)),
+                    prefixIcon: Icon(Icons.link, color: Color(0xFF1C0F13)),
                     filled: true,
                     fillColor: Color(0xFFffffff),
                   ),
@@ -634,7 +717,7 @@ class _ResponderPageState extends State<ResponderPage> {
                     backgroundColor: const Color(0xFFcc3f0c),
                     foregroundColor: const Color(0xFFffffff),
                     disabledBackgroundColor: const Color(
-                      0xFF19231a,
+                      0xFF1C0F13,
                     ).withAlpha(77),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
@@ -658,7 +741,7 @@ class _ResponderPageState extends State<ResponderPage> {
                           const SizedBox(height: 8),
                           Text(
                             _joinError!,
-                            style: const TextStyle(color: Color(0xFF19231a)),
+                            style: const TextStyle(color: Color(0xFF1C0F13)),
                           ),
                         ],
                       ),
@@ -687,7 +770,7 @@ class _ResponderPageState extends State<ResponderPage> {
                                         RTCPeerConnectionState
                                             .RTCPeerConnectionStateConnected
                                     ? const Color(0xFFcc3f0c)
-                                    : const Color(0xFF19231a)),
+                                    : const Color(0xFF1C0F13)),
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -722,6 +805,47 @@ class _ResponderPageState extends State<ResponderPage> {
                 if (_webrtcState ==
                     RTCPeerConnectionState.RTCPeerConnectionStateConnected) ...[
                   const SizedBox(height: 16),
+                  Card(
+                    color: const Color(0xFFffffff),
+                    elevation: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Remote Screen',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1C0F13),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1C0F13),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: _remoteRenderer.srcObject != null
+                                  ? RTCVideoView(_remoteRenderer)
+                                  : const Center(
+                                      child: Text(
+                                        'Waiting for shared screen...',
+                                        style: TextStyle(
+                                          color: Color(0xFFffffff),
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   if (_webrtcManager != null)
                     FileTransferWidget(webrtcManager: _webrtcManager!),
                   if (_receivedMessage != null) ...[
@@ -738,13 +862,13 @@ class _ResponderPageState extends State<ResponderPage> {
                               'Received Message',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF19231a),
+                                color: Color(0xFF1C0F13),
                               ),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               _receivedMessage!,
-                              style: const TextStyle(color: Color(0xFF19231a)),
+                              style: const TextStyle(color: Color(0xFF1C0F13)),
                             ),
                           ],
                         ),

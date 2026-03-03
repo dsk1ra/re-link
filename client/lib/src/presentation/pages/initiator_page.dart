@@ -4,13 +4,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:application/src/features/file_transfer/file_transfer_widget.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
 import 'package:application/src/rust/api/connection.dart' as rust_connection;
+import 'package:application/src/rust/api/share.dart' as rust_share;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 /// Initiator screen - creates and shares connection link
@@ -52,6 +52,18 @@ class _InitiatorPageState extends State<InitiatorPage> {
   Timer? _sessionClosedAckTimer;
   String? _sessionClosedId;
   bool _sessionClosedAcked = false;
+  List<rust_share.SourceDescriptor> _shareSources = const [];
+  String? _selectedSourceId;
+  double _shareFps = 30;
+  rust_share.BitratePreset _bitratePreset = rust_share.BitratePreset.medium;
+  bool _loadingShareSources = false;
+  bool _startingShare = false;
+  String? _shareStatus;
+  int? _mailboxExpiresAtEpochMs;
+  Duration _mailboxTimeRemaining = Duration.zero;
+  Duration _mailboxInitialTtl = Duration.zero;
+  Timer? _mailboxCountdownTimer;
+  bool _refreshingExpiredLink = false;
 
   final List<RTCIceCandidate> _iceCandidateQueue = [];
   bool _isSendingIce = false;
@@ -82,7 +94,6 @@ class _InitiatorPageState extends State<InitiatorPage> {
         _log.info('Initiator: State changed to $state');
         setState(() => _webrtcState = state);
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-          _showSnackBar('WebRTC connected!');
           _closeSignalingAfterConnect();
           _startHeartbeat();
         }
@@ -90,9 +101,13 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
       _webrtcManager!.onMessage.listen(_handleControlMessage);
 
-      _webrtcManager!.onIceCandidate.listen(
-        (candidate) => _queueIceCandidate(candidate),
-      );
+      _webrtcManager!.onIceCandidate.listen((candidate) {
+        if (_signalingClosed) {
+          unawaited(_sendDataChannelIce(candidate));
+        } else {
+          _queueIceCandidate(candidate);
+        }
+      });
 
       _log.info('Initiator: Creating Offer...');
       final offer = await _webrtcManager!.createOffer();
@@ -114,6 +129,162 @@ class _InitiatorPageState extends State<InitiatorPage> {
     } catch (e) {
       _log.severe('Initiator: WebRTC Error', e);
       _showSnackBar('WebRTC error: $e');
+    }
+  }
+
+  Future<void> _loadShareSources() async {
+    setState(() => _loadingShareSources = true);
+    try {
+      rust_share.init();
+      var sources = await _listDesktopShareSources();
+      if (sources.isEmpty) {
+        sources = rust_share.listShareSources();
+      }
+
+      final selectedStillValid =
+          _selectedSourceId != null &&
+          sources.any((source) => source.sourceId == _selectedSourceId);
+
+      setState(() {
+        _shareSources = sources;
+        _selectedSourceId = selectedStillValid
+            ? _selectedSourceId
+            : (sources.isNotEmpty ? sources.first.sourceId : null);
+        _shareStatus = sources.isEmpty ? 'No share sources available.' : null;
+      });
+    } catch (e) {
+      setState(() {
+        _shareStatus = 'Failed to load share sources: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _loadingShareSources = false);
+      }
+    }
+  }
+
+  Future<void> _startScreenShare() async {
+    if (_selectedSourceId == null) {
+      _showSnackBar('Select a source first');
+      return;
+    }
+
+    final connectionId = _initiatorServerMailboxId;
+    if (connectionId == null || connectionId.isEmpty) {
+      _showSnackBar('Connection ID unavailable for share startup');
+      return;
+    }
+
+    setState(() => _startingShare = true);
+    try {
+      final refreshedSources = await _listDesktopShareSources();
+      if (refreshedSources.isNotEmpty) {
+        final selectedStillValid = refreshedSources.any(
+          (source) => source.sourceId == _selectedSourceId,
+        );
+
+        if (!selectedStillValid) {
+          final fallbackSource = refreshedSources.first;
+          if (mounted) {
+            setState(() {
+              _shareSources = refreshedSources;
+              _selectedSourceId = fallbackSource.sourceId;
+            });
+          }
+          _showSnackBar(
+            'Selected source is no longer available. Using: ${fallbackSource.name}',
+          );
+        } else if (mounted) {
+          setState(() {
+            _shareSources = refreshedSources;
+          });
+        }
+      }
+
+      if (_selectedSourceId == null) {
+        throw Exception('No valid screen source available');
+      }
+
+      await _webrtcManager?.startScreenCapture(
+        sourceId: _selectedSourceId!,
+        fps: _shareFps.round(),
+      );
+
+      final result = rust_share.startShare(
+        connectionId: connectionId,
+        sourceId: _selectedSourceId!,
+        config: rust_share.ShareConfig(
+          fps: _shareFps.round(),
+          bitratePreset: _bitratePreset,
+        ),
+      );
+
+      setState(() {
+        _shareStatus =
+            'Share started (trackPrepared=${result.trackPrepared}, '
+            'renegotiationRequired=${result.renegotiationRequired})';
+      });
+
+      final offer = await _webrtcManager!.createRenegotiationOffer();
+      final msg = jsonEncode({
+        'type': 'webrtc_offer',
+        'data': {'sdp': offer.sdp, 'type': offer.type},
+      });
+      await _webrtcManager?.sendControlMessage(msg);
+    } catch (e) {
+      setState(() {
+        _shareStatus = 'Failed to start share: $e';
+      });
+      _showSnackBar('Failed to start share');
+    } finally {
+      if (mounted) {
+        setState(() => _startingShare = false);
+      }
+    }
+  }
+
+  Future<List<rust_share.SourceDescriptor>> _listDesktopShareSources() async {
+    try {
+      final sources = await desktopCapturer.getSources(
+        types: <SourceType>[SourceType.Screen, SourceType.Window],
+      );
+
+      return sources
+          .map(
+            (source) => rust_share.SourceDescriptor(
+              sourceId: source.id,
+              kind: source.id.startsWith('window:')
+                  ? rust_share.SourceKind.window
+                  : rust_share.SourceKind.display,
+              name: source.name.isNotEmpty ? source.name : source.id,
+              width: null,
+              height: null,
+            ),
+          )
+          .toList();
+    } catch (e) {
+      _log.warning('Failed to query desktop sources from flutter_webrtc: $e');
+      return const [];
+    }
+  }
+
+  String _sourceKindLabel(rust_share.SourceKind kind) {
+    switch (kind) {
+      case rust_share.SourceKind.display:
+        return 'Display';
+      case rust_share.SourceKind.window:
+        return 'Window';
+    }
+  }
+
+  String _bitrateLabel(rust_share.BitratePreset preset) {
+    switch (preset) {
+      case rust_share.BitratePreset.low:
+        return 'Low';
+      case rust_share.BitratePreset.medium:
+        return 'Medium';
+      case rust_share.BitratePreset.high:
+        return 'High';
     }
   }
 
@@ -171,13 +342,25 @@ class _InitiatorPageState extends State<InitiatorPage> {
     _mailboxSubscription?.cancel();
     _heartbeatTimer?.cancel();
     _sessionClosedAckTimer?.cancel();
+    _mailboxCountdownTimer?.cancel();
     _webrtcManager?.dispose();
     super.dispose();
   }
 
-  Future<void> _createInitiatorLink() async {
+  Future<void> _createInitiatorLink({bool isAutoRefresh = false}) async {
+    if (_refreshingExpiredLink) return;
+    if (isAutoRefresh) {
+      _refreshingExpiredLink = true;
+    }
+
+    final previousMailboxId = _initiatorServerMailboxId;
+
     setState(() => _generatingLink = true);
     try {
+      _mailboxCountdownTimer?.cancel();
+      _mailboxSubscription?.cancel();
+      _mailboxSubscription = null;
+
       final initResult = await _connectionService.initializeConnectionLocally();
       final link = _connectionService.generateConnectionLink(
         initResult.rendezvousId,
@@ -190,6 +373,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
         rendezvousId: initResult.rendezvousId,
       );
       final serverMailboxId = initResp['mailbox_id'] as String?;
+      final expiresAtEpochMs = (initResp['expires_at_epoch_ms'] as num?)
+          ?.toInt();
 
       if (serverMailboxId != null) {
         _initiatorServerMailboxId = serverMailboxId;
@@ -200,11 +385,81 @@ class _InitiatorPageState extends State<InitiatorPage> {
         _initiatorResult = initResult;
         _connectionLink = link;
         _generatingLink = false;
+        _pollingPeer = serverMailboxId != null;
+        _peerAccepted = false;
+        _incomingRequestFrom = null;
+        _mailboxExpiresAtEpochMs = expiresAtEpochMs;
+        _mailboxTimeRemaining = _remainingFromEpochMs(expiresAtEpochMs);
+        _mailboxInitialTtl = _remainingFromEpochMs(expiresAtEpochMs);
       });
+
+      _startMailboxCountdown();
+
+      if (previousMailboxId != null && previousMailboxId != serverMailboxId) {
+        try {
+          await _connectionService.closeConnection(
+            mailboxId: previousMailboxId,
+          );
+        } catch (_) {}
+      }
     } catch (e) {
       setState(() => _generatingLink = false);
       _showSnackBar('Error: $e');
+    } finally {
+      _refreshingExpiredLink = false;
     }
+  }
+
+  Duration _remainingFromEpochMs(int? expiresAtEpochMs) {
+    if (expiresAtEpochMs == null) return Duration.zero;
+    final expiresAt = DateTime.fromMillisecondsSinceEpoch(expiresAtEpochMs);
+    final remaining = expiresAt.difference(DateTime.now());
+    if (remaining.isNegative) return Duration.zero;
+    return remaining;
+  }
+
+  void _startMailboxCountdown() {
+    _mailboxCountdownTimer?.cancel();
+    _tickMailboxCountdown();
+    _mailboxCountdownTimer = Timer.periodic(const Duration(milliseconds: 200), (
+      _,
+    ) {
+      _tickMailboxCountdown();
+    });
+  }
+
+  void _tickMailboxCountdown() {
+    if (_peerAccepted || _signalingClosed) {
+      _mailboxCountdownTimer?.cancel();
+      return;
+    }
+
+    final remaining = _remainingFromEpochMs(_mailboxExpiresAtEpochMs);
+    if (!mounted) return;
+
+    setState(() {
+      _mailboxTimeRemaining = remaining;
+    });
+
+    if (remaining == Duration.zero &&
+        !_generatingLink &&
+        !_refreshingExpiredLink) {
+      unawaited(_createInitiatorLink(isAutoRefresh: true));
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    final totalSeconds = duration.inSeconds;
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  double _mailboxClockProgress() {
+    final totalMs = _mailboxInitialTtl.inMilliseconds;
+    if (totalMs <= 0) return 0;
+    final remainingMs = _mailboxTimeRemaining.inMilliseconds;
+    return (remainingMs / totalMs).clamp(0.0, 1.0);
   }
 
   void _startListeningForPeer(String mailboxId) {
@@ -282,7 +537,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
                 setState(() => _incomingRequestFrom = null);
               },
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF19231a),
+                foregroundColor: const Color(0xFF1C0F13),
               ),
               child: const Text('Reject'),
             ),
@@ -389,6 +644,34 @@ class _InitiatorPageState extends State<InitiatorPage> {
       }
       if (type == 'pong') {
         _lastPongAt = DateTime.now();
+        return;
+      }
+      if (type == 'webrtc_answer') {
+        final data = (decoded['data'] as Map).cast<String, dynamic>();
+        final answer = RTCSessionDescription(
+          data['sdp'] as String,
+          data['type'] as String,
+        );
+        unawaited(_webrtcManager?.setRemoteAnswer(answer));
+        return;
+      }
+      if (type == 'webrtc_offer') {
+        final data = (decoded['data'] as Map).cast<String, dynamic>();
+        final offer = RTCSessionDescription(
+          data['sdp'] as String,
+          data['type'] as String,
+        );
+        unawaited(_handleIncomingRenegotiationOffer(offer));
+        return;
+      }
+      if (type == 'webrtc_ice') {
+        final data = (decoded['data'] as Map).cast<String, dynamic>();
+        final candidate = RTCIceCandidate(
+          data['candidate'] as String,
+          data['sdpMid'] as String?,
+          data['sdpMLineIndex'] as int?,
+        );
+        unawaited(_webrtcManager?.addIceCandidate(candidate));
         return;
       }
     } catch (_) {}
@@ -584,6 +867,30 @@ class _InitiatorPageState extends State<InitiatorPage> {
     }
   }
 
+  Future<void> _handleIncomingRenegotiationOffer(
+    RTCSessionDescription offer,
+  ) async {
+    if (_webrtcManager == null) return;
+    final answer = await _webrtcManager!.createAnswer(offer);
+    final msg = jsonEncode({
+      'type': 'webrtc_answer',
+      'data': {'sdp': answer.sdp, 'type': answer.type},
+    });
+    await _webrtcManager?.sendControlMessage(msg);
+  }
+
+  Future<void> _sendDataChannelIce(RTCIceCandidate candidate) async {
+    final msg = jsonEncode({
+      'type': 'webrtc_ice',
+      'data': {
+        'candidate': candidate.candidate,
+        'sdpMid': candidate.sdpMid,
+        'sdpMLineIndex': candidate.sdpMLineIndex,
+      },
+    });
+    await _webrtcManager?.sendControlMessage(msg);
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -603,7 +910,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
             'Create Connection',
             style: TextStyle(color: Color(0xFFffffff)),
           ),
-          backgroundColor: const Color(0xFF19231a),
+          backgroundColor: const Color(0xFF1C0F13),
           elevation: 0,
           iconTheme: const IconThemeData(color: Color(0xFFffffff)),
         ),
@@ -620,13 +927,32 @@ class _InitiatorPageState extends State<InitiatorPage> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
                 Center(
-                  child: QrImageView(
-                    data: _connectionLink!,
-                    version: QrVersions.auto,
-                    size: 240,
-                    backgroundColor: Colors.white,
+                  child: SizedBox(
+                    width: 72,
+                    height: 72,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CircularProgressIndicator(
+                          value: _mailboxClockProgress(),
+                          strokeWidth: 4,
+                          backgroundColor: const Color(
+                            0xFF1C0F13,
+                          ).withAlpha(60),
+                          color: const Color(0xFF1C0F13),
+                        ),
+                        Text(
+                          _formatDuration(_mailboxTimeRemaining),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1C0F13),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -689,7 +1015,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
                           const SizedBox(width: 16),
                           const Text(
                             'Waiting for peer...',
-                            style: TextStyle(color: Color(0xFF19231a)),
+                            style: TextStyle(color: Color(0xFF1C0F13)),
                           ),
                         ],
                       ),
@@ -718,7 +1044,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
                                         RTCPeerConnectionState
                                             .RTCPeerConnectionStateConnected
                                     ? const Color(0xFFcc3f0c)
-                                    : const Color(0xFF19231a)),
+                                    : const Color(0xFF1C0F13)),
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -753,6 +1079,139 @@ class _InitiatorPageState extends State<InitiatorPage> {
                 if (_webrtcState ==
                     RTCPeerConnectionState.RTCPeerConnectionStateConnected) ...[
                   const SizedBox(height: 16),
+                  Card(
+                    color: const Color(0xFFffffff),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Screen Sharing',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1C0F13),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _loadingShareSources
+                                      ? null
+                                      : _loadShareSources,
+                                  icon: _loadingShareSources
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.monitor),
+                                  label: Text(
+                                    _loadingShareSources
+                                        ? 'Loading Sources...'
+                                        : 'Load Share Sources',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_shareSources.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              initialValue: _selectedSourceId,
+                              decoration: const InputDecoration(
+                                labelText: 'Source',
+                              ),
+                              items: _shareSources
+                                  .map(
+                                    (source) => DropdownMenuItem<String>(
+                                      value: source.sourceId,
+                                      child: Text(
+                                        '${source.name} '
+                                        '(${_sourceKindLabel(source.kind)})',
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) {
+                                setState(() => _selectedSourceId = value);
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            Text('FPS: ${_shareFps.round()}'),
+                            Slider(
+                              min: 5,
+                              max: 60,
+                              divisions: 11,
+                              value: _shareFps,
+                              label: _shareFps.round().toString(),
+                              onChanged: (value) {
+                                setState(() => _shareFps = value);
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<rust_share.BitratePreset>(
+                              initialValue: _bitratePreset,
+                              decoration: const InputDecoration(
+                                labelText: 'Bitrate preset',
+                              ),
+                              items: rust_share.BitratePreset.values
+                                  .map(
+                                    (preset) =>
+                                        DropdownMenuItem<
+                                          rust_share.BitratePreset
+                                        >(
+                                          value: preset,
+                                          child: Text(_bitrateLabel(preset)),
+                                        ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() => _bitratePreset = value);
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            ElevatedButton.icon(
+                              onPressed: _startingShare
+                                  ? null
+                                  : _startScreenShare,
+                              icon: _startingShare
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.play_arrow),
+                              label: Text(
+                                _startingShare
+                                    ? 'Starting Share...'
+                                    : 'Start Share',
+                              ),
+                            ),
+                          ],
+                          if (_shareStatus != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              _shareStatus!,
+                              style: const TextStyle(
+                                color: Color(0xFF1C0F13),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   if (_webrtcManager != null)
                     FileTransferWidget(webrtcManager: _webrtcManager!),
                   if (_receivedMessage != null) ...[
@@ -768,13 +1227,13 @@ class _InitiatorPageState extends State<InitiatorPage> {
                               'Received Message',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF19231a),
+                                color: Color(0xFF1C0F13),
                               ),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               _receivedMessage!,
-                              style: const TextStyle(color: Color(0xFF19231a)),
+                              style: const TextStyle(color: Color(0xFF1C0F13)),
                             ),
                           ],
                         ),

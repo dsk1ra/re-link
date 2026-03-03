@@ -5,15 +5,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::info;
-use webrtc::data_channel::RTCDataChannel;
-use webrtc::peer_connection::RTCPeerConnection;
+pub use webrtc::data_channel::RTCDataChannel;
+pub use webrtc::peer_connection::RTCPeerConnection;
 
 pub struct PeerConnectionHandle {
     pub pc: Arc<RTCPeerConnection>,
     pub data_channels: HashMap<String, Arc<RTCDataChannel>>,
 }
 
-static CONNECTIONS: Lazy<Mutex<HashMap<String, PeerConnectionHandle>>> =
+pub(crate) static CONNECTIONS: Lazy<Mutex<HashMap<String, PeerConnectionHandle>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[flutter_rust_bridge::frb(sync)]

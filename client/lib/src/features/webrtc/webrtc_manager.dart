@@ -10,6 +10,8 @@ class WebRTCManager {
   RTCPeerConnection? _peerConnection;
   RTCDataChannel? _controlChannel;
   RTCDataChannel? _fileTransferChannel;
+  MediaStream? _remoteStream;
+  MediaStream? _localScreenStream;
 
   final _onMessageController =
       StreamController<String>.broadcast(); // For control messages
@@ -25,6 +27,7 @@ class WebRTCManager {
       StreamController<RTCIceConnectionState>.broadcast();
   final _onIceCandidateController =
       StreamController<RTCIceCandidate>.broadcast();
+  final _onRemoteStreamController = StreamController<MediaStream>.broadcast();
 
   Stream<String> get onMessage => _onMessageController.stream;
   Stream<List<int>> get onFileChunk => _onFileChunkController.stream;
@@ -37,6 +40,9 @@ class WebRTCManager {
       _onIceConnectionStateController.stream;
   Stream<RTCIceCandidate> get onIceCandidate =>
       _onIceCandidateController.stream;
+  Stream<MediaStream> get onRemoteStream => _onRemoteStreamController.stream;
+  MediaStream? get remoteStream => _remoteStream;
+  MediaStream? get localScreenStream => _localScreenStream;
 
   bool get isConnected =>
       _peerConnection?.connectionState ==
@@ -93,6 +99,14 @@ class WebRTCManager {
 
     _peerConnection!.onDataChannel = (channel) {
       _setupIncomingChannel(channel);
+    };
+
+    _peerConnection!.onTrack = (event) {
+      final streams = event.streams;
+      if (streams.isNotEmpty) {
+        _remoteStream = streams.first;
+        Future(() => _onRemoteStreamController.add(streams.first));
+      }
     };
 
     _log.info('WebRTC: Initialization complete.');
@@ -176,6 +190,79 @@ class WebRTCManager {
   /// Set remote answer (initiator side)
   Future<void> setRemoteAnswer(RTCSessionDescription answer) async {
     await _peerConnection?.setRemoteDescription(answer);
+  }
+
+  Future<RTCSessionDescription> createRenegotiationOffer() async {
+    if (_peerConnection == null) {
+      throw Exception('PeerConnection is not initialized');
+    }
+
+    final offer = await _peerConnection!.createOffer();
+    await _peerConnection!.setLocalDescription(offer);
+    return offer;
+  }
+
+  Future<void> startScreenCapture({
+    required String sourceId,
+    required int fps,
+  }) async {
+    if (_peerConnection == null) {
+      throw Exception('PeerConnection is not initialized');
+    }
+
+    if (_localScreenStream != null) {
+      for (final track in _localScreenStream!.getTracks()) {
+        try {
+          await track.stop();
+        } catch (_) {}
+      }
+      _localScreenStream = null;
+    }
+
+    MediaStream? stream;
+    Object? lastError;
+
+    final desktopConstraints = <String, dynamic>{
+      'audio': false,
+      'video': {
+        'deviceId': {'exact': sourceId},
+        'mandatory': {'frameRate': fps.toDouble()},
+      },
+    };
+
+    final legacyConstraints = <String, dynamic>{
+      'audio': false,
+      'video': {'frameRate': fps, 'sourceId': sourceId},
+    };
+
+    final genericFallbackConstraints = <String, dynamic>{
+      'audio': false,
+      'video': true,
+    };
+
+    for (final attempt in [
+      desktopConstraints,
+      legacyConstraints,
+      genericFallbackConstraints,
+    ]) {
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia(attempt);
+        break;
+      } catch (error) {
+        lastError = error;
+        _log.warning('WebRTC: getDisplayMedia attempt failed: $error');
+      }
+    }
+
+    if (stream == null) {
+      throw Exception('Unable to getDisplayMedia after retries: $lastError');
+    }
+
+    _localScreenStream = stream;
+
+    for (final track in stream.getVideoTracks()) {
+      await _peerConnection!.addTrack(track, stream);
+    }
   }
 
   /// Add ICE candidate from peer
@@ -281,6 +368,14 @@ class WebRTCManager {
   }
 
   Future<void> dispose() async {
+    if (_localScreenStream != null) {
+      for (final track in _localScreenStream!.getTracks()) {
+        try {
+          await track.stop();
+        } catch (_) {}
+      }
+      _localScreenStream = null;
+    }
     await _controlChannel?.close();
     await _fileTransferChannel?.close();
     await _peerConnection?.close();
@@ -291,6 +386,7 @@ class WebRTCManager {
     await _onStateChangeController.close();
     await _onIceConnectionStateController.close();
     await _onIceCandidateController.close();
+    await _onRemoteStreamController.close();
   }
 }
 
