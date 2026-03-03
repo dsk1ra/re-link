@@ -227,6 +227,19 @@ class ConnectionService {
     return controller.stream;
   }
 
+  /// Close and delete mailbox data on the server
+  Future<void> closeConnection({required String mailboxId}) async {
+    final response = await httpClient.post(
+      Uri.parse('$signalingBaseUrl/connection/close'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'mailbox_id': mailboxId}),
+    );
+
+    if (response.statusCode != 202) {
+      throw Exception('Failed to close connection: ${response.statusCode}');
+    }
+  }
+
   void dispose() {
     httpClient.close();
   }

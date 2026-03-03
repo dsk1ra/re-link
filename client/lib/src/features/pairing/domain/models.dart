@@ -11,7 +11,8 @@ class RegisterResponse {
     required this.displayName,
   });
 
-  factory RegisterResponse.fromJson(Map<String, dynamic> json) => RegisterResponse(
+  factory RegisterResponse.fromJson(Map<String, dynamic> json) =>
+      RegisterResponse(
         clientId: json['client_id'] as String,
         sessionToken: json['session_token'] as String,
         heartbeatIntervalSecs: json['heartbeat_interval_secs'] as int,

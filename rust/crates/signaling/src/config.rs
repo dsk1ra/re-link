@@ -1,21 +1,23 @@
+use base64::Engine as _;
 use shared::models::SignalingClientConfigDto;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::Duration,
 };
-use base64::Engine as _;
 
 const DEFAULT_LISTEN_PORT: u16 = 8080;
 const DEFAULT_PUBLIC_URL: &str = "http://127.0.0.1:8080";
-const DEFAULT_SESSION_TTL_SECS: u64 = 300;
+const DEFAULT_SESSION_TTL_SECS: u64 = 30;
 const DEFAULT_HEARTBEAT_INTERVAL_SECS: u64 = 30;
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1/";
 const DEFAULT_MAILBOX_TTL_SECS: u64 = 30;
 const DEFAULT_REDIS_REQUIRE_TLS: bool = true;
 const DEFAULT_REDIS_KEY_PREFIX: &str = "sig";
 const DEFAULT_JOINED_FLAG_TTL_SECS: u64 = 60;
+const DEFAULT_RENDEZVOUS_TTL_SECS: u64 = 30;
 const DEFAULT_REDIS_ENCRYPT: bool = false;
+const DEFAULT_WS_PUSH_BUFFER_CAPACITY: usize = 100;
 
 #[derive(Debug, Clone)]
 pub struct SignalingServerConfig {
@@ -28,8 +30,10 @@ pub struct SignalingServerConfig {
     pub redis_require_tls: bool,
     pub redis_key_prefix: String,
     pub joined_flag_ttl: Duration,
+    pub rendezvous_ttl: Duration,
     pub redis_encrypt_payloads: bool,
     pub redis_encryption_key: Option<[u8; 32]>,
+    pub ws_push_buffer_capacity: usize,
 }
 
 impl SignalingServerConfig {
@@ -43,9 +47,13 @@ impl SignalingServerConfig {
             .ok()
             .and_then(|raw| raw.parse::<IpAddr>().ok())
             .map(|ip| SocketAddr::new(ip, listen_port))
-            .unwrap_or(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), listen_port));
+            .unwrap_or(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                listen_port,
+            ));
 
-        let public_base_url = env::var("SIGNALING_PUBLIC_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_URL.to_string());
+        let public_base_url =
+            env::var("SIGNALING_PUBLIC_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_URL.to_string());
 
         let session_ttl = env::var("SIGNALING_SESSION_TTL_SECS")
             .ok()
@@ -59,7 +67,8 @@ impl SignalingServerConfig {
             .map(Duration::from_secs)
             .unwrap_or_else(|| Duration::from_secs(DEFAULT_HEARTBEAT_INTERVAL_SECS));
 
-        let redis_url = env::var("SIGNALING_REDIS_URL").unwrap_or_else(|_| DEFAULT_REDIS_URL.to_string());
+        let redis_url =
+            env::var("SIGNALING_REDIS_URL").unwrap_or_else(|_| DEFAULT_REDIS_URL.to_string());
         let mailbox_ttl = env::var("SIGNALING_MAILBOX_TTL_SECS")
             .ok()
             .and_then(|raw| raw.parse::<u64>().ok())
@@ -87,6 +96,12 @@ impl SignalingServerConfig {
             .map(Duration::from_secs)
             .unwrap_or_else(|| Duration::from_secs(DEFAULT_JOINED_FLAG_TTL_SECS));
 
+        let rendezvous_ttl = env::var("SIGNALING_RENDEZVOUS_TTL_SECS")
+            .ok()
+            .and_then(|raw| raw.parse::<u64>().ok())
+            .map(Duration::from_secs)
+            .unwrap_or_else(|| Duration::from_secs(DEFAULT_RENDEZVOUS_TTL_SECS));
+
         // Application-level encryption (optional)
         let redis_encrypt_payloads = env::var("SIGNALING_REDIS_ENCRYPT")
             .ok()
@@ -102,6 +117,12 @@ impl SignalingServerConfig {
             .and_then(|b64| base64::engine::general_purpose::STANDARD.decode(b64).ok())
             .and_then(|bytes| bytes.try_into().ok());
 
+        let ws_push_buffer_capacity = env::var("SIGNALING_WS_PUSH_BUFFER_CAPACITY")
+            .ok()
+            .and_then(|raw| raw.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(DEFAULT_WS_PUSH_BUFFER_CAPACITY);
+
         Ok(Self {
             listen_addr,
             public_base_url,
@@ -112,8 +133,10 @@ impl SignalingServerConfig {
             redis_require_tls,
             redis_key_prefix,
             joined_flag_ttl,
+            rendezvous_ttl,
             redis_encrypt_payloads,
             redis_encryption_key,
+            ws_push_buffer_capacity,
         })
     }
 
@@ -134,8 +157,10 @@ impl Default for SignalingServerConfig {
             redis_require_tls: DEFAULT_REDIS_REQUIRE_TLS,
             redis_key_prefix: DEFAULT_REDIS_KEY_PREFIX.to_string(),
             joined_flag_ttl: Duration::from_secs(DEFAULT_JOINED_FLAG_TTL_SECS),
+            rendezvous_ttl: Duration::from_secs(DEFAULT_RENDEZVOUS_TTL_SECS),
             redis_encrypt_payloads: DEFAULT_REDIS_ENCRYPT,
             redis_encryption_key: None,
+            ws_push_buffer_capacity: DEFAULT_WS_PUSH_BUFFER_CAPACITY,
         })
     }
 }

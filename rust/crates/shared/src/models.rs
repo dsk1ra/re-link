@@ -73,30 +73,35 @@ impl SignalingClientConfigDto {
 pub struct ConnectionInitRequest {
     pub client_id: ClientId,
     pub session_token: String,
-    pub rendezvous_id_b64: String,  // high-entropy random ID from initiator
+    pub rendezvous_id_b64: String, // high-entropy random ID from initiator
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionInitResponse {
-    pub mailbox_id: String,          // opaque ID for initiator
+    pub mailbox_id: String, // opaque ID for initiator
     pub expires_at_epoch_ms: u128,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionJoinRequest {
-    pub token_b64: String,  // rendezvous_id_b64 extracted from link
+    pub token_b64: String, // rendezvous_id_b64 extracted from link
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionJoinResponse {
-    pub mailbox_id: String,          // opaque ID for responder
+    pub mailbox_id: String, // opaque ID for responder
     pub expires_at_epoch_ms: u128,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MailboxSendRequest {
     pub mailbox_id: String,
-    pub ciphertext_b64: String,  // opaque encrypted blob from client
+    pub ciphertext_b64: String, // opaque encrypted blob from client
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionCloseRequest {
+    pub mailbox_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

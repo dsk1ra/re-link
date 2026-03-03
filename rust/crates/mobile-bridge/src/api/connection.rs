@@ -6,21 +6,20 @@ use shared::connection;
 pub fn connection_init_local() -> ConnectionInitLocalResult {
     // Generate high-entropy rendezvous ID locally (will be shared via link)
     let rendezvous_id = connection::gen_rendezvous_id();
-    
+
     // Generate mailbox ID locally
     let mailbox_id = connection::gen_mailbox_id();
-    
+
     // Generate a secret (in real client, user would generate this)
     // This secret is kept local and NOT sent to server
     let mut secret = [0u8; 32];
     let mut rng = rand::rng();
     use rand::RngCore;
     rng.fill_bytes(&mut secret);
-    
+
     // Derive keys from secret
-    let keys = connection::derive_keys(&secret)
-        .expect("key derivation failed");
-    
+    let keys = connection::derive_keys(&secret).expect("key derivation failed");
+
     ConnectionInitLocalResult {
         rendezvous_id,
         mailbox_id,
@@ -34,8 +33,11 @@ pub fn connection_init_local() -> ConnectionInitLocalResult {
 /// Derive keys from a shared secret (Client B)
 #[flutter_rust_bridge::frb(sync)]
 pub fn connection_derive_keys(secret_hex: String) -> anyhow::Result<ConnectionInitLocalResult> {
-    let secret_bytes = hex::decode(secret_hex).map_err(|e| anyhow::anyhow!("Invalid secret hex: {}", e))?;
-    let secret: [u8; 32] = secret_bytes.try_into().map_err(|_| anyhow::anyhow!("Invalid secret length"))?;
+    let secret_bytes =
+        hex::decode(secret_hex).map_err(|e| anyhow::anyhow!("Invalid secret hex: {}", e))?;
+    let secret: [u8; 32] = secret_bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Invalid secret length"))?;
 
     let keys = connection::derive_keys(&secret)?;
 
@@ -53,27 +55,28 @@ pub fn connection_derive_keys(secret_hex: String) -> anyhow::Result<ConnectionIn
 pub struct ConnectionInitLocalResult {
     pub rendezvous_id: String,
     pub mailbox_id: String,
-    pub secret: String,     // Hex-encoded shared secret
-    pub k_sig: String,      // Hex-encoded signaling key
-    pub k_mac: String,      // Hex-encoded MAC key
-    pub sas: String,        // Hex-encoded short auth string
+    pub secret: String, // Hex-encoded shared secret
+    pub k_sig: String,  // Hex-encoded signaling key
+    pub k_mac: String,  // Hex-encoded MAC key
+    pub sas: String,    // Hex-encoded short auth string
 }
 
 /// Generate a connection link URL
 #[flutter_rust_bridge::frb(sync)]
-pub fn generate_connection_link(
-    base_url: String,
-    rendezvous_id: String,
-    secret: String,
-) -> String {
-    format!("{}/connection/join?token={}#{}", base_url, rendezvous_id, secret)
+pub fn generate_connection_link(base_url: String, rendezvous_id: String, secret: String) -> String {
+    format!(
+        "{}/connection/join?token={}#{}",
+        base_url, rendezvous_id, secret
+    )
 }
 
 /// Encrypt signaling payload using the shared session key (AES-GCM)
 #[flutter_rust_bridge::frb(sync)]
 pub fn connection_encrypt(key_hex: String, plaintext: Vec<u8>) -> anyhow::Result<String> {
     let key_bytes = hex::decode(key_hex).map_err(|e| anyhow::anyhow!("Invalid key hex: {}", e))?;
-    let key: [u8; 32] = key_bytes.try_into().map_err(|_| anyhow::anyhow!("Invalid key length"))?;
+    let key: [u8; 32] = key_bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Invalid key length"))?;
     connection::encrypt_payload(&key, &plaintext)
 }
 
@@ -81,6 +84,8 @@ pub fn connection_encrypt(key_hex: String, plaintext: Vec<u8>) -> anyhow::Result
 #[flutter_rust_bridge::frb(sync)]
 pub fn connection_decrypt(key_hex: String, ciphertext_b64: String) -> anyhow::Result<Vec<u8>> {
     let key_bytes = hex::decode(key_hex).map_err(|e| anyhow::anyhow!("Invalid key hex: {}", e))?;
-    let key: [u8; 32] = key_bytes.try_into().map_err(|_| anyhow::anyhow!("Invalid key length"))?;
+    let key: [u8; 32] = key_bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Invalid key length"))?;
     connection::decrypt_payload(&key, &ciphertext_b64)
 }

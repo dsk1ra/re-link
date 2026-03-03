@@ -69,7 +69,27 @@ impl RedisRepository {
         Ok(())
     }
 
-    pub async fn save_rendezvous(&self, token: &str, mailbox_id: &str, ttl_secs: u64) -> Result<()> {
+    pub async fn delete_mailbox_meta(&self, mailbox_id: &str) -> Result<()> {
+        let mut conn = self.conn_manager.clone();
+        let key = self.meta_key(mailbox_id);
+        conn.del::<_, ()>(key).await?;
+        Ok(())
+    }
+
+    pub async fn delete_mailbox(&self, mailbox_id: &str) -> Result<()> {
+        let mut conn = self.conn_manager.clone();
+        let meta_key = self.meta_key(mailbox_id);
+        let list_key = self.list_key(mailbox_id);
+        let _: () = conn.del(&[meta_key, list_key]).await?;
+        Ok(())
+    }
+
+    pub async fn save_rendezvous(
+        &self,
+        token: &str,
+        mailbox_id: &str,
+        ttl_secs: u64,
+    ) -> Result<()> {
         let mut conn = self.conn_manager.clone();
         let key = self.rendezvous_key(token);
         conn.set_ex::<_, _, ()>(key, mailbox_id, ttl_secs).await?;
@@ -92,7 +112,12 @@ impl RedisRepository {
         Ok(conn.llen(key).await?)
     }
 
-    pub async fn push_message(&self, mailbox_id: &str, message: &MailboxMessageStored, ttl_secs: u64) -> Result<()> {
+    pub async fn push_message(
+        &self,
+        mailbox_id: &str,
+        message: &MailboxMessageStored,
+        ttl_secs: u64,
+    ) -> Result<()> {
         let mut conn = self.conn_manager.clone();
         let key = self.list_key(mailbox_id);
         let json = serde_json::to_string(message)?;
@@ -105,7 +130,8 @@ impl RedisRepository {
         let mut conn = self.conn_manager.clone();
         let key = self.list_key(mailbox_id);
         let jsons: Vec<String> = conn.lrange(key, 0, -1).await?;
-        let messages = jsons.into_iter()
+        let messages = jsons
+            .into_iter()
             .filter_map(|j| serde_json::from_str(&j).ok())
             .collect();
         Ok(messages)

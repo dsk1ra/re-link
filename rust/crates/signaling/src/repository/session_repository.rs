@@ -68,7 +68,10 @@ impl InMemorySessionRepository {
         collected
     }
 
-    pub async fn prune_stale_clients(&self, expiration_threshold: std::time::Duration) -> Vec<ClientId> {
+    pub async fn prune_stale_clients(
+        &self,
+        expiration_threshold: std::time::Duration,
+    ) -> Vec<ClientId> {
         let mut clients = self.clients.write().await;
         let mut stale_clients = Vec::new();
         for (client_id, record) in clients.iter() {
@@ -76,7 +79,7 @@ impl InMemorySessionRepository {
                 stale_clients.push(*client_id);
             }
         }
-        
+
         for client_id in &stale_clients {
             clients.remove(client_id);
         }
@@ -84,11 +87,11 @@ impl InMemorySessionRepository {
     }
 
     pub async fn prune_messages_for_clients(&self, client_ids: &[ClientId]) {
-        if client_ids.is_empty() { return; }
+        if client_ids.is_empty() {
+            return;
+        }
         let mut messages = self.messages.write().await;
-        messages.retain(|msg| {
-            !client_ids.contains(&msg.from) && !client_ids.contains(&msg.to)
-        });
+        messages.retain(|msg| !client_ids.contains(&msg.from) && !client_ids.contains(&msg.to));
     }
 }
 

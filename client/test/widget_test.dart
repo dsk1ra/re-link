@@ -11,11 +11,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:application/main.dart';
 
 void main() {
-  testWidgets('Shows input on top with submit button', (WidgetTester tester) async {
+  testWidgets('Shows input on top with submit button', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const MyApp());
 
     // On launch show server connect UI
-    expect(find.widgetWithText(TextField, 'Enter Rust server address (host:port or "local")'), findsOneWidget);
+    expect(
+      find.widgetWithText(
+        TextField,
+        'Enter Rust server address (host:port or "local")',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Connect'), findsOneWidget);
     expect(find.text('Result will appear here'), findsOneWidget);
   }, skip: true);

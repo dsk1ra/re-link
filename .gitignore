@@ -37,6 +37,7 @@ client/build/
 client/coverage/
 client/client_dev.json
 client/config/dev.json
+client/rust_builder/
 
 # Platform Specifics
 client/android/local.properties

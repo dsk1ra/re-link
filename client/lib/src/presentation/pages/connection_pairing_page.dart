@@ -99,7 +99,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
           style: TextStyle(color: Color(0xFFffffff)),
         ),
         centerTitle: true,
-        backgroundColor: const Color(0xFF19231a),
+        backgroundColor: const Color(0xFF1C0F13),
         elevation: 0,
       ),
       body: Column(
@@ -109,10 +109,10 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             color: connected
-                ? const Color(0xFF19231a)
+                ? const Color(0xFF1C0F13)
                 : (_connecting
                       ? const Color(0xFFcc3f0c)
-                      : const Color(0xFF19231a).withAlpha(179)),
+                      : const Color(0xFF1C0F13).withAlpha(179)),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -148,7 +148,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                     onPressed: _connectToServer,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFd8cbc7),
-                      foregroundColor: const Color(0xFF19231a),
+                      foregroundColor: const Color(0xFF1C0F13),
                     ),
                     child: const Text('Retry'),
                   ),
@@ -171,14 +171,14 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF19231a),
+                        color: Color(0xFF1C0F13),
                       ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
                     const Text(
                       'Secure, direct connection with minimal server involvement',
-                      style: TextStyle(fontSize: 14, color: Color(0xFF19231a)),
+                      style: TextStyle(fontSize: 14, color: Color(0xFF1C0F13)),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 48),
@@ -194,7 +194,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                           side: BorderSide(
                             color: connected
                                 ? const Color(0xFFcc3f0c)
-                                : const Color(0xFF19231a).withAlpha(77),
+                                : const Color(0xFF1C0F13).withAlpha(77),
                             width: 2,
                           ),
                         ),
@@ -211,9 +211,9 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
                                     color: connected
-                                        ? const Color(0xFF19231a)
+                                        ? const Color(0xFF1C0F13)
                                         : const Color(
-                                            0xFF19231a,
+                                            0xFF1C0F13,
                                           ).withAlpha(102),
                                   ),
                                 ),
@@ -223,8 +223,8 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: connected
-                                        ? const Color(0xFF19231a).withAlpha(179)
-                                        : const Color(0xFF19231a).withAlpha(77),
+                                        ? const Color(0xFF1C0F13).withAlpha(179)
+                                        : const Color(0xFF1C0F13).withAlpha(77),
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
@@ -240,7 +240,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                     const Text(
                       'OR',
                       style: TextStyle(
-                        color: Color(0xFF19231a),
+                        color: Color(0xFF1C0F13),
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -258,7 +258,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                           side: BorderSide(
                             color: connected
                                 ? const Color(0xFFcc3f0c)
-                                : const Color(0xFF19231a).withAlpha(77),
+                                : const Color(0xFF1C0F13).withAlpha(77),
                             width: 2,
                           ),
                         ),
@@ -275,9 +275,9 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
                                     color: connected
-                                        ? const Color(0xFF19231a)
+                                        ? const Color(0xFF1C0F13)
                                         : const Color(
-                                            0xFF19231a,
+                                            0xFF1C0F13,
                                           ).withAlpha(102),
                                   ),
                                 ),
@@ -287,8 +287,8 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: connected
-                                        ? const Color(0xFF19231a).withAlpha(179)
-                                        : const Color(0xFF19231a).withAlpha(77),
+                                        ? const Color(0xFF1C0F13).withAlpha(179)
+                                        : const Color(0xFF1C0F13).withAlpha(77),
                                   ),
                                   textAlign: TextAlign.center,
                                 ),

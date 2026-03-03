@@ -3,8 +3,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import '../../../pairing/domain/models.dart';
-import '../../../pairing/domain/signaling_backend.dart';
+import '../../domain/models.dart';
+import '../../domain/signaling_backend.dart';
 
 /// HTTP client for the signaling server implementing the domain interface.
 class HttpSignalingBackend implements SignalingBackend {
@@ -19,8 +19,8 @@ class HttpSignalingBackend implements SignalingBackend {
   String? _displayName;
 
   HttpSignalingBackend(this.baseUrl, {http.Client? client})
-      : _client = client ?? http.Client(),
-        _ownsClient = client == null;
+    : _client = client ?? http.Client(),
+      _ownsClient = client == null;
 
   @override
   bool get isRegistered => _clientId != null && _sessionToken != null;
@@ -34,9 +34,11 @@ class HttpSignalingBackend implements SignalingBackend {
   @override
   Future<RegisterResponse> register({required String deviceLabel}) async {
     final uri = Uri.parse('$baseUrl/register');
-    final resp = await _client.post(uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'device_label': deviceLabel}));
+    final resp = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'device_label': deviceLabel}),
+    );
     if (resp.statusCode != 200) {
       throw Exception('Register failed: ${resp.statusCode} ${resp.body}');
     }
@@ -52,7 +54,9 @@ class HttpSignalingBackend implements SignalingBackend {
   void _scheduleNextHeartbeat([int? seconds]) {
     _heartbeatTimer?.cancel();
     if (!isRegistered) return;
-    final delay = Duration(seconds: (seconds ?? _heartbeatIntervalSecs).clamp(1, 3600));
+    final delay = Duration(
+      seconds: (seconds ?? _heartbeatIntervalSecs).clamp(1, 3600),
+    );
     _heartbeatTimer = Timer(delay, () async {
       try {
         final hb = await heartbeat();
@@ -71,9 +75,14 @@ class HttpSignalingBackend implements SignalingBackend {
   Future<HeartbeatResponse?> heartbeat() async {
     if (!isRegistered) return null;
     final uri = Uri.parse('$baseUrl/heartbeat');
-    final resp = await _client.post(uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'client_id': _clientId, 'session_token': _sessionToken}));
+    final resp = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'client_id': _clientId,
+        'session_token': _sessionToken,
+      }),
+    );
     if (resp.statusCode == 200) {
       final hb = HeartbeatResponse.fromJson(jsonDecode(resp.body));
       _heartbeatIntervalSecs = hb.nextHeartbeatSecs;

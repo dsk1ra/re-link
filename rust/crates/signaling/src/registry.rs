@@ -1,11 +1,9 @@
+use crate::repository::session_repository::{ClientRecord, InMemorySessionRepository};
 use shared::models::{
     ClientId, HeartbeatRequest, HeartbeatResponse, RegisterRequest, RegisterResponse,
-    SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest
+    SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest,
 };
-use crate::repository::session_repository::{InMemorySessionRepository, ClientRecord};
-use std::{
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tracing::debug;
 use uuid::Uuid;
@@ -34,9 +32,19 @@ impl SessionRegistry {
         }
     }
 
-    async fn verify_client(&self, client_id: &ClientId, session_token: &str) -> Result<ClientRecord, RegistryError> {
-        let record = self.repository.get_client(client_id).await.ok_or(RegistryError::ClientNotFound)?;
-        if record.session_token != session_token { return Err(RegistryError::InvalidToken); }
+    async fn verify_client(
+        &self,
+        client_id: &ClientId,
+        session_token: &str,
+    ) -> Result<ClientRecord, RegistryError> {
+        let record = self
+            .repository
+            .get_client(client_id)
+            .await
+            .ok_or(RegistryError::ClientNotFound)?;
+        if record.session_token != session_token {
+            return Err(RegistryError::InvalidToken);
+        }
         Ok(record)
     }
 
@@ -67,15 +75,23 @@ impl SessionRegistry {
         }
     }
 
-    pub async fn heartbeat(&self, request: HeartbeatRequest) -> Result<HeartbeatResponse, RegistryError> {
+    pub async fn heartbeat(
+        &self,
+        request: HeartbeatRequest,
+    ) -> Result<HeartbeatResponse, RegistryError> {
         self.prune_expired().await;
 
         // Verify first
-        self.verify_client(&request.client_id, &request.session_token).await?;
-        
+        self.verify_client(&request.client_id, &request.session_token)
+            .await?;
+
         // Update
-        if !self.repository.update_client_heartbeat(&request.client_id, Instant::now()).await {
-             return Err(RegistryError::ClientNotFound);
+        if !self
+            .repository
+            .update_client_heartbeat(&request.client_id, Instant::now())
+            .await
+        {
+            return Err(RegistryError::ClientNotFound);
         }
 
         Ok(HeartbeatResponse {
@@ -86,7 +102,8 @@ impl SessionRegistry {
     pub async fn enqueue_signal(&self, submit: SignalSubmitRequest) -> Result<(), RegistryError> {
         self.prune_expired().await;
 
-        self.verify_client(&submit.envelope.from, &submit.session_token).await?;
+        self.verify_client(&submit.envelope.from, &submit.session_token)
+            .await?;
 
         let mut envelope = submit.envelope;
         envelope.created_at_epoch_ms = SystemTime::now()
@@ -98,31 +115,49 @@ impl SessionRegistry {
         Ok(())
     }
 
-    pub async fn fetch_signals(&self, request: SignalFetchRequest) -> Result<SignalFetchResponse, RegistryError> {
+    pub async fn fetch_signals(
+        &self,
+        request: SignalFetchRequest,
+    ) -> Result<SignalFetchResponse, RegistryError> {
         self.prune_expired().await;
 
-        self.verify_client(&request.client_id, &request.session_token).await?;
+        self.verify_client(&request.client_id, &request.session_token)
+            .await?;
 
-        let collected = self.repository.get_messages_for_client(&request.client_id).await;
+        let collected = self
+            .repository
+            .get_messages_for_client(&request.client_id)
+            .await;
 
-        Ok(SignalFetchResponse { messages: collected })
+        Ok(SignalFetchResponse {
+            messages: collected,
+        })
     }
 
-    pub async fn verify_session(&self, client_id: &ClientId, session_token: &str) -> Result<(), RegistryError> {
+    pub async fn verify_session(
+        &self,
+        client_id: &ClientId,
+        session_token: &str,
+    ) -> Result<(), RegistryError> {
         self.verify_client(client_id, session_token).await?;
         Ok(())
     }
 
     async fn prune_expired(&self) {
         let expiration_threshold = self.session_ttl;
-        let stale_clients = self.repository.prune_stale_clients(expiration_threshold).await;
-        
+        let stale_clients = self
+            .repository
+            .prune_stale_clients(expiration_threshold)
+            .await;
+
         if !stale_clients.is_empty() {
             debug!(?stale_clients, "pruned expired clients");
             // Messages pruning is now handled by the repository helper or we can do it explicitly
-            // Ideally the repository handles the cascade delete or similar logic. 
+            // Ideally the repository handles the cascade delete or similar logic.
             // I added `prune_messages_for_clients` to the repository.
-            self.repository.prune_messages_for_clients(&stale_clients).await;
+            self.repository
+                .prune_messages_for_clients(&stale_clients)
+                .await;
         }
     }
 }

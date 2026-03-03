@@ -107,7 +107,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF19231a),
+                        color: Color(0xFF1C0F13),
                       ),
                     ),
                   ],
@@ -279,7 +279,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
                 border: Border.all(
                   color: _isDragging
                       ? const Color(0xFFcc3f0c)
-                      : const Color(0xFF19231a),
+                      : const Color(0xFF1C0F13),
                   width: _isDragging ? 2 : 1,
                   style: BorderStyle.solid,
                 ),
@@ -294,7 +294,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
                     _isDragging ? Icons.file_upload : Icons.file_present,
                     color: _isDragging
                         ? const Color(0xFFcc3f0c)
-                        : const Color(0xFF19231a),
+                        : const Color(0xFF1C0F13),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -334,7 +334,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
             label: const Text('Send File'),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              backgroundColor: const Color(0xFF19231a),
+              backgroundColor: const Color(0xFF1C0F13),
               disabledBackgroundColor: Colors.grey.shade300,
             ),
           ),
