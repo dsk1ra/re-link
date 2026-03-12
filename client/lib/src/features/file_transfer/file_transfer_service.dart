@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math';
 
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
 import 'package:crypto/crypto.dart';
@@ -71,6 +72,7 @@ class FileTransferSession {
   final int fileSize;
   final bool isSender;
   final String? expectedSha256;
+  final String? senderNonce;
 
   // For sender
   File? sourceFile;
@@ -90,6 +92,7 @@ class FileTransferSession {
     required this.fileSize,
     required this.isSender,
     this.expectedSha256,
+    this.senderNonce,
     this.sourceFile,
   });
 }
@@ -108,11 +111,18 @@ class FileTransferService {
   final WebRTCManager _webrtcManager;
   final StreamController<FileTransferState> _stateController =
       StreamController.broadcast();
+  final String _instanceNonce = _generateInstanceNonce();
+
+  StreamSubscription<String>? _controlMessageSubscription;
+  StreamSubscription<List<int>>? _fileChunkSubscription;
+  StreamSubscription<String>? _fileMessageSubscription;
+  StreamSubscription<RTCDataChannelState>? _fileChannelStateSubscription;
 
   FileTransferSession? _currentSession;
   FileTransferState _currentState = FileTransferState(
     status: TransferStatus.idle,
   );
+  bool _isDisposed = false;
 
   // Configuration
   static const int _chunkSize = 64 * 1024; // 64 KB
@@ -123,13 +133,22 @@ class FileTransferService {
   FileTransferState get currentState => _currentState;
 
   FileTransferService(this._webrtcManager) {
-    _webrtcManager.onMessage.listen(_handleControlMessage);
-    _webrtcManager.onFileChunk.listen(_handleFileChunk);
-    _webrtcManager.onFileMessage.listen(_handleFileMessage);
-    _webrtcManager.onFileChannelState.listen(_handleFileChannelState);
+    _controlMessageSubscription = _webrtcManager.onMessage.listen(
+      _handleControlMessage,
+    );
+    _fileChunkSubscription = _webrtcManager.onFileChunk.listen(
+      _handleFileChunk,
+    );
+    _fileMessageSubscription = _webrtcManager.onFileMessage.listen(
+      _handleFileMessage,
+    );
+    _fileChannelStateSubscription = _webrtcManager.onFileChannelState.listen(
+      _handleFileChannelState,
+    );
   }
 
   void _updateState(FileTransferState newState) {
+    if (_isDisposed || _stateController.isClosed) return;
     _currentState = newState;
     _stateController.add(newState);
   }
@@ -160,6 +179,7 @@ class FileTransferService {
       fileSize: size,
       isSender: true,
       expectedSha256: sha256Hex,
+      senderNonce: _instanceNonce,
       sourceFile: file,
     );
 
@@ -177,6 +197,7 @@ class FileTransferService {
       'name': name,
       'size': size,
       'sha256': sha256Hex,
+      'sender_nonce': _instanceNonce,
     };
 
     await _webrtcManager.sendFileMessage(jsonEncode(offerMsg));
@@ -362,18 +383,58 @@ class FileTransferService {
   }
 
   void _handleOffer(Map<String, dynamic> msg) {
+    final incomingId = msg['id']?.toString();
+    final incomingNonce = msg['sender_nonce']?.toString();
+
+    // Simultaneous-offer collision handling: deterministically choose one sender.
+    if (_currentSession != null &&
+        _currentSession!.isSender &&
+        _currentState.status == TransferStatus.offering &&
+        incomingId != null &&
+        incomingNonce != null) {
+      final localId = _currentSession!.id;
+      final localNonce = _currentSession!.senderNonce;
+      if (localNonce != null &&
+          _compareOfferPriority(
+                localId: localId,
+                localNonce: localNonce,
+                remoteId: incomingId,
+                remoteNonce: incomingNonce,
+              ) <
+              0) {
+        final rejectMsg = {
+          'type': _msgReject,
+          'id': incomingId,
+          'reason': 'collision_local_offer_won',
+        };
+        unawaited(_webrtcManager.sendFileMessage(jsonEncode(rejectMsg)));
+        return;
+      }
+
+      final localOfferId = _currentSession!.id;
+      _disposeCurrentSessionResources(deleteTempFile: true);
+      _currentSession = null;
+
+      final cancelMsg = {
+        'type': _msgCancel,
+        'id': localOfferId,
+        'reason': 'collision_remote_offer_won',
+      };
+      unawaited(_webrtcManager.sendFileMessage(jsonEncode(cancelMsg)));
+    }
+
     if (_currentSession != null) {
       // Busy, auto-reject or queue? For v1, reject or ignore.
       final rejectMsg = {
         'type': _msgReject,
-        'id': msg['id']?.toString(),
+        'id': incomingId,
         'reason': 'busy',
       };
       unawaited(_webrtcManager.sendFileMessage(jsonEncode(rejectMsg)));
       return;
     }
 
-    final id = msg['id']?.toString();
+    final id = incomingId;
     final name = (msg['name'] as String?) ?? 'unknown';
     final size = (msg['size'] as num?)?.toInt();
     final sha256Hex = msg['sha256'] as String?;
@@ -399,6 +460,7 @@ class FileTransferService {
       fileSize: size,
       isSender: false,
       expectedSha256: sha256Hex,
+      senderNonce: incomingNonce,
     );
 
     _updateState(
@@ -496,23 +558,7 @@ class FileTransferService {
   }
 
   void _endSession({String? error}) {
-    // Close resources
-    if (_currentSession?.writeSink != null) {
-      try {
-        _currentSession!.writeSink!.close();
-      } catch (_) {}
-    }
-    try {
-      _currentSession?.hashInput?.close();
-    } catch (_) {}
-    if (_currentSession?.tempPath != null) {
-      // Delete incomplete temp file
-      try {
-        File(_currentSession!.tempPath!).delete();
-      } catch (_) {}
-    }
-    _clearAcceptTimeout();
-    _clearInactivityTimer();
+    _disposeCurrentSessionResources(deleteTempFile: true);
 
     _currentSession = null;
     _updateState(
@@ -524,6 +570,22 @@ class FileTransferService {
   }
 
   void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
+
+    _controlMessageSubscription?.cancel();
+    _fileChunkSubscription?.cancel();
+    _fileMessageSubscription?.cancel();
+    _fileChannelStateSubscription?.cancel();
+
+    _controlMessageSubscription = null;
+    _fileChunkSubscription = null;
+    _fileMessageSubscription = null;
+    _fileChannelStateSubscription = null;
+
+    _disposeCurrentSessionResources(deleteTempFile: true);
+    _currentSession = null;
+
     _stateController.close();
   }
 
@@ -574,6 +636,41 @@ class FileTransferService {
   bool _isMatchingId(String? messageId) {
     return _currentSession != null && messageId == _currentSession!.id;
   }
+
+  void _disposeCurrentSessionResources({required bool deleteTempFile}) {
+    if (_currentSession?.writeSink != null) {
+      try {
+        _currentSession!.writeSink!.close();
+      } catch (_) {}
+    }
+    try {
+      _currentSession?.hashInput?.close();
+    } catch (_) {}
+    if (deleteTempFile && _currentSession?.tempPath != null) {
+      try {
+        File(_currentSession!.tempPath!).delete();
+      } catch (_) {}
+    }
+    _clearAcceptTimeout();
+    _clearInactivityTimer();
+  }
+
+  int _compareOfferPriority({
+    required String localId,
+    required String localNonce,
+    required String remoteId,
+    required String remoteNonce,
+  }) {
+    final localKey = '$localId|$localNonce';
+    final remoteKey = '$remoteId|$remoteNonce';
+    return localKey.compareTo(remoteKey);
+  }
+}
+
+String _generateInstanceNonce() {
+  final now = DateTime.now().microsecondsSinceEpoch;
+  final rand = Random().nextInt(1 << 32);
+  return '$now-$rand';
 }
 
 Future<String> _computeSha256OnPath(String path) async {

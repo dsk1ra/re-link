@@ -2,6 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:application/src/features/file_transfer/file_transfer_widget.dart';
+import 'package:application/src/presentation/ui/metrics.dart';
+import 'package:application/src/presentation/ui/spacing.dart';
+import 'package:application/src/presentation/ui/typography.dart';
+import 'package:application/src/presentation/ui/ui_config.dart';
+import 'package:application/src/presentation/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
@@ -29,13 +34,33 @@ class ResponderPage extends StatefulWidget {
 
 class _ResponderPageState extends State<ResponderPage> {
   static final Logger _log = Logger('ResponderPage');
+
+  // ─── Layout / style constants ────────────────────────────────────────────
+  static const double _maxFormWidth = 520;
+  static const double _formTitleFontSize = 20;
+  static const double _joinButtonVerticalPadding = 16;
+  static const double _joinSpinnerSize = 20;
+  static const double _menuHandleIconSize = 45;
+  static const double _floatingMenuWidth = 220;
+  static const double _floatingMenuIconSize = 22;
+  static const double _floatingMenuLabelFontSize = 11;
+  static const double _floatingMenuTopPadding = 10;
+  static const double _floatingMenuCornerRadius = 14;
+  static const double _menuHandleClosedTop = 0;
+  static const double _menuHandleOpenTop = 108;
+  static const double _menuOverlayHeight = 170;
+  static const double _dragHandleWidth = 40;
+  static const double _dragHandleHeight = 4;
+  static const double _dragHandleBorderRadius = 2;
+  static const double _sheetHeaderIconSize = 18;
+  static const double _sheetHeaderIconGap = AppSpacing.sm;
+
   late ConnectionService _connectionService;
   WebRTCManager? _webrtcManager;
   final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
   StreamSubscription<MediaStream>? _remoteStreamSubscription;
 
   RTCPeerConnectionState? _webrtcState;
-  String? _receivedMessage;
 
   final TextEditingController _tokenController = TextEditingController();
   String? _responderMailboxId;
@@ -45,6 +70,7 @@ class _ResponderPageState extends State<ResponderPage> {
   bool _joined = false;
   bool _isPeerDisconnected = false;
   bool _signalingClosed = false;
+  bool _showSessionMenu = false;
   Timer? _heartbeatTimer;
   DateTime? _lastPongAt;
   Timer? _sessionClosedAckTimer;
@@ -70,6 +96,13 @@ class _ResponderPageState extends State<ResponderPage> {
 
   Future<void> _attachRemoteStream(MediaStream stream) async {
     _remoteRenderer.srcObject = stream;
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _detachRemoteStream() {
+    _remoteRenderer.srcObject = null;
     if (mounted) {
       setState(() {});
     }
@@ -337,6 +370,7 @@ class _ResponderPageState extends State<ResponderPage> {
       } else if (signalingMsg.type == 'disconnect') {
         _log.info('Responder: Peer disconnected');
         _showSnackBar('Peer has disconnected.');
+        _detachRemoteStream();
         await _webrtcManager?.dispose();
         setState(() {
           _webrtcManager = null;
@@ -426,9 +460,13 @@ class _ResponderPageState extends State<ResponderPage> {
         unawaited(_webrtcManager?.addIceCandidate(candidate));
         return;
       }
+      if (type == 'screen_share_stopped') {
+        _detachRemoteStream();
+        _showSnackBar('Host stopped sharing screen');
+        return;
+      }
     } catch (_) {}
 
-    setState(() => _receivedMessage = message);
     _showSnackBar('Received: $message');
   }
 
@@ -453,6 +491,7 @@ class _ResponderPageState extends State<ResponderPage> {
     _log.info('Responder: Peer session closed over WebRTC');
     _showSnackBar('Peer has disconnected.');
     _stopHeartbeat();
+    _detachRemoteStream();
     await _webrtcManager?.dispose();
     setState(() {
       _webrtcManager = null;
@@ -506,17 +545,18 @@ class _ResponderPageState extends State<ResponderPage> {
       builder: (ctx) => AlertDialog(
         title: const Text('End Connection?'),
         content: const Text(
-          'You are currently in an active secure session. Disconnecting will end the peer-to-end connection for both parties.',
+          'You are currently in an active session. Disconnecting will end the connection for both parties.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
+            style: TextButton.styleFrom(foregroundColor: AppColors.textMuted),
             child: const Text('Keep Connected'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFcc3f0c),
+              backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
             ),
             child: const Text('Disconnect'),
@@ -643,241 +683,449 @@ class _ResponderPageState extends State<ResponderPage> {
     await _webrtcManager?.sendControlMessage(msg);
   }
 
+  // ─── Build ────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
+    final isConnected =
+        _webrtcState == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldPop = await _showExitConfirmation();
         if (!context.mounted) return;
-        if (shouldPop) {
-          Navigator.of(context).pop();
-        }
+        if (shouldPop) Navigator.of(context).pop();
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFd8cbc7),
-        appBar: AppBar(
-          title: const Text(
-            'Join Connection',
-            style: TextStyle(color: Color(0xFFffffff)),
+        backgroundColor: AppColors.background,
+        appBar: isConnected
+            ? null
+            : AppBar(
+                title: Text(
+                  'Join Connection',
+                  style: AppTypography.title(
+                    size: AppUiMetrics.appBarTitleFontSize,
+                  ),
+                ),
+                backgroundColor: AppColors.surface,
+                elevation: 0,
+                iconTheme: const IconThemeData(color: AppColors.textPrimary),
+                actions: [
+                  if (_joined) ...[
+                    _buildConnectionBadge(),
+                    const SizedBox(width: AppSpacing.md),
+                  ],
+                ],
+              ),
+        body: !_joined ? _buildJoinForm() : _buildConnectedLayout(),
+      ),
+    );
+  }
+
+  // ─── AppBar badge ─────────────────────────────────────────────────────────
+
+  Widget _buildConnectionBadge() {
+    final connected =
+        !_isPeerDisconnected &&
+        _webrtcState == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+    final failed = _isPeerDisconnected;
+    final Color dot = failed
+        ? AppColors.error
+        : (connected ? AppColors.success : AppColors.warning);
+    final String label = failed
+        ? 'Disconnected'
+        : (connected ? 'Connected' : _webrtcStateText());
+
+    return Container(
+      padding: AppUiMetrics.badgePadding,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(AppUiMetrics.badgeBorderRadius),
+        border: Border.all(color: dot.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: AppUiMetrics.badgeDotSize,
+            height: AppUiMetrics.badgeDotSize,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
           ),
-          backgroundColor: const Color(0xFF1C0F13),
-          elevation: 0,
-          iconTheme: const IconThemeData(color: Color(0xFFffffff)),
-        ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
+          const SizedBox(width: AppUiMetrics.badgeDotGap),
+          Text(
+            label,
+            style: AppTypography.body(
+              size: AppUiMetrics.badgeFontSize,
+              weight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Pre-join form ────────────────────────────────────────────────────────
+
+  Widget _buildJoinForm() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _maxFormWidth),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (!_joined) ...[
-                const Text(
-                  'Enter connection link',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: _tokenController,
-                  style: const TextStyle(color: Color(0xFF1C0F13)),
-                  decoration: const InputDecoration(
-                    labelText: 'Paste link or token',
-                    labelStyle: TextStyle(color: Color(0xFF1C0F13)),
-                    border: OutlineInputBorder(),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: Color(0xFF1C0F13)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(
-                        color: Color(0xFFcc3f0c),
-                        width: 2,
-                      ),
-                    ),
-                    prefixIcon: Icon(Icons.link, color: Color(0xFF1C0F13)),
-                    filled: true,
-                    fillColor: Color(0xFFffffff),
+              const SizedBox(height: AppSpacing.xl),
+              Text(
+                'Enter connection link',
+                style: AppTypography.title(size: _formTitleFontSize),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              TextField(
+                controller: _tokenController,
+                style: AppTypography.body(),
+                decoration: InputDecoration(
+                  labelText: 'Paste link or token',
+                  labelStyle: AppTypography.body(color: AppColors.textMuted),
+                  border: const OutlineInputBorder(),
+                  enabledBorder: const OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.outline),
                   ),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: _joiningConnection ? null : _joinWithToken,
-                  icon: _joiningConnection
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.login),
-                  label: Text(
-                    _joiningConnection ? 'Joining...' : 'Join Connection',
+                  focusedBorder: const OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.primary, width: 2),
                   ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFcc3f0c),
-                    foregroundColor: const Color(0xFFffffff),
-                    disabledBackgroundColor: const Color(
-                      0xFF1C0F13,
-                    ).withAlpha(77),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  prefixIcon: const Icon(
+                    Icons.link,
+                    color: AppColors.textMuted,
+                  ),
+                  filled: true,
+                  fillColor: AppColors.surface,
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: AppSpacing.base),
+              ElevatedButton.icon(
+                onPressed: _joiningConnection ? null : _joinWithToken,
+                icon: _joiningConnection
+                    ? const SizedBox(
+                        width: _joinSpinnerSize,
+                        height: _joinSpinnerSize,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.login),
+                label: Text(
+                  _joiningConnection ? 'Joining...' : 'Join Connection',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: _joinButtonVerticalPadding,
                   ),
                 ),
-                if (_joinError != null) ...[
-                  const SizedBox(height: 16),
-                  Card(
-                    color: const Color(0xFFffffff),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Error',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFFcc3f0c),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _joinError!,
-                            style: const TextStyle(color: Color(0xFF1C0F13)),
-                          ),
-                        ],
+              ),
+              if (_joinError != null) ...[
+                const SizedBox(height: AppSpacing.base),
+                AppCard(
+                  variant: AppCardVariant.error,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Error',
+                        style: AppTypography.body(
+                          weight: FontWeight.w700,
+                          color: AppColors.error,
+                        ),
                       ),
-                    ),
-                  ),
-                ],
-              ] else ...[
-                Card(
-                  color: const Color(0xFFffffff),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Icon(
-                          _isPeerDisconnected
-                              ? Icons.cancel
-                              : (_webrtcState ==
-                                        RTCPeerConnectionState
-                                            .RTCPeerConnectionStateConnected
-                                    ? Icons.check_circle
-                                    : Icons.sync),
-                          size: 64,
-                          color: _isPeerDisconnected
-                              ? Colors.red
-                              : (_webrtcState ==
-                                        RTCPeerConnectionState
-                                            .RTCPeerConnectionStateConnected
-                                    ? const Color(0xFFcc3f0c)
-                                    : const Color(0xFF1C0F13)),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _isPeerDisconnected
-                              ? 'Connection Ended'
-                              : (_webrtcState ==
-                                        RTCPeerConnectionState
-                                            .RTCPeerConnectionStateConnected
-                                    ? 'Connected!'
-                                    : 'Establishing Connection...'),
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'WebRTC: ${_webrtcStateText()}',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        if (_isPeerDisconnected) ...[
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('Return to Home'),
-                          ),
-                        ],
-                      ],
-                    ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(_joinError!, style: AppTypography.body()),
+                    ],
                   ),
                 ),
-                if (_webrtcState ==
-                    RTCPeerConnectionState.RTCPeerConnectionStateConnected) ...[
-                  const SizedBox(height: 16),
-                  Card(
-                    color: const Color(0xFFffffff),
-                    elevation: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Remote Screen',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1C0F13),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          AspectRatio(
-                            aspectRatio: 16 / 9,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1C0F13),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: _remoteRenderer.srcObject != null
-                                  ? RTCVideoView(_remoteRenderer)
-                                  : const Center(
-                                      child: Text(
-                                        'Waiting for shared screen...',
-                                        style: TextStyle(
-                                          color: Color(0xFFffffff),
-                                        ),
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (_webrtcManager != null)
-                    FileTransferWidget(webrtcManager: _webrtcManager!),
-                  if (_receivedMessage != null) ...[
-                    const SizedBox(height: 16),
-                    Card(
-                      color: const Color(0xFFffffff),
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Received Message',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF1C0F13),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _receivedMessage!,
-                              style: const TextStyle(color: Color(0xFF1C0F13)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
               ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Connected layout ─────────────────────────────────────────────────────
+
+  Widget _buildConnectedLayout() {
+    // Case: peer disconnected
+    if (_isPeerDisconnected) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: AppCard(
+            variant: AppCardVariant.error,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.cancel,
+                  size: AppUiMetrics.disconnectedIconSize,
+                  color: AppColors.error,
+                ),
+                const SizedBox(height: AppSpacing.base),
+                Text('Connection Ended', style: AppTypography.title()),
+                const SizedBox(height: AppSpacing.base),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.onPrimary,
+                  ),
+                  child: const Text('Return to Home'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Case: still negotiating
+    if (_webrtcState !=
+        RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: AppSpacing.lg),
+            Text('Establishing connection...'),
+          ],
+        ),
+      );
+    }
+
+    // Case: connected — immersive remote screen
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Remote video fills the whole area
+        Container(
+          color: AppColors.background,
+          child: _remoteRenderer.srcObject != null
+              ? RTCVideoView(
+                  _remoteRenderer,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                )
+              : Center(
+                  child: Text(
+                    'Waiting for shared screen…',
+                    style: AppTypography.body(color: AppColors.textMuted),
+                  ),
+                ),
+        ),
+        SafeArea(
+          child: Align(
+            alignment: Alignment.topRight,
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: _buildConnectionBadge(),
+            ),
+          ),
+        ),
+        Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(top: _floatingMenuTopPadding),
+            child: _buildSlidingMenuOverlay(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Floating top menu (triangle handle + icon actions) ─────────────────
+
+  Widget _buildSlidingMenuOverlay() {
+    return SizedBox(
+      width: _floatingMenuWidth,
+      height: _menuOverlayHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            child: IgnorePointer(
+              ignoring: !_showSessionMenu,
+              child: AnimatedOpacity(
+                opacity: _showSessionMenu ? 1 : 0,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: AnimatedSlide(
+                  offset: _showSessionMenu
+                      ? Offset.zero
+                      : const Offset(0, -1.0),
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeInOut,
+                  child: _buildFloatingMenu(),
+                ),
+              ),
+            ),
+          ),
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeInOut,
+            top: _showSessionMenu ? _menuHandleOpenTop : _menuHandleClosedTop,
+            left: 0,
+            right: 0,
+            child: Center(child: _buildMenuHandle()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuHandle() {
+    return GestureDetector(
+      onTap: () => setState(() => _showSessionMenu = !_showSessionMenu),
+      child: AnimatedRotation(
+        turns: _showSessionMenu ? 0.5 : 0.0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeInOut,
+        child: Icon(
+          Icons.expand_more,
+          size: _menuHandleIconSize,
+          color: AppColors.primary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingMenu() {
+    return Container(
+      width: _floatingMenuWidth,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.base,
+        AppSpacing.md,
+        AppSpacing.base,
+        AppSpacing.base,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(_floatingMenuCornerRadius),
+        border: Border.all(color: AppColors.outline),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildFloatingMenuAction(
+            icon: Icons.swap_horiz,
+            label: 'Files',
+            onPressed: _openFileTransferSheet,
+          ),
+          _buildFloatingMenuAction(
+            icon: Icons.call_end,
+            label: 'Disconnect',
+            color: AppColors.error,
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingMenuAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+    Color? color,
+  }) {
+    final actionColor = onPressed == null
+        ? AppColors.textMuted.withValues(alpha: 0.6)
+        : (color ?? AppColors.textPrimary);
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: actionColor, size: _floatingMenuIconSize),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              label,
+              style: AppTypography.body(
+                size: _floatingMenuLabelFontSize,
+                color: actionColor,
+                weight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── File transfer bottom sheet ───────────────────────────────────────────
+
+  void _openFileTransferSheet() {
+    if (_webrtcManager == null) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.45,
+        minChildSize: 0.25,
+        maxChildSize: 0.85,
+        builder: (ctx, scrollController) => SingleChildScrollView(
+          controller: scrollController,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: _dragHandleWidth,
+                    height: _dragHandleHeight,
+                    margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: AppColors.outline,
+                      borderRadius: BorderRadius.circular(
+                        _dragHandleBorderRadius,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.swap_horiz,
+                      color: AppColors.textMuted,
+                      size: _sheetHeaderIconSize,
+                    ),
+                    const SizedBox(width: _sheetHeaderIconGap),
+                    Text(
+                      'File Transfer',
+                      style: AppTypography.body(weight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                FileTransferWidget(webrtcManager: _webrtcManager!),
+              ],
+            ),
           ),
         ),
       ),

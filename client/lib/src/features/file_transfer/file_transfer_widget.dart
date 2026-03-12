@@ -2,11 +2,23 @@ import 'dart:io';
 
 import 'package:application/src/features/file_transfer/file_transfer_service.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
+import 'package:application/src/presentation/ui/spacing.dart';
+import 'package:application/src/presentation/ui/typography.dart';
+import 'package:application/src/presentation/ui/ui_config.dart';
+import 'package:application/src/presentation/widgets/app_card.dart';
+import 'package:application/src/presentation/widgets/app_button.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 class FileTransferWidget extends StatefulWidget {
+  static const double _sectionTitleFontSize = 18;
+  static const double _fileNameFontSize = 15;
+  static const double _metaFontSize = 12;
+  static const double _progressBarHeight = 8;
+  static const double _dropZoneVerticalPadding = 20;
+  static const double _fileInfoBorderRadius = 8;
+
   final WebRTCManager webrtcManager;
 
   const FileTransferWidget({super.key, required this.webrtcManager});
@@ -87,35 +99,36 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
       builder: (context, snapshot) {
         final state = snapshot.data!;
 
-        return Card(
-          color: const Color(0xFFffffff),
-          elevation: 2,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Row(
-                  children: [
-                    Icon(
-                      Icons.swap_horizontal_circle,
-                      color: Color(0xFFcc3f0c),
+        final variant = switch (state.status) {
+          TransferStatus.completed => AppCardVariant.success,
+          TransferStatus.error => AppCardVariant.error,
+          TransferStatus.offered => AppCardVariant.warning,
+          _ => AppCardVariant.normal,
+        };
+
+        return AppCard(
+          variant: variant,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.swap_horizontal_circle,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    'File Transfer',
+                    style: AppTypography.title(
+                      size: FileTransferWidget._sectionTitleFontSize,
                     ),
-                    SizedBox(width: 8),
-                    Text(
-                      'File Transfer',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1C0F13),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _buildContent(state),
-              ],
-            ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.base),
+              _buildContent(state),
+            ],
           ),
         );
       },
@@ -131,27 +144,37 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
             state.status == TransferStatus.transferring
                 ? 'Sending...'
                 : 'Receiving...',
+            style: AppTypography.body(weight: FontWeight.w600),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             state.fileName ?? 'Unknown File',
-            style: const TextStyle(fontWeight: FontWeight.bold),
+            style: AppTypography.mono(weight: FontWeight.w700),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           LinearProgressIndicator(
             value: state.progress,
-            backgroundColor: const Color(0xFFd8cbc7),
-            color: const Color(0xFFcc3f0c),
-            minHeight: 8,
+            backgroundColor: AppColors.surfaceVariant,
+            color: AppColors.primary,
+            minHeight: FileTransferWidget._progressBarHeight,
           ),
-          const SizedBox(height: 8),
-          Text('${(state.progress * 100).toStringAsFixed(1)}%'),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            '${(state.progress * 100).toStringAsFixed(1)}% • ${state.bytesTransferred}/${state.totalBytes} bytes',
+            style: AppTypography.mono(
+              size: FileTransferWidget._metaFontSize,
+              color: AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
           TextButton(
             onPressed: () => _service.cancelTransfer(reason: 'user_cancel'),
-            child: const Text(
+            child: Text(
               'Cancel Transfer',
-              style: TextStyle(color: Colors.red),
+              style: AppTypography.body(
+                weight: FontWeight.w600,
+                color: AppColors.error,
+              ),
             ),
           ),
         ],
@@ -161,23 +184,29 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
     if (state.status == TransferStatus.offering) {
       return Column(
         children: [
-          const Text(
+          Text(
             'Waiting for peer to accept...',
-            style: TextStyle(fontStyle: FontStyle.italic),
+            style: AppTypography.body(
+              color: AppColors.textMuted,
+              weight: FontWeight.w500,
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             state.fileName ?? '',
-            style: const TextStyle(fontWeight: FontWeight.bold),
+            style: AppTypography.mono(weight: FontWeight.w700),
           ),
-          const SizedBox(height: 16),
-          const CircularProgressIndicator(color: Color(0xFFcc3f0c)),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.base),
+          const CircularProgressIndicator(color: AppColors.warning),
+          const SizedBox(height: AppSpacing.base),
           TextButton(
             onPressed: () => _service.cancelTransfer(reason: 'user_cancel'),
-            child: const Text(
+            child: Text(
               'Cancel Request',
-              style: TextStyle(color: Colors.red),
+              style: AppTypography.body(
+                color: AppColors.error,
+                weight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -187,45 +216,54 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
     if (state.status == TransferStatus.offered) {
       return Column(
         children: [
-          const Text(
+          Text(
             'Incoming File Transfer',
-            style: TextStyle(fontWeight: FontWeight.bold),
+            style: AppTypography.body(weight: FontWeight.w700),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
-              color: const Color(0xFFd8cbc7).withAlpha(77),
-              borderRadius: BorderRadius.circular(8),
+              color: AppColors.surfaceVariant,
+              borderRadius: BorderRadius.circular(
+                FileTransferWidget._fileInfoBorderRadius,
+              ),
             ),
             child: Column(
               children: [
                 Text(
                   state.fileName ?? 'unknown',
-                  style: const TextStyle(fontSize: 16),
+                  style: AppTypography.mono(
+                    size: FileTransferWidget._fileNameFontSize,
+                  ),
                 ),
                 Text(
                   'Size: ${(state.totalBytes / 1024 / 1024).toStringAsFixed(2)} MB',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: AppTypography.body(
+                    size: FileTransferWidget._metaFontSize,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.base),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              OutlinedButton(
-                onPressed: () => _service.rejectOffer(),
-                child: const Text('Reject'),
-              ),
-              ElevatedButton(
-                onPressed: () => _service.acceptOffer(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFcc3f0c),
-                  foregroundColor: const Color(0xFFffffff),
+              Expanded(
+                child: AppButton(
+                  onPressed: () => _service.rejectOffer(),
+                  label: 'Reject',
+                  variant: AppButtonVariant.outline,
                 ),
-                child: const Text('Accept & Download'),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: AppButton(
+                  onPressed: () => _service.acceptOffer(),
+                  label: 'Accept',
+                ),
               ),
             ],
           ),
@@ -237,28 +275,32 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
     return Column(
       children: [
         if (state.status == TransferStatus.completed) ...[
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.check_circle, color: Colors.green, size: 16),
-              SizedBox(width: 4),
+              const Icon(
+                Icons.check_circle,
+                color: AppColors.success,
+                size: 16,
+              ),
+              const SizedBox(width: AppSpacing.xs),
               Text(
                 'Transfer complete!',
-                style: TextStyle(
-                  color: Colors.green,
-                  fontWeight: FontWeight.bold,
+                style: AppTypography.body(
+                  color: AppColors.success,
+                  weight: FontWeight.w700,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
         ],
         if (state.status == TransferStatus.error) ...[
           Text(
             'Error: ${state.error}',
-            style: const TextStyle(color: Colors.red, fontSize: 12),
+            style: AppTypography.body(size: 12, color: AppColors.error),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
         ],
 
         DropTarget(
@@ -274,72 +316,117 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
           child: GestureDetector(
             onTap: _pickFile,
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: _isDragging
-                      ? const Color(0xFFcc3f0c)
-                      : const Color(0xFF1C0F13),
-                  width: _isDragging ? 2 : 1,
-                  style: BorderStyle.solid,
-                ),
-                borderRadius: BorderRadius.circular(8),
-                color: _isDragging
-                    ? const Color(0xFFcc3f0c).withAlpha(13)
-                    : const Color(0xFFf5f5f5),
+              padding: EdgeInsets.symmetric(
+                vertical: FileTransferWidget._dropZoneVerticalPadding,
+                horizontal: AppSpacing.base,
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    _isDragging ? Icons.file_upload : Icons.file_present,
-                    color: _isDragging
-                        ? const Color(0xFFcc3f0c)
-                        : const Color(0xFF1C0F13),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _selectedFile != null
-                          ? _selectedFile!.path.split('/').last
-                          : (_isDragging
-                                ? 'Drop file here'
-                                : 'Tap to select or Drag & Drop'),
-                      style: TextStyle(
-                        color: (_selectedFile != null || _isDragging)
-                            ? Colors.black
-                            : Colors.grey,
-                        fontStyle: (_selectedFile != null || _isDragging)
-                            ? FontStyle.normal
-                            : FontStyle.italic,
-                        fontWeight: _isDragging
-                            ? FontWeight.bold
-                            : FontWeight.normal,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(
+                  FileTransferWidget._fileInfoBorderRadius,
+                ),
+                color: _isDragging
+                    ? AppColors.primaryContainer
+                    : AppColors.surfaceVariant,
+              ),
+              child: CustomPaint(
+                painter: _DashedBorderPainter(
+                  color: _isDragging ? AppColors.primary : AppColors.outline,
+                  strokeWidth: _isDragging ? 2 : 1,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _isDragging ? Icons.file_upload : Icons.file_present,
+                        color: _isDragging
+                            ? AppColors.primary
+                            : AppColors.textMuted,
                       ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Text(
+                          _selectedFile != null
+                              ? _selectedFile!.path.split('/').last
+                              : (_isDragging
+                                    ? 'Drop file here'
+                                    : 'Tap to select or Drag & Drop'),
+                          style: _selectedFile != null || _isDragging
+                              ? AppTypography.mono()
+                              : AppTypography.body(
+                                  color: AppColors.textMuted,
+                                  weight: FontWeight.w500,
+                                ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (_selectedFile != null && !_isDragging)
+                        const Icon(
+                          Icons.check_circle,
+                          color: AppColors.success,
+                        ),
+                    ],
                   ),
-                  if (_selectedFile != null && !_isDragging)
-                    const Icon(Icons.check_circle, color: Colors.green),
-                ],
+                ),
               ),
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.base),
         SizedBox(
           width: double.infinity,
-          child: ElevatedButton.icon(
+          child: AppButton(
             onPressed: _selectedFile == null ? null : _startTransfer,
-            icon: const Icon(Icons.send),
-            label: const Text('Send File'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              backgroundColor: const Color(0xFF1C0F13),
-              disabledBackgroundColor: Colors.grey.shade300,
-            ),
+            icon: Icons.send,
+            label: 'Send File',
           ),
         ),
       ],
     );
+  }
+}
+
+class _DashedBorderPainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+
+  _DashedBorderPainter({required this.color, required this.strokeWidth});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke;
+
+    const dashWidth = 6.0;
+    const dashSpace = 4.0;
+
+    void drawDashedLine(Offset start, Offset end) {
+      final totalLength = (end - start).distance;
+      final direction = (end - start) / totalLength;
+      double drawn = 0;
+      while (drawn < totalLength) {
+        final currentStart = start + direction * drawn;
+        final currentEnd =
+            start +
+            direction *
+                ((drawn + dashWidth) > totalLength
+                    ? totalLength
+                    : (drawn + dashWidth));
+        canvas.drawLine(currentStart, currentEnd, paint);
+        drawn += dashWidth + dashSpace;
+      }
+    }
+
+    drawDashedLine(const Offset(8, 0), Offset(size.width - 8, 0));
+    drawDashedLine(Offset(size.width, 8), Offset(size.width, size.height - 8));
+    drawDashedLine(Offset(size.width - 8, size.height), Offset(8, size.height));
+    drawDashedLine(Offset(0, size.height - 8), const Offset(0, 8));
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) {
+    return oldDelegate.color != color || oldDelegate.strokeWidth != strokeWidth;
   }
 }

@@ -91,6 +91,7 @@ import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:application/src/presentation/pages/connection_pairing_page.dart';
 import 'package:application/src/features/pairing/data/http/http_signaling_backend.dart';
+import 'package:application/src/presentation/ui/ui_config.dart';
 import 'package:application/src/rust/frb_generated.dart';
 
 Future<void> main() async {
@@ -119,37 +120,9 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'P2P Pairing',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFcc3f0c),
-          primary: const Color(0xFF1C0F13),
-          secondary: const Color(0xFFcc3f0c),
-          surface: const Color(0xFFd8cbc7),
-        ),
-        scaffoldBackgroundColor: const Color(0xFFd8cbc7),
-        useMaterial3: true,
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFcc3f0c),
-            foregroundColor: const Color(0xFFffffff),
-          ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: const Color(0xFF1C0F13)),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          border: const OutlineInputBorder(),
-          enabledBorder: const OutlineInputBorder(
-            borderSide: BorderSide(color: Color(0xFF1C0F13)),
-          ),
-          focusedBorder: const OutlineInputBorder(
-            borderSide: BorderSide(color: Color(0xFFcc3f0c), width: 2),
-          ),
-          labelStyle: const TextStyle(color: Color(0xFF1C0F13)),
-          prefixIconColor: const Color(0xFF1C0F13),
-          filled: true,
-          fillColor: const Color(0xFFffffff),
-        ),
+      builder: (context, child) => ColoredBox(
+        color: AppColors.background,
+        child: child ?? const SizedBox.shrink(),
       ),
       home: const _Home(),
     );

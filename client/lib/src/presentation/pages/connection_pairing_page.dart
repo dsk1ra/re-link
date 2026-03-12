@@ -4,6 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/presentation/pages/initiator_page.dart';
 import 'package:application/src/presentation/pages/responder_page.dart';
+import 'package:application/src/presentation/ui/metrics.dart';
+import 'package:application/src/presentation/ui/spacing.dart';
+import 'package:application/src/presentation/ui/typography.dart';
+import 'package:application/src/presentation/ui/ui_config.dart';
+import 'package:application/src/presentation/widgets/app_card.dart';
+import 'package:application/src/presentation/widgets/server_status_banner.dart';
 
 /// Main launcher page for P2P connection
 class ConnectionPairingPage extends StatefulWidget {
@@ -21,6 +27,13 @@ class ConnectionPairingPage extends StatefulWidget {
 }
 
 class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
+  static const double _horizontalLayoutBreakpoint = 720;
+  static const double _maxContentWidth = 900;
+  static const double _cardBorderRadius = 16;
+  static const double _titleFontSize = 28;
+  static const double _cardTitleFontSize = 18;
+  static const double _cardSubtitleFontSize = 12;
+
   bool _connecting = false;
 
   @override
@@ -92,215 +105,127 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
     final connected = widget.backend.isRegistered;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFd8cbc7),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'P2P Connect',
-          style: TextStyle(color: Color(0xFFffffff)),
+          style: AppTypography.title(size: AppUiMetrics.appBarTitleFontSize),
         ),
         centerTitle: true,
-        backgroundColor: const Color(0xFF1C0F13),
+        backgroundColor: AppColors.surface,
         elevation: 0,
       ),
       body: Column(
         children: [
-          // Connection status
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            color: connected
-                ? const Color(0xFF1C0F13)
-                : (_connecting
-                      ? const Color(0xFFcc3f0c)
-                      : const Color(0xFF1C0F13).withAlpha(179)),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_connecting) ...[
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Color(0xFFffffff),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'Connecting to server...',
-                    style: TextStyle(color: Color(0xFFffffff)),
-                  ),
-                ] else if (connected) ...[
-                  Text(
-                    widget.backend.displayName ?? 'Connected to server',
-                    style: const TextStyle(
-                      color: Color(0xFFffffff),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ] else ...[
-                  const Text(
-                    'Not connected',
-                    style: TextStyle(color: Color(0xFFffffff)),
-                  ),
-                  const SizedBox(width: 12),
-                  ElevatedButton(
-                    onPressed: _connectToServer,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFd8cbc7),
-                      foregroundColor: const Color(0xFF1C0F13),
-                    ),
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ],
-            ),
+          ServerStatusBanner(
+            connecting: _connecting,
+            connected: connected,
+            connectedText: widget.backend.displayName ?? 'Connected to server',
+            onRetry: _connectToServer,
           ),
 
-          // Main options
           Expanded(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(height: 32),
-                    const Text(
-                      'Peer-to-Peer Connection',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1C0F13),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Secure, direct connection with minimal server involvement',
-                      style: TextStyle(fontSize: 14, color: Color(0xFF1C0F13)),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 48),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final useHorizontalActions = constraints.maxWidth >= _horizontalLayoutBreakpoint;
 
-                    // Create Connection button
-                    SizedBox(
-                      width: 300,
-                      child: Card(
-                        elevation: 2,
-                        color: const Color(0xFFffffff),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: connected
-                                ? const Color(0xFFcc3f0c)
-                                : const Color(0xFF1C0F13).withAlpha(77),
-                            width: 2,
-                          ),
+                Widget buildActionCard({
+                  required String title,
+                  required String subtitle,
+                  required VoidCallback onTap,
+                }) {
+                  return AppCard(
+                    variant: connected
+                        ? AppCardVariant.normal
+                        : AppCardVariant.warning,
+                    child: InkWell(
+                      onTap: connected ? onTap : null,
+                      borderRadius: BorderRadius.circular(_cardBorderRadius),
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(title, style: AppTypography.title(size: _cardTitleFontSize)),
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              subtitle,
+                              style: AppTypography.body(
+                                size: _cardSubtitleFontSize,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ],
                         ),
-                        child: InkWell(
-                          onTap: connected ? _navigateToInitiator : null,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              children: [
-                                Text(
-                                  'Create Connection',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: connected
-                                        ? const Color(0xFF1C0F13)
-                                        : const Color(
-                                            0xFF1C0F13,
-                                          ).withAlpha(102),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Generate a link to share',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: connected
-                                        ? const Color(0xFF1C0F13).withAlpha(179)
-                                        : const Color(0xFF1C0F13).withAlpha(77),
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
+                      ),
+                    ),
+                  );
+                }
+
+                final actions = useHorizontalActions
+                    ? Row(
+                        children: [
+                          Expanded(
+                            child: buildActionCard(
+                              title: 'Create Connection',
+                              subtitle: 'Generate a link to share',
+                              onTap: _navigateToInitiator,
                             ),
                           ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    const Text(
-                      'OR',
-                      style: TextStyle(
-                        color: Color(0xFF1C0F13),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Join Connection button
-                    SizedBox(
-                      width: 300,
-                      child: Card(
-                        elevation: 2,
-                        color: const Color(0xFFffffff),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: connected
-                                ? const Color(0xFFcc3f0c)
-                                : const Color(0xFF1C0F13).withAlpha(77),
-                            width: 2,
-                          ),
-                        ),
-                        child: InkWell(
-                          onTap: connected ? _navigateToResponder : null,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              children: [
-                                Text(
-                                  'Join Connection',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: connected
-                                        ? const Color(0xFF1C0F13)
-                                        : const Color(
-                                            0xFF1C0F13,
-                                          ).withAlpha(102),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Use a shared link',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: connected
-                                        ? const Color(0xFF1C0F13).withAlpha(179)
-                                        : const Color(0xFF1C0F13).withAlpha(77),
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
+                          const SizedBox(width: AppSpacing.base),
+                          Expanded(
+                            child: buildActionCard(
+                              title: 'Join Connection',
+                              subtitle: 'Use a shared link',
+                              onTap: _navigateToResponder,
                             ),
                           ),
-                        ),
+                        ],
+                      )
+                    : Column(
+                        children: [
+                          buildActionCard(
+                            title: 'Create Connection',
+                            subtitle: 'Generate a link to share',
+                            onTap: _navigateToInitiator,
+                          ),
+                          const SizedBox(height: AppSpacing.base),
+                          buildActionCard(
+                            title: 'Join Connection',
+                            subtitle: 'Use a shared link',
+                            onTap: _navigateToResponder,
+                          ),
+                        ],
+                      );
+
+                return Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: _maxContentWidth),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Peer-to-Peer Connection',
+                            style: AppTypography.title(size: _titleFontSize),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: AppSpacing.base),
+                          Text(
+                            'Secure, direct connection with minimal server involvement',
+                            style: AppTypography.body(color: AppColors.textMuted),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: AppSpacing.xl),
+                          actions,
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
           ),
         ],
