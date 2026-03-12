@@ -173,6 +173,15 @@ class FileTransferService {
     _log.info('FileTransfer: Calculating SHA-256 for $name');
     final sha256Hex = await Isolate.run(() => _computeSha256OnPath(file.path));
 
+    if (_currentSession != null) {
+      _log.warning(
+        'FileTransfer: Outgoing offer preempted – an incoming offer arrived '
+        'during SHA-256 hashing. Dropping local offer; '
+        'state is ${_currentState.status}.',
+      );
+      return;
+    }
+
     _currentSession = FileTransferSession(
       id: id,
       fileName: name,
