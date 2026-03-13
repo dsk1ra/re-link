@@ -17,21 +17,14 @@ static CLIENT_CONFIG: Lazy<Mutex<SignalingClientConfigDto>> = Lazy::new(|| {
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn load_signaling_client_config() -> SignalingClientConfigDto {
-    let guard = CLIENT_CONFIG.lock().expect("client config mutex poisoned");
-    SignalingClientConfigDto {
-        base_url: guard.base_url.clone(),
-        heartbeat_interval_secs: guard.heartbeat_interval_secs,
-    }
+    CLIENT_CONFIG.lock().expect("client config mutex poisoned").clone()
 }
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn override_signaling_base_url(url: String) -> SignalingClientConfigDto {
     let mut guard = CLIENT_CONFIG.lock().expect("client config mutex poisoned");
-    guard.base_url = url.clone();
-    SignalingClientConfigDto {
-        base_url: url,
-        heartbeat_interval_secs: guard.heartbeat_interval_secs,
-    }
+    guard.base_url = url;
+    guard.clone()
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -41,8 +34,5 @@ pub fn reset_signaling_client_config() -> SignalingClientConfigDto {
         DEFAULT_PUBLIC_URL,
         Duration::from_secs(DEFAULT_HEARTBEAT_INTERVAL_SECS),
     );
-    SignalingClientConfigDto {
-        base_url: guard.base_url.clone(),
-        heartbeat_interval_secs: guard.heartbeat_interval_secs,
-    }
+    guard.clone()
 }
