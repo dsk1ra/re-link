@@ -1,12 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:application/src/features/file_transfer/file_transfer_widget.dart';
+import 'package:application/src/features/session/application/serial_task_queue.dart';
+import 'package:application/src/features/session/application/session_control_protocol.dart';
 import 'package:application/src/presentation/ui/metrics.dart';
 import 'package:application/src/presentation/ui/spacing.dart';
 import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
 import 'package:application/src/presentation/widgets/app_card.dart';
+import 'package:application/src/presentation/widgets/session_connection_badge.dart';
+import 'package:application/src/presentation/widgets/session_file_transfer_sheet.dart';
+import 'package:application/src/presentation/widgets/session_menu_overlay.dart';
+import 'package:application/src/presentation/widgets/session_status_views.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
@@ -71,20 +76,49 @@ class _ResponderPageState extends State<ResponderPage> {
   bool _isPeerDisconnected = false;
   bool _signalingClosed = false;
   bool _showSessionMenu = false;
-  Timer? _heartbeatTimer;
-  DateTime? _lastPongAt;
-  Timer? _sessionClosedAckTimer;
-  String? _sessionClosedId;
-  bool _sessionClosedAcked = false;
-
-  final List<RTCIceCandidate> _iceCandidateQueue = [];
-  bool _isSendingIce = false;
+  late final SessionControlProtocol _sessionControlProtocol;
+  late final SerialTaskQueue<RTCIceCandidate> _iceCandidateQueue;
+  late final SerialTaskQueue<Map<String, dynamic>> _signalQueue;
 
   @override
   void initState() {
     super.initState();
     _connectionService = ConnectionService(
       signalingBaseUrl: widget.signalingBaseUrl,
+    );
+    _sessionControlProtocol = SessionControlProtocol(
+      log: _log,
+      sendControlMessage: (message) async {
+        await _webrtcManager?.sendControlMessage(message);
+      },
+      onRenegotiationOffer: _handleIncomingRenegotiationOffer,
+      onRenegotiationAnswer: (answer) async {
+        await _webrtcManager?.setRemoteAnswer(answer);
+      },
+      onIceCandidate: (candidate) async {
+        await _webrtcManager?.addIceCandidate(candidate);
+      },
+      onPeerSessionClosed: _handlePeerSessionClosed,
+      onScreenShareStopped: () {
+        _detachRemoteStream();
+        _showSnackBar('Host stopped sharing screen');
+      },
+      showMessage: _showSnackBar,
+    );
+    _iceCandidateQueue = SerialTaskQueue<RTCIceCandidate>(
+      processor: (candidate) async {
+        await _sendIceCandidate(candidate);
+        await Future.delayed(const Duration(milliseconds: 100));
+      },
+      onError: (error, _) {
+        _log.warning('Error sending queued ICE candidate: $error');
+      },
+    );
+    _signalQueue = SerialTaskQueue<Map<String, dynamic>>(
+      processor: _handleIncomingSignal,
+      onError: (error, _) {
+        _log.warning('Error processing signal queue: $error');
+      },
     );
     unawaited(_initRemoteRenderer());
     // ...
@@ -132,7 +166,7 @@ class _ResponderPageState extends State<ResponderPage> {
         setState(() => _webrtcState = state);
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _closeSignalingAfterConnect();
-          _startHeartbeat();
+          _sessionControlProtocol.startHeartbeat();
         }
       });
 
@@ -142,7 +176,7 @@ class _ResponderPageState extends State<ResponderPage> {
         if (_signalingClosed) {
           unawaited(_sendDataChannelIce(candidate));
         } else {
-          _queueIceCandidate(candidate);
+          _iceCandidateQueue.enqueue(candidate);
         }
       });
 
@@ -156,36 +190,7 @@ class _ResponderPageState extends State<ResponderPage> {
     }
   }
 
-  void _queueIceCandidate(RTCIceCandidate candidate) {
-    _iceCandidateQueue.add(candidate);
-    if (!_isSendingIce) {
-      _processIceQueue();
-    }
-  }
-
-  Future<void> _processIceQueue() async {
-    if (_isSendingIce || _iceCandidateQueue.isEmpty) return;
-
-    _isSendingIce = true;
-    try {
-      while (_iceCandidateQueue.isNotEmpty) {
-        final candidate = _iceCandidateQueue.removeAt(0);
-        await _sendIceCandidate(candidate);
-        // Small delay to be nice to the server
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-    } catch (e) {
-      _log.warning('Error sending queued ICE candidate: $e');
-    } finally {
-      _isSendingIce = false;
-      // Double check in case new ones came in
-      if (_iceCandidateQueue.isNotEmpty) _processIceQueue();
-    }
-  }
-
   StreamSubscription? _mailboxSubscription;
-  final List<Map<String, dynamic>> _signalQueue = [];
-  bool _isProcessingSignals = false;
 
   @override
   void dispose() {
@@ -193,8 +198,9 @@ class _ResponderPageState extends State<ResponderPage> {
     _tokenController.dispose();
     _mailboxSubscription?.cancel();
     _remoteStreamSubscription?.cancel();
-    _heartbeatTimer?.cancel();
-    _sessionClosedAckTimer?.cancel();
+    _sessionControlProtocol.dispose();
+    _iceCandidateQueue.dispose();
+    _signalQueue.dispose();
     _remoteRenderer.dispose();
     _webrtcManager?.dispose();
     super.dispose();
@@ -293,32 +299,8 @@ class _ResponderPageState extends State<ResponderPage> {
     _mailboxSubscription = _connectionService
         .subscribeMailbox(mailboxId: _responderMailboxId!)
         .listen((msg) {
-          _queueIncomingSignal(msg);
+          _signalQueue.enqueue(msg);
         });
-  }
-
-  void _queueIncomingSignal(Map<String, dynamic> msg) {
-    _signalQueue.add(msg);
-    if (!_isProcessingSignals) {
-      _processSignalQueue();
-    }
-  }
-
-  Future<void> _processSignalQueue() async {
-    if (_isProcessingSignals || _signalQueue.isEmpty) return;
-
-    _isProcessingSignals = true;
-    try {
-      while (_signalQueue.isNotEmpty) {
-        final msg = _signalQueue.removeAt(0);
-        await _handleIncomingSignal(msg);
-      }
-    } catch (e) {
-      _log.warning('Error processing signal queue: $e');
-    } finally {
-      _isProcessingSignals = false;
-      if (_signalQueue.isNotEmpty) _processSignalQueue();
-    }
   }
 
   Future<void> _handleIncomingSignal(Map<String, dynamic> msg) async {
@@ -412,62 +394,7 @@ class _ResponderPageState extends State<ResponderPage> {
   }
 
   void _handleControlMessage(String message) {
-    try {
-      final decoded = jsonDecode(message) as Map<String, dynamic>;
-      final type = decoded['type'];
-      if (type == 'session_closed') {
-        _sendSessionClosedAck(decoded['id']?.toString());
-        _handlePeerSessionClosed();
-        return;
-      }
-      if (type == 'session_closed_ack') {
-        _handleSessionClosedAck(decoded['id']?.toString());
-        return;
-      }
-      if (type == 'ping') {
-        _sendPong(decoded['ts']?.toString());
-        return;
-      }
-      if (type == 'pong') {
-        _lastPongAt = DateTime.now();
-        return;
-      }
-      if (type == 'webrtc_offer') {
-        final data = (decoded['data'] as Map).cast<String, dynamic>();
-        final offer = RTCSessionDescription(
-          data['sdp'] as String,
-          data['type'] as String,
-        );
-        unawaited(_handleIncomingRenegotiationOffer(offer));
-        return;
-      }
-      if (type == 'webrtc_answer') {
-        final data = (decoded['data'] as Map).cast<String, dynamic>();
-        final answer = RTCSessionDescription(
-          data['sdp'] as String,
-          data['type'] as String,
-        );
-        unawaited(_webrtcManager?.setRemoteAnswer(answer));
-        return;
-      }
-      if (type == 'webrtc_ice') {
-        final data = (decoded['data'] as Map).cast<String, dynamic>();
-        final candidate = RTCIceCandidate(
-          data['candidate'] as String,
-          data['sdpMid'] as String?,
-          data['sdpMLineIndex'] as int?,
-        );
-        unawaited(_webrtcManager?.addIceCandidate(candidate));
-        return;
-      }
-      if (type == 'screen_share_stopped') {
-        _detachRemoteStream();
-        _showSnackBar('Host stopped sharing screen');
-        return;
-      }
-    } catch (_) {}
-
-    _showSnackBar('Received: $message');
+    unawaited(_sessionControlProtocol.handleMessage(message));
   }
 
   Future<void> _closeSignalingAfterConnect() async {
@@ -490,7 +417,7 @@ class _ResponderPageState extends State<ResponderPage> {
   Future<void> _handlePeerSessionClosed() async {
     _log.info('Responder: Peer session closed over WebRTC');
     _showSnackBar('Peer has disconnected.');
-    _stopHeartbeat();
+    _sessionControlProtocol.stopHeartbeat();
     _detachRemoteStream();
     await _webrtcManager?.dispose();
     setState(() {
@@ -567,96 +494,9 @@ class _ResponderPageState extends State<ResponderPage> {
 
     if (result == true) {
       await _sendDisconnectSignal();
-      await _sendSessionClosedMessage();
+      await _sessionControlProtocol.sendSessionClosedMessage();
     }
     return result ?? false;
-  }
-
-  Future<void> _sendSessionClosedMessage() async {
-    try {
-      _sessionClosedId = DateTime.now().millisecondsSinceEpoch.toString();
-      _sessionClosedAcked = false;
-      _startSessionClosedAckTimer();
-      final msg = jsonEncode({
-        'type': 'session_closed',
-        'id': _sessionClosedId,
-        'reason': 'local_disconnect',
-      });
-      await _webrtcManager?.sendControlMessage(msg);
-    } catch (e) {
-      _log.warning('Error sending session closed message: $e');
-    }
-  }
-
-  void _startHeartbeat() {
-    _stopHeartbeat();
-    _lastPongAt = DateTime.now();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      final last = _lastPongAt;
-      if (last != null &&
-          DateTime.now().difference(last) > const Duration(seconds: 15)) {
-        _handleHeartbeatTimeout();
-        return;
-      }
-
-      _sendPing();
-    });
-  }
-
-  void _stopHeartbeat() {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-  }
-
-  void _handleHeartbeatTimeout() {
-    _log.warning('Responder: Heartbeat timeout, closing session');
-    _stopHeartbeat();
-    unawaited(_handlePeerSessionClosed());
-  }
-
-  Future<void> _sendPing() async {
-    try {
-      final msg = jsonEncode({
-        'type': 'ping',
-        'ts': DateTime.now().millisecondsSinceEpoch.toString(),
-      });
-      await _webrtcManager?.sendControlMessage(msg);
-    } catch (e) {
-      _log.warning('Error sending ping: $e');
-    }
-  }
-
-  Future<void> _sendPong(String? ts) async {
-    try {
-      final msg = jsonEncode({'type': 'pong', 'ts': ts});
-      await _webrtcManager?.sendControlMessage(msg);
-    } catch (e) {
-      _log.warning('Error sending pong: $e');
-    }
-  }
-
-  void _startSessionClosedAckTimer() {
-    _sessionClosedAckTimer?.cancel();
-    _sessionClosedAckTimer = Timer(const Duration(seconds: 5), () {
-      if (_sessionClosedAcked) return;
-      _log.warning('Responder: Session closed ack not received');
-    });
-  }
-
-  void _handleSessionClosedAck(String? id) {
-    if (_sessionClosedId == null || _sessionClosedId != id) return;
-    _sessionClosedAcked = true;
-    _sessionClosedAckTimer?.cancel();
-  }
-
-  Future<void> _sendSessionClosedAck(String? id) async {
-    if (id == null) return;
-    try {
-      final msg = jsonEncode({'type': 'session_closed_ack', 'id': id});
-      await _webrtcManager?.sendControlMessage(msg);
-    } catch (e) {
-      _log.warning('Error sending session closed ack: $e');
-    }
   }
 
   Future<void> _handleIncomingRenegotiationOffer(
@@ -730,38 +570,17 @@ class _ResponderPageState extends State<ResponderPage> {
         !_isPeerDisconnected &&
         _webrtcState == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
     final failed = _isPeerDisconnected;
-    final Color dot = failed
-        ? AppColors.error
-        : (connected ? AppColors.success : AppColors.warning);
     final String label = failed
         ? 'Disconnected'
         : (connected ? 'Connected' : _webrtcStateText());
 
-    return Container(
-      padding: AppUiMetrics.badgePadding,
-      decoration: BoxDecoration(
-        color: AppColors.surfaceVariant,
-        borderRadius: BorderRadius.circular(AppUiMetrics.badgeBorderRadius),
-        border: Border.all(color: dot.withValues(alpha: 0.6)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: AppUiMetrics.badgeDotSize,
-            height: AppUiMetrics.badgeDotSize,
-            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: AppUiMetrics.badgeDotGap),
-          Text(
-            label,
-            style: AppTypography.body(
-              size: AppUiMetrics.badgeFontSize,
-              weight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
+    return SessionConnectionBadge(
+      label: label,
+      tone: failed
+          ? SessionConnectionBadgeTone.error
+          : (connected
+                ? SessionConnectionBadgeTone.connected
+                : SessionConnectionBadgeTone.warning),
     );
   }
 
@@ -856,59 +675,20 @@ class _ResponderPageState extends State<ResponderPage> {
   // ─── Connected layout ─────────────────────────────────────────────────────
 
   Widget _buildConnectedLayout() {
-    // Case: peer disconnected
     if (_isPeerDisconnected) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: AppCard(
-            variant: AppCardVariant.error,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.cancel,
-                  size: AppUiMetrics.disconnectedIconSize,
-                  color: AppColors.error,
-                ),
-                const SizedBox(height: AppSpacing.base),
-                Text('Connection Ended', style: AppTypography.title()),
-                const SizedBox(height: AppSpacing.base),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.onPrimary,
-                  ),
-                  child: const Text('Return to Home'),
-                ),
-              ],
-            ),
-          ),
-        ),
+      return SessionDisconnectedView(
+        onReturnHome: () => Navigator.of(context).pop(),
       );
     }
 
-    // Case: still negotiating
     if (_webrtcState !=
         RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: AppSpacing.lg),
-            Text('Establishing connection...'),
-          ],
-        ),
-      );
+      return const SessionConnectingView(message: 'Establishing connection...');
     }
 
-    // Case: connected — immersive remote screen
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Remote video fills the whole area
         Container(
           color: AppColors.background,
           child: _remoteRenderer.srcObject != null
@@ -936,97 +716,43 @@ class _ResponderPageState extends State<ResponderPage> {
           alignment: Alignment.topCenter,
           child: Padding(
             padding: const EdgeInsets.only(top: _floatingMenuTopPadding),
-            child: _buildSlidingMenuOverlay(),
+            child: SessionMenuOverlay(
+              width: _floatingMenuWidth,
+              height: _menuOverlayHeight,
+              isOpen: _showSessionMenu,
+              onToggle: () {
+                setState(() => _showSessionMenu = !_showSessionMenu);
+              },
+              handleIconSize: _menuHandleIconSize,
+              closedTop: _menuHandleClosedTop,
+              openTop: _menuHandleOpenTop,
+              child: _buildFloatingMenu(),
+            ),
           ),
         ),
       ],
     );
   }
 
-  // ─── Floating top menu (triangle handle + icon actions) ─────────────────
-
-  Widget _buildSlidingMenuOverlay() {
-    return SizedBox(
-      width: _floatingMenuWidth,
-      height: _menuOverlayHeight,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            child: IgnorePointer(
-              ignoring: !_showSessionMenu,
-              child: AnimatedOpacity(
-                opacity: _showSessionMenu ? 1 : 0,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeInOut,
-                child: AnimatedSlide(
-                  offset: _showSessionMenu
-                      ? Offset.zero
-                      : const Offset(0, -1.0),
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeInOut,
-                  child: _buildFloatingMenu(),
-                ),
-              ),
-            ),
-          ),
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeInOut,
-            top: _showSessionMenu ? _menuHandleOpenTop : _menuHandleClosedTop,
-            left: 0,
-            right: 0,
-            child: Center(child: _buildMenuHandle()),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMenuHandle() {
-    return GestureDetector(
-      onTap: () => setState(() => _showSessionMenu = !_showSessionMenu),
-      child: AnimatedRotation(
-        turns: _showSessionMenu ? 0.5 : 0.0,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeInOut,
-        child: Icon(
-          Icons.expand_more,
-          size: _menuHandleIconSize,
-          color: AppColors.primary,
-        ),
-      ),
-    );
-  }
-
   Widget _buildFloatingMenu() {
-    return Container(
+    return SessionMenuCard(
       width: _floatingMenuWidth,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.base,
-        AppSpacing.md,
-        AppSpacing.base,
-        AppSpacing.base,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(_floatingMenuCornerRadius),
-        border: Border.all(color: AppColors.outline),
-      ),
+      cornerRadius: _floatingMenuCornerRadius,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildFloatingMenuAction(
+          SessionMenuAction(
             icon: Icons.swap_horiz,
             label: 'Files',
+            iconSize: _floatingMenuIconSize,
+            labelFontSize: _floatingMenuLabelFontSize,
             onPressed: _openFileTransferSheet,
           ),
-          _buildFloatingMenuAction(
+          SessionMenuAction(
             icon: Icons.call_end,
             label: 'Disconnect',
+            iconSize: _floatingMenuIconSize,
+            labelFontSize: _floatingMenuLabelFontSize,
             color: AppColors.error,
             onPressed: () => Navigator.of(context).maybePop(),
           ),
@@ -1035,100 +761,13 @@ class _ResponderPageState extends State<ResponderPage> {
     );
   }
 
-  Widget _buildFloatingMenuAction({
-    required IconData icon,
-    required String label,
-    required VoidCallback? onPressed,
-    Color? color,
-  }) {
-    final actionColor = onPressed == null
-        ? AppColors.textMuted.withValues(alpha: 0.6)
-        : (color ?? AppColors.textPrimary);
-    return InkWell(
-      onTap: onPressed,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: AppSpacing.xs,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: actionColor, size: _floatingMenuIconSize),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              label,
-              style: AppTypography.body(
-                size: _floatingMenuLabelFontSize,
-                color: actionColor,
-                weight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   // ─── File transfer bottom sheet ───────────────────────────────────────────
 
   void _openFileTransferSheet() {
     if (_webrtcManager == null) return;
-    showModalBottomSheet<void>(
+    showSessionFileTransferSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.45,
-        minChildSize: 0.25,
-        maxChildSize: 0.85,
-        builder: (ctx, scrollController) => SingleChildScrollView(
-          controller: scrollController,
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: _dragHandleWidth,
-                    height: _dragHandleHeight,
-                    margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    decoration: BoxDecoration(
-                      color: AppColors.outline,
-                      borderRadius: BorderRadius.circular(
-                        _dragHandleBorderRadius,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.swap_horiz,
-                      color: AppColors.textMuted,
-                      size: _sheetHeaderIconSize,
-                    ),
-                    const SizedBox(width: _sheetHeaderIconGap),
-                    Text(
-                      'File Transfer',
-                      style: AppTypography.body(weight: FontWeight.w700),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                FileTransferWidget(webrtcManager: _webrtcManager!),
-              ],
-            ),
-          ),
-        ),
-      ),
+      webrtcManager: _webrtcManager!,
     );
   }
 }
