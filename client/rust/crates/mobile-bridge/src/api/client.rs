@@ -17,7 +17,10 @@ static CLIENT_CONFIG: Lazy<Mutex<SignalingClientConfigDto>> = Lazy::new(|| {
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn load_signaling_client_config() -> SignalingClientConfigDto {
-    CLIENT_CONFIG.lock().expect("client config mutex poisoned").clone()
+    CLIENT_CONFIG
+        .lock()
+        .expect("client config mutex poisoned")
+        .clone()
 }
 
 #[flutter_rust_bridge::frb(sync)]
