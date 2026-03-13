@@ -63,11 +63,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
   static const double _menuHandleClosedTop = 0;
   static const double _menuHandleOpenTop = 108;
   static const double _menuOverlayHeight = 170;
-  static const double _dragHandleWidth = 40;
-  static const double _dragHandleHeight = 4;
-  static const double _dragHandleBorderRadius = 2;
-  static const double _sheetHeaderIconSize = 18;
-  static const double _sheetHeaderIconGap = AppSpacing.sm;
+
   static const EdgeInsets _shareDropdownContentPadding = EdgeInsets.symmetric(
     horizontal: 12,
     vertical: 10,
