@@ -2,10 +2,10 @@
 
 This project is organized as a monorepo:
 
-- **`client/`**: The Flutter Application (Frontend & Client Logic).
-- **`rust/`**: The Rust Workspace containing:
-    - Signaling Server
-    - Core Application Logic (shared with client via FRB)
+- **`client/flutter/`**: The Flutter application (frontend + UX).
+- **`client/rust/`**: Client Rust workspace (`crates/mobile-bridge`, `crates/client-core`) used by Flutter/FRB.
+- **`server/rust/`**: Server Rust workspace (`crates/signaling`).
+- **`shared/rust/`**: Shared Rust crate (`shared`) for protocol + crypto.
 - **`scripts/`**: DevOps, build, and setup scripts.
 - **`docs/`**: Project documentation, architecture diagrams, and reports.
 
@@ -18,12 +18,16 @@ This project is organized as a monorepo:
 
 ### Running the Client
 ```bash
-cd client
+cd client/flutter
 flutter run
+```
+
+### Building Client Rust Backend (FRB)
+```bash
+cargo build --manifest-path client/rust/crates/mobile-bridge/Cargo.toml
 ```
 
 ### Running the Server (Local)
 ```bash
-cd rust
-cargo run --bin signaling_server
+cargo run --manifest-path server/rust/crates/signaling/Cargo.toml
 ```

@@ -4,14 +4,18 @@ on:
   push:
     branches: [main]
     paths:
-      - 'client/**'
-      - 'rust/**'
+      - 'client/flutter/**'
+      - 'client/rust/**'
+      - 'server/rust/**'
+      - 'shared/rust/**'
       - '.github/workflows/flutter-windows.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'client/**'
-      - 'rust/**'
+      - 'client/flutter/**'
+      - 'client/rust/**'
+      - 'server/rust/**'
+      - 'shared/rust/**'
       - '.github/workflows/flutter-windows.yml'
   workflow_dispatch:
 
@@ -54,7 +58,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust/target
+            client/rust/target
+            server/rust/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
@@ -63,7 +68,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: "${{ env.LOCALAPPDATA }}\\Pub\\Cache"
-          key: ${{ runner.os }}-pub-${{ hashFiles('client/pubspec.lock') }}
+          key: ${{ runner.os }}-pub-${{ hashFiles('client/flutter/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pub-
 
@@ -82,30 +87,30 @@ jobs:
           "${env:USERPROFILE}\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Ensure rust_builder exists
-        working-directory: client
+        working-directory: client/flutter
         run: |
           if (-not (Test-Path "rust_builder/pubspec.yaml")) {
             flutter_rust_bridge_codegen integrate --template app
           }
 
       - name: Generate rust_builder (Cargokit)
-        working-directory: client
+        working-directory: client/flutter
         run: flutter_rust_bridge_codegen generate --config-file flutter_rust_bridge.yaml
 
       - name: Fetch Dart/Flutter dependencies
-        working-directory: client
+        working-directory: client/flutter
         run: flutter pub get
 
       - name: Enforce Dart formatting
-        working-directory: client
+        working-directory: client/flutter
         run: dart format --output=none --set-exit-if-changed .
 
       - name: Analyze Flutter project
-        working-directory: client
+        working-directory: client/flutter
         run: flutter analyze
 
       - name: Run Flutter tests
-        working-directory: client
+        working-directory: client/flutter
         run: flutter test
 
   flutter-quality-act:
@@ -133,7 +138,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust/target
+            client/rust/target
+            server/rust/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
@@ -142,7 +148,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.pub-cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('client/pubspec.lock') }}
+          key: ${{ runner.os }}-pub-${{ hashFiles('client/flutter/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pub-
 
@@ -154,30 +160,30 @@ jobs:
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Ensure rust_builder exists
-        working-directory: client
+        working-directory: client/flutter
         run: |
           if [ ! -f rust_builder/pubspec.yaml ]; then
             flutter_rust_bridge_codegen integrate --template app
           fi
 
       - name: Generate rust_builder (Cargokit)
-        working-directory: client
+        working-directory: client/flutter
         run: flutter_rust_bridge_codegen generate --config-file flutter_rust_bridge.yaml
 
       - name: Fetch Dart/Flutter dependencies
-        working-directory: client
+        working-directory: client/flutter
         run: flutter pub get
 
       - name: Enforce Dart formatting
-        working-directory: client
+        working-directory: client/flutter
         run: dart format --output=none --set-exit-if-changed .
 
       - name: Analyze Flutter project
-        working-directory: client
+        working-directory: client/flutter
         run: flutter analyze
 
       - name: Run Flutter tests
-        working-directory: client
+        working-directory: client/flutter
         run: flutter test
 
   build-windows-release:
@@ -212,7 +218,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust/target
+            client/rust/target
+            server/rust/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
@@ -221,7 +228,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: "${{ env.LOCALAPPDATA }}\\Pub\\Cache"
-          key: ${{ runner.os }}-pub-${{ hashFiles('client/pubspec.lock') }}
+          key: ${{ runner.os }}-pub-${{ hashFiles('client/flutter/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pub-
 
@@ -240,22 +247,22 @@ jobs:
           "${env:USERPROFILE}\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Ensure rust_builder exists
-        working-directory: client
+        working-directory: client/flutter
         run: |
           if (-not (Test-Path "rust_builder/pubspec.yaml")) {
             flutter_rust_bridge_codegen integrate --template app
           }
 
       - name: Generate rust_builder (Cargokit)
-        working-directory: client
+        working-directory: client/flutter
         run: flutter_rust_bridge_codegen generate --config-file flutter_rust_bridge.yaml
 
       - name: Fetch Dart/Flutter dependencies
-        working-directory: client
+        working-directory: client/flutter
         run: flutter pub get
 
       - name: Build Windows app (Release)
-        working-directory: client
+        working-directory: client/flutter
         env:
           RUST_BACKTRACE: 1
         run: flutter build windows --release
@@ -265,5 +272,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: client/build/windows/x64/runner/Release/
+          path: client/flutter/build/windows/x64/runner/Release/
           if-no-files-found: warn

@@ -26,58 +26,60 @@ tmp/
 ########################################
 # Flutter (Client)
 ########################################
-client/.dart_tool/
-client/.flutter-plugins
-client/.flutter-plugins-dependencies
-client/.metadata
-client/.packages
-client/.pub-cache/
-client/.pub/
-client/build/
-client/coverage/
-client/client_dev.json
-client/config/dev.json
-client/rust_builder/
+client/flutter/.dart_tool/
+client/flutter/.flutter-plugins
+client/flutter/.flutter-plugins-dependencies
+client/flutter/.metadata
+client/flutter/.packages
+client/flutter/.pub-cache/
+client/flutter/.pub/
+client/flutter/build/
+client/flutter/coverage/
+client/flutter/client_dev.json
+client/flutter/config/dev.json
+client/flutter/rust_builder/
 
 # Platform Specifics
-client/android/local.properties
-client/android/.gradle/
-client/android/.cxx/
-client/android/app/.cxx/
-client/android/app/build/
-client/android/**/build/
-client/android/app/*.apk
-client/android/app/*.aab
-client/ios/Flutter/.last_build_id
-client/ios/Flutter/ephemeral/
-client/ios/DerivedData/
-client/ios/Build/
-client/macos/Flutter/ephemeral/
-client/macos/Build/
-client/windows/flutter/ephemeral/
-client/windows/flutter/generated_plugin_registrant.cc
-client/windows/flutter/generated_plugin_registrant.h
-client/windows/flutter/generated_plugins.cmake
-client/windows/runner/Debug/
-client/windows/runner/Release/
-client/windows/runner/RelWithDebInfo/
-client/windows/runner/MinSizeRel/
-client/windows/runner/**/CMakeFiles/
-client/windows/runner/**/cmake_install.cmake
-client/windows/runner/**/Makefile
-client/windows/x64/
-client/linux/flutter/ephemeral/
-client/linux/flutter/generated_plugin_registrant.cc
-client/linux/flutter/generated_plugin_registrant.h
-client/linux/flutter/generated_plugins.cmake
-client/linux/**/CMakeFiles/
-client/linux/**/cmake_install.cmake
-client/linux/**/Makefile
+client/flutter/android/local.properties
+client/flutter/android/.gradle/
+client/flutter/android/.cxx/
+client/flutter/android/app/.cxx/
+client/flutter/android/app/build/
+client/flutter/android/**/build/
+client/flutter/android/app/*.apk
+client/flutter/android/app/*.aab
+client/flutter/ios/Flutter/.last_build_id
+client/flutter/ios/Flutter/ephemeral/
+client/flutter/ios/DerivedData/
+client/flutter/ios/Build/
+client/flutter/macos/Flutter/ephemeral/
+client/flutter/macos/Build/
+client/flutter/windows/flutter/ephemeral/
+client/flutter/windows/flutter/generated_plugin_registrant.cc
+client/flutter/windows/flutter/generated_plugin_registrant.h
+client/flutter/windows/flutter/generated_plugins.cmake
+client/flutter/windows/runner/Debug/
+client/flutter/windows/runner/Release/
+client/flutter/windows/runner/RelWithDebInfo/
+client/flutter/windows/runner/MinSizeRel/
+client/flutter/windows/runner/**/CMakeFiles/
+client/flutter/windows/runner/**/cmake_install.cmake
+client/flutter/windows/runner/**/Makefile
+client/flutter/windows/x64/
+client/flutter/linux/flutter/ephemeral/
+client/flutter/linux/flutter/generated_plugin_registrant.cc
+client/flutter/linux/flutter/generated_plugin_registrant.h
+client/flutter/linux/flutter/generated_plugins.cmake
+client/flutter/linux/**/CMakeFiles/
+client/flutter/linux/**/cmake_install.cmake
+client/flutter/linux/**/Makefile
 
 ########################################
 # Rust
 ########################################
-rust/target/
+client/rust/target/
+server/rust/target/
+shared/rust/target/
 target/
 **/*.rs.bk
 
@@ -96,7 +98,7 @@ AGENTS.md
 *.keystore
 *.jks
 key.properties
-client/keys/
+client/flutter/keys/
 
 ########################################
 # Additional common ignores
@@ -126,10 +128,10 @@ venv/
 env/
 
 # iOS / CocoaPods
-client/ios/Pods/
-client/ios/Runner.xcworkspace/
-client/ios/Runner/GeneratedPluginRegistrant.h
-client/ios/Runner/GeneratedPluginRegistrant.m
+client/flutter/ios/Pods/
+client/flutter/ios/Runner.xcworkspace/
+client/flutter/ios/Runner/GeneratedPluginRegistrant.h
+client/flutter/ios/Runner/GeneratedPluginRegistrant.m
 
 # macOS
 .DS_Store
