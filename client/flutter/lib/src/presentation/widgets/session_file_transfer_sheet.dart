@@ -23,7 +23,7 @@ Future<void> showSessionFileTransferSheet({
 }
 
 class _SessionFileTransferSheetFrame extends StatelessWidget {
-  const _SessionFileTransferSheetFrame({super.key, this.webrtcManager});
+  const _SessionFileTransferSheetFrame({this.webrtcManager});
 
   final WebRTCManager? webrtcManager;
 
