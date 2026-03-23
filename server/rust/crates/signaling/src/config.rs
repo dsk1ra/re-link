@@ -7,7 +7,6 @@ use std::{
 };
 
 const DEFAULT_LISTEN_PORT: u16 = 8080;
-const DEFAULT_PUBLIC_URL: &str = "http://127.0.0.1:8080";
 const DEFAULT_SESSION_TTL_SECS: u64 = 30;
 const DEFAULT_HEARTBEAT_INTERVAL_SECS: u64 = 30;
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1/";
@@ -52,8 +51,8 @@ impl SignalingServerConfig {
                 listen_port,
             ));
 
-        let public_base_url =
-            env::var("SIGNALING_PUBLIC_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_URL.to_string());
+        let public_base_url = env::var("SIGNALING_PUBLIC_URL")
+            .map_err(|_| anyhow::anyhow!("SIGNALING_PUBLIC_URL must be set"))?;
 
         let session_ttl = env::var("SIGNALING_SESSION_TTL_SECS")
             .ok()
@@ -147,20 +146,6 @@ impl SignalingServerConfig {
 
 impl Default for SignalingServerConfig {
     fn default() -> Self {
-        Self::from_env().unwrap_or_else(|_| Self {
-            listen_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_LISTEN_PORT),
-            public_base_url: DEFAULT_PUBLIC_URL.to_string(),
-            session_ttl: Duration::from_secs(DEFAULT_SESSION_TTL_SECS),
-            heartbeat_interval: Duration::from_secs(DEFAULT_HEARTBEAT_INTERVAL_SECS),
-            redis_url: DEFAULT_REDIS_URL.to_string(),
-            mailbox_ttl: Duration::from_secs(DEFAULT_MAILBOX_TTL_SECS),
-            redis_require_tls: DEFAULT_REDIS_REQUIRE_TLS,
-            redis_key_prefix: DEFAULT_REDIS_KEY_PREFIX.to_string(),
-            joined_flag_ttl: Duration::from_secs(DEFAULT_JOINED_FLAG_TTL_SECS),
-            rendezvous_ttl: Duration::from_secs(DEFAULT_RENDEZVOUS_TTL_SECS),
-            redis_encrypt_payloads: DEFAULT_REDIS_ENCRYPT,
-            redis_encryption_key: None,
-            ws_push_buffer_capacity: DEFAULT_WS_PUSH_BUFFER_CAPACITY,
-        })
+        Self::from_env().expect("SIGNALING_PUBLIC_URL must be set")
     }
 }

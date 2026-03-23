@@ -3,8 +3,8 @@ use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use std::time::Duration;
 
-// Defaults copied from server config for decoupling
-const DEFAULT_PUBLIC_URL: &str = "http://127.0.0.1:8080";
+// Empty by default; app UI must provide a domain before making connections.
+const DEFAULT_PUBLIC_URL: &str = "";
 const DEFAULT_HEARTBEAT_INTERVAL_SECS: u64 = 30;
 
 static CLIENT_CONFIG: Lazy<Mutex<SignalingClientConfigDto>> = Lazy::new(|| {
