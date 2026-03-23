@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:application/src/features/network/data/windows_tls_compat.dart';
 import 'package:http/http.dart' as http;
 
 import '../../domain/models.dart';
@@ -19,7 +20,7 @@ class HttpSignalingBackend implements SignalingBackend {
   String? _displayName;
 
   HttpSignalingBackend(this.baseUrl, {http.Client? client})
-    : _client = client ?? http.Client(),
+    : _client = client ?? createPlatformHttpClientForBaseUrl(baseUrl),
       _ownsClient = client == null;
 
   @override
