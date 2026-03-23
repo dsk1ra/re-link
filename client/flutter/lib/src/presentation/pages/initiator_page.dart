@@ -7,6 +7,7 @@ import 'package:logging/logging.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
+import 'package:application/src/features/file_transfer/file_transfer_service.dart';
 import 'package:application/src/features/session/application/serial_task_queue.dart';
 import 'package:application/src/features/session/application/session_control_protocol.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
@@ -73,6 +74,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
   late ConnectionService _connectionService;
   WebRTCManager? _webrtcManager;
+  FileTransferService? _fileTransferService;
+  StreamSubscription<FileTransferState>? _fileTransferStateSubscription;
 
   RTCPeerConnectionState? _webrtcState;
 
@@ -100,6 +103,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
   bool _isScreenSharing = false;
   bool _showSessionMenu = false;
   String? _shareStatus;
+  bool _hasPendingIncomingFile = false;
+  bool _isFileTransferSheetOpen = false;
   int? _mailboxExpiresAtEpochMs;
   Duration _mailboxTimeRemaining = Duration.zero;
   Duration _mailboxInitialTtl = Duration.zero;
@@ -159,10 +164,12 @@ class _InitiatorPageState extends State<InitiatorPage> {
   Future<void> _startWebRTCHandshake() async {
     try {
       _log.info('Initiator: Starting WebRTC Handshake...');
+      _disposeFileTransferService();
       _webrtcManager = WebRTCManager();
       _log.info('Initiator: Initializing WebRTCManager...');
       await _webrtcManager!.initialize();
       _log.info('Initiator: WebRTCManager initialized.');
+      _attachFileTransferService(_webrtcManager!);
 
       _webrtcManager!.onStateChange.listen((state) {
         _log.info('Initiator: State changed to $state');
@@ -205,6 +212,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
       _iceCandidateQueue.clear();
       _signalQueue.clear();
       await _webrtcManager?.dispose();
+      _disposeFileTransferService();
       if (!mounted) return;
 
       final isRecoverableRendezvousError = _isRendezvousStatusError(e);
@@ -478,6 +486,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
     _iceCandidateQueue.dispose();
     _signalQueue.dispose();
     _mailboxCountdownTimer?.cancel();
+    _disposeFileTransferService();
     _webrtcManager?.dispose();
     super.dispose();
   }
@@ -724,6 +733,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
         _log.info('Initiator: Peer disconnected');
         _showSnackBar('Peer has disconnected.');
         await _webrtcManager?.dispose();
+        _disposeFileTransferService();
         setState(() {
           _webrtcManager = null;
           _webrtcState = null;
@@ -780,12 +790,55 @@ class _InitiatorPageState extends State<InitiatorPage> {
     _showSnackBar('Peer has disconnected.');
     _sessionControlProtocol.stopHeartbeat();
     await _webrtcManager?.dispose();
+    _disposeFileTransferService();
     setState(() {
       _webrtcManager = null;
       _webrtcState = null;
       _isPeerDisconnected = true;
       _isScreenSharing = false;
     });
+  }
+
+  void _attachFileTransferService(WebRTCManager manager) {
+    _fileTransferStateSubscription?.cancel();
+    _fileTransferService?.dispose();
+
+    final transferService = FileTransferService(manager);
+    _fileTransferService = transferService;
+    _fileTransferStateSubscription = transferService.onStateChange.listen(
+      _handleFileTransferState,
+    );
+  }
+
+  void _disposeFileTransferService() {
+    _fileTransferStateSubscription?.cancel();
+    _fileTransferStateSubscription = null;
+    _fileTransferService?.dispose();
+    _fileTransferService = null;
+    if (mounted && _hasPendingIncomingFile) {
+      setState(() {
+        _hasPendingIncomingFile = false;
+      });
+    } else {
+      _hasPendingIncomingFile = false;
+    }
+  }
+
+  void _handleFileTransferState(FileTransferState state) {
+    final hasPendingOffer = state.status == TransferStatus.offered;
+    final shouldOpenSheet = hasPendingOffer && !_hasPendingIncomingFile;
+
+    if (mounted && _hasPendingIncomingFile != hasPendingOffer) {
+      setState(() {
+        _hasPendingIncomingFile = hasPendingOffer;
+      });
+    } else {
+      _hasPendingIncomingFile = hasPendingOffer;
+    }
+
+    if (shouldOpenSheet && mounted) {
+      unawaited(_openFileTransferSheet(autoOpened: true));
+    }
   }
 
   String _webrtcStateText() {
@@ -1193,12 +1246,32 @@ class _InitiatorPageState extends State<InitiatorPage> {
     );
   }
 
-  void _openFileTransferSheet() {
-    if (_webrtcManager == null) return;
-    showSessionFileTransferSheet(
+  Future<void> _openFileTransferSheet({bool autoOpened = false}) async {
+    if (_webrtcManager == null || _fileTransferService == null) return;
+    if (_isFileTransferSheetOpen) return;
+
+    if (!autoOpened && _hasPendingIncomingFile) {
+      setState(() {
+        _hasPendingIncomingFile = false;
+      });
+    }
+
+    _isFileTransferSheetOpen = true;
+    await showSessionFileTransferSheet(
       context: context,
       webrtcManager: _webrtcManager!,
+      fileTransferService: _fileTransferService!,
     );
+
+    _isFileTransferSheetOpen = false;
+    if (!mounted) return;
+    final state = _fileTransferService?.currentState;
+    final hasPendingOffer = state?.status == TransferStatus.offered;
+    if (_hasPendingIncomingFile != hasPendingOffer) {
+      setState(() {
+        _hasPendingIncomingFile = hasPendingOffer;
+      });
+    }
   }
 
   // ─── Share source dialog ──────────────────────────────────────────────────
