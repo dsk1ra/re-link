@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${PROJECT_NAME:-remote_app}_server
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - SIGNALING_ADDR=${SIGNALING_ADDR:-0.0.0.0}
+      - SIGNALING_PORT=${SIGNALING_PORT:-8080}
+      - SIGNALING_PUBLIC_URL=${PUBLIC_BASE_URL}
+      - SIGNALING_REDIS_URL=${SIGNALING_REDIS_URL:-redis://redis:6379/0}
+      - SIGNALING_REDIS_REQUIRE_TLS=${SIGNALING_REDIS_REQUIRE_TLS:-false}
+      - SIGNALING_REDIS_KEY_PREFIX=${SIGNALING_REDIS_KEY_PREFIX:-sig}
+      - SIGNALING_SESSION_TTL_SECS=${SIGNALING_SESSION_TTL_SECS:-300}
+      - SIGNALING_HEARTBEAT_SECS=${SIGNALING_HEARTBEAT_SECS:-30}
+      - SIGNALING_ROOM_TTL_SECS=${SIGNALING_ROOM_TTL_SECS:-30}
+      - SIGNALING_JOINED_FLAG_TTL_SECS=${SIGNALING_JOINED_FLAG_TTL_SECS:-60}
+      - SIGNALING_REDIS_ENCRYPT=${SIGNALING_REDIS_ENCRYPT:-false}
+      - RUST_LOG=${RUST_LOG:-info}
+    depends_on:
+      - redis
+    networks:
+      - internal
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${PROJECT_NAME:-remote_app}_redis
+    command: redis-server --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - internal
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: ${PROJECT_NAME:-remote_app}_caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN=${DOMAIN}
+      - UPSTREAM=http://server:8080
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+    networks:
+      - internal
+      - external
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+  external:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
