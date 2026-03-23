@@ -54,7 +54,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
     });
 
     try {
-      await widget.backend.register(deviceLabel: 'Flutter P2P Client');
+      await widget.backend.register(deviceLabel: 'Client');
       setState(() => _connecting = false);
     } catch (e) {
       setState(() {

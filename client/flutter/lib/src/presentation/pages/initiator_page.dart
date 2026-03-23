@@ -562,6 +562,13 @@ class _InitiatorPageState extends State<InitiatorPage> {
     return (remainingMs / totalMs).clamp(0.0, 1.0);
   }
 
+  String _formatPeerCode(String rawId) {
+    final cleaned = rawId.trim();
+    if (cleaned.isEmpty) return 'Unknown';
+    if (cleaned.length <= 12) return cleaned;
+    return '${cleaned.substring(0, 6)}...${cleaned.substring(cleaned.length - 4)}';
+  }
+
   void _startListeningForPeer(String mailboxId) {
     _mailboxSubscription?.cancel();
     setState(() => _pollingPeer = true);
@@ -588,6 +595,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
   void _showIncomingDialog() {
     if (_incomingRequestFrom == null) return;
+    final peerCode = _formatPeerCode(_incomingRequestFrom!);
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -601,7 +609,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
               const Text('A peer wants to connect'),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'From: $_incomingRequestFrom',
+                'Peer code: $peerCode',
                 style: AppTypography.body(
                   size: _dialogDetailFontSize,
                   color: AppColors.textMuted,
