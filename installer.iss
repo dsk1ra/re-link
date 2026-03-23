@@ -1,4 +1,4 @@
-; Inno Setup installer script for Rust Remote Desktop - Windows Client
+; Inno Setup installer script for ReLink Desktop - Windows Client
 ; This script packages the Flutter Windows release into a single .exe installer
 ; Requires: Inno Setup 6.0 or later
 
