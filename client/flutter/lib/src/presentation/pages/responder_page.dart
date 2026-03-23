@@ -54,6 +54,7 @@ class _ResponderPageState extends State<ResponderPage> {
   static const double _menuHandleClosedTop = 0;
   static const double _menuHandleOpenTop = 108;
   static const double _menuOverlayHeight = 170;
+  static const Duration _handshakeTimeout = Duration(seconds: 12);
 
   late ConnectionService _connectionService;
   WebRTCManager? _webrtcManager;
@@ -74,6 +75,7 @@ class _ResponderPageState extends State<ResponderPage> {
   late final SessionControlProtocol _sessionControlProtocol;
   late final SerialTaskQueue<RTCIceCandidate> _iceCandidateQueue;
   late final SerialTaskQueue<Map<String, dynamic>> _signalQueue;
+  Timer? _handshakeTimeoutTimer;
 
   @override
   void initState() {
@@ -160,6 +162,7 @@ class _ResponderPageState extends State<ResponderPage> {
         _log.info('Responder: State changed to $state');
         setState(() => _webrtcState = state);
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          _cancelHandshakeTimeout();
           _closeSignalingAfterConnect();
           _sessionControlProtocol.startHeartbeat();
         }
@@ -181,14 +184,76 @@ class _ResponderPageState extends State<ResponderPage> {
       // 2. Listen for new messages (e.g. ICE candidates)
       _startListeningForSignals();
     } catch (e) {
-      _showSnackBar('WebRTC error: $e');
+      _cancelHandshakeTimeout();
+      await _webrtcManager?.dispose();
+      _detachRemoteStream();
+      if (!mounted) return;
+
+      final isRecoverableRendezvousError = _isRendezvousStatusError(e);
+      setState(() {
+        _webrtcManager = null;
+        _webrtcState = null;
+        _joined = false;
+        _responderMailboxId = null;
+        if (isRecoverableRendezvousError) {
+          _joinError =
+              'Link expired or invalid. Request a new connection link.';
+        }
+      });
+
+      _showSnackBar(
+        isRecoverableRendezvousError
+            ? 'Link expired or invalid. Please request a new link.'
+            : 'WebRTC error: $e',
+      );
     }
+  }
+
+  void _cancelHandshakeTimeout() {
+    _handshakeTimeoutTimer?.cancel();
+    _handshakeTimeoutTimer = null;
+  }
+
+  void _startHandshakeTimeout() {
+    _cancelHandshakeTimeout();
+    _handshakeTimeoutTimer = Timer(_handshakeTimeout, () async {
+      if (!mounted) return;
+      final isConnected =
+          _webrtcState ==
+          RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+      if (!_joined || isConnected) return;
+
+      _log.warning('Responder handshake timed out before WebRTC connected');
+      await _mailboxSubscription?.cancel();
+      _mailboxSubscription = null;
+      await _webrtcManager?.dispose();
+      _detachRemoteStream();
+
+      if (!mounted) return;
+      setState(() {
+        _webrtcManager = null;
+        _webrtcState = null;
+        _joined = false;
+        _responderMailboxId = null;
+        _joinError =
+            'Connection timed out. Ask the host for a fresh link and try again.';
+      });
+      _showSnackBar('Connection timed out. Please request a new link.');
+    });
+  }
+
+  bool _isRendezvousStatusError(Object error) {
+    final message = error.toString();
+    return message.contains('404') ||
+        message.contains('409') ||
+        message.contains('410');
   }
 
   StreamSubscription? _mailboxSubscription;
 
   @override
   void dispose() {
+    _cancelHandshakeTimeout();
     _connectionService.dispose();
     _tokenController.dispose();
     _mailboxSubscription?.cancel();
@@ -267,8 +332,10 @@ class _ResponderPageState extends State<ResponderPage> {
         _joined = true;
       });
 
+      _startHandshakeTimeout();
       await _startWebRTCHandshake();
     } catch (e) {
+      _cancelHandshakeTimeout();
       setState(() {
         _joiningConnection = false;
         _joinError = e.toString();
@@ -286,6 +353,9 @@ class _ResponderPageState extends State<ResponderPage> {
       }
     } catch (e) {
       _log.warning('Failed to fetch existing messages: $e');
+      if (_isRendezvousStatusError(e)) {
+        rethrow;
+      }
     }
   }
 
@@ -410,6 +480,7 @@ class _ResponderPageState extends State<ResponderPage> {
   }
 
   Future<void> _handlePeerSessionClosed() async {
+    _cancelHandshakeTimeout();
     _log.info('Responder: Peer session closed over WebRTC');
     _showSnackBar('Peer has disconnected.');
     _sessionControlProtocol.stopHeartbeat();

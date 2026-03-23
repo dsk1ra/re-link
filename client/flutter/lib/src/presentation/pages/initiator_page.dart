@@ -202,8 +202,36 @@ class _InitiatorPageState extends State<InitiatorPage> {
       );
     } catch (e) {
       _log.severe('Initiator: WebRTC Error', e);
-      _showSnackBar('WebRTC error: $e');
+      _iceCandidateQueue.clear();
+      _signalQueue.clear();
+      await _webrtcManager?.dispose();
+      if (!mounted) return;
+
+      final isRecoverableRendezvousError = _isRendezvousStatusError(e);
+      setState(() {
+        _webrtcManager = null;
+        _webrtcState = null;
+        _peerAccepted = false;
+        _pollingPeer = false;
+        _incomingRequestFrom = null;
+      });
+
+      if (isRecoverableRendezvousError) {
+        _showSnackBar('Link expired or invalid. Generating a new link...');
+        if (!_generatingLink && !_refreshingExpiredLink) {
+          unawaited(_createInitiatorLink(isAutoRefresh: true));
+        }
+      } else {
+        _showSnackBar('WebRTC error: $e');
+      }
     }
+  }
+
+  bool _isRendezvousStatusError(Object error) {
+    final message = error.toString();
+    return message.contains('404') ||
+        message.contains('409') ||
+        message.contains('410');
   }
 
   Future<void> _loadShareSources() async {
@@ -629,13 +657,27 @@ class _InitiatorPageState extends State<InitiatorPage> {
               child: const Text('Reject'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.of(ctx).pop();
+
+                if (_remainingFromEpochMs(_mailboxExpiresAtEpochMs) ==
+                    Duration.zero) {
+                  setState(() {
+                    _incomingRequestFrom = null;
+                    _peerAccepted = false;
+                  });
+                  _showSnackBar('Link expired. Generating a new link...');
+                  if (!_generatingLink && !_refreshingExpiredLink) {
+                    unawaited(_createInitiatorLink(isAutoRefresh: true));
+                  }
+                  return;
+                }
+
                 setState(() {
                   _peerAccepted = true;
                   _incomingRequestFrom = null;
                 });
-                _startWebRTCHandshake();
+                await _startWebRTCHandshake();
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
