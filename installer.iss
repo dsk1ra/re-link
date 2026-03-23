@@ -6,12 +6,12 @@
   #define AppVersion "0.1.0"
 #endif
 
-#define AppName "Rust Remote Desktop"
+#define AppName "Re-Link"
 #define AppPublisher "dsk1ra"
 #define AppExeName "application.exe"
-#define AppPublisherURL "https://github.com/dsk1ra/rust-remote-desktop"
-#define AppSupportURL "https://github.com/dsk1ra/rust-remote-desktop/issues"
-#define AppUpdatesURL "https://github.com/dsk1ra/rust-remote-desktop/releases"
+#define AppPublisherURL "https://github.com/dsk1ra/re-link"
+#define AppSupportURL "https://github.com/dsk1ra/re-link/issues"
+#define AppUpdatesURL "https://github.com/dsk1ra/re-link/releases"
 #define SourceDir "client\flutter\build\windows\x64\runner\Release"
 
 [Setup]
@@ -29,7 +29,7 @@ AppVerName={#AppName} {#AppVersion}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 AllowNoIcons=no
-OutputBaseFilename=RustRemoteDesktopSetup
+OutputBaseFilename=ReLinkSetup
 OutputDir=.
 Compression=lzma2
 SolidCompression=yes
