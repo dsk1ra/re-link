@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
+import 'package:application/src/features/settings/data/local_settings.dart';
 import 'package:application/src/presentation/pages/initiator_page.dart';
 import 'package:application/src/presentation/pages/responder_page.dart';
 import 'package:application/src/presentation/ui/metrics.dart';
@@ -9,17 +10,22 @@ import 'package:application/src/presentation/ui/spacing.dart';
 import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
 import 'package:application/src/presentation/widgets/app_card.dart';
+import 'package:application/src/presentation/widgets/domain_config_dialog.dart';
 import 'package:application/src/presentation/widgets/server_status_banner.dart';
 
 /// Main launcher page for P2P connection
 class ConnectionPairingPage extends StatefulWidget {
   final String signalingBaseUrl;
   final SignalingBackend backend;
+  final LocalSettings? settings;
+  final Function(String)? onDomainChanged;
 
   const ConnectionPairingPage({
     super.key,
     this.signalingBaseUrl = 'http://127.0.0.1:8080',
     required this.backend,
+    this.settings,
+    this.onDomainChanged,
   });
 
   @override
@@ -40,12 +46,6 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
   void initState() {
     super.initState();
     scheduleMicrotask(() => _connectToServer());
-  }
-
-  @override
-  void dispose() {
-    widget.backend.dispose();
-    super.dispose();
   }
 
   Future<void> _connectToServer() async {
@@ -100,6 +100,24 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _showDomainConfigDialog() async {
+    if (widget.settings == null) return;
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => DomainConfigDialog(
+        settings: widget.settings!,
+        onDomainChanged: (domain) {
+          widget.onDomainChanged?.call(domain);
+        },
+      ),
+    );
+
+    if (result != null) {
+      _showSnackBar('Server address updated to: $result');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final connected = widget.backend.isRegistered;
@@ -114,6 +132,17 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
         centerTitle: true,
         backgroundColor: AppColors.surface,
         elevation: 0,
+        actions: [
+          if (widget.settings != null)
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: IconButton(
+                icon: const Icon(Icons.settings),
+                tooltip: 'Change server address',
+                onPressed: _showDomainConfigDialog,
+              ),
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -127,7 +156,8 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final useHorizontalActions = constraints.maxWidth >= _horizontalLayoutBreakpoint;
+                final useHorizontalActions =
+                    constraints.maxWidth >= _horizontalLayoutBreakpoint;
 
                 Widget buildActionCard({
                   required String title,
@@ -146,7 +176,12 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(title, style: AppTypography.title(size: _cardTitleFontSize)),
+                            Text(
+                              title,
+                              style: AppTypography.title(
+                                size: _cardTitleFontSize,
+                              ),
+                            ),
                             const SizedBox(height: AppSpacing.sm),
                             Text(
                               subtitle,
@@ -202,7 +237,9 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(AppSpacing.lg),
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: _maxContentWidth),
+                      constraints: const BoxConstraints(
+                        maxWidth: _maxContentWidth,
+                      ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -215,7 +252,9 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                           const SizedBox(height: AppSpacing.base),
                           Text(
                             'Secure, direct connection with minimal server involvement',
-                            style: AppTypography.body(color: AppColors.textMuted),
+                            style: AppTypography.body(
+                              color: AppColors.textMuted,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: AppSpacing.xl),

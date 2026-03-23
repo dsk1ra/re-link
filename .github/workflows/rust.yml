@@ -24,10 +24,13 @@ jobs:
   rust-checks:
     name: Rust Checks
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        working-directory: [server/rust, client/rust]
     defaults:
       run:
         shell: bash
-        working-directory: rust
+        working-directory: ${{ matrix.working-directory }}
 
     steps:
       - name: Checkout
@@ -41,7 +44,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust
+          workspaces: ${{ matrix.working-directory }}
 
       - name: Check formatting
         run: cargo fmt --all -- --check

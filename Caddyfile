@@ -1,0 +1,18 @@
+# Caddyfile configuration for reverse proxy
+# For localhost/local development, HTTPS is skipped
+# For production domains, Caddy automatically provisions HTTPS via Let's Encrypt
+
+{$DOMAIN} {
+    # Automatic HTTPS via Let's Encrypt (skipped for localhost)
+    encode gzip
+
+    # Proxy all traffic to the server container
+    reverse_proxy {$UPSTREAM} {
+        # Preserve the original Host header
+        header_up Host {http.request.host}
+        # Forward the client's real IP
+        header_up X-Forwarded-For {http.request.remote.host}
+        header_up X-Forwarded-Proto {http.request.scheme}
+        header_up X-Real-IP {http.request.remote.host}
+    }
+}
