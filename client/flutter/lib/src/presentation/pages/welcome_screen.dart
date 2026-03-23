@@ -86,7 +86,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   Text(
                     'A privacy-first P2P remote access application',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: const Color(0xFF1C0F13).withOpacity(0.7),
+                      color: const Color(0xFF1C0F13).withValues(alpha: 0.7),
                     ),
                     textAlign: TextAlign.center,
                   ),
