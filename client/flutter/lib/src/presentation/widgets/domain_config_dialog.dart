@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:application/src/features/settings/data/local_settings.dart';
+import 'package:application/src/presentation/ui/ui_config.dart';
 
 /// Dialog for changing the signaling server domain
 class DomainConfigDialog extends StatefulWidget {
@@ -22,7 +23,9 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.settings.getDomain());
+    _controller = TextEditingController(
+      text: widget.settings.getDomain() ?? '',
+    );
   }
 
   @override
@@ -41,8 +44,9 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
     try {
       await widget.settings.setDomain(domain);
       if (mounted) {
-        Navigator.pop(context, widget.settings.getDomain());
-        widget.onDomainChanged?.call(widget.settings.getDomain());
+        final updatedDomain = widget.settings.getDomain() ?? domain;
+        Navigator.pop(context, updatedDomain);
+        widget.onDomainChanged?.call(updatedDomain);
       }
     } catch (e) {
       _showError('Error saving domain: $e');
@@ -51,14 +55,18 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: AppColors.error),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Change Server Address'),
+      backgroundColor: AppColors.surface,
+      title: const Text(
+        'Change Server Address',
+        style: TextStyle(color: AppColors.textPrimary),
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -66,16 +74,30 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
           children: [
             const Text(
               'Enter the address of your signaling server:',
-              style: TextStyle(fontSize: 14),
+              style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _controller,
+              cursorColor: AppColors.primary,
+              style: const TextStyle(color: AppColors.textMuted),
               decoration: InputDecoration(
                 hintText: 'localhost:8080 or your-domain.com',
-                hintStyle: TextStyle(color: Colors.grey[400]),
+                hintStyle: const TextStyle(color: AppColors.textMuted),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: AppColors.outline),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: AppColors.outline),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                    color: AppColors.primary,
+                    width: 1.5,
+                  ),
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -90,7 +112,7 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
               '• localhost:8080 (local development)\n'
               '• example.com (production)\n'
               '• relay.example.com:8443 (custom port)',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),
           ],
         ),
@@ -98,13 +120,14 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
+          style: TextButton.styleFrom(foregroundColor: AppColors.textMuted),
           child: const Text('Cancel'),
         ),
         ElevatedButton(
           onPressed: _saveDomain,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFcc3f0c),
-            foregroundColor: Colors.white,
+            backgroundColor: AppColors.primary,
+            foregroundColor: AppColors.onPrimary,
           ),
           child: const Text('Save'),
         ),

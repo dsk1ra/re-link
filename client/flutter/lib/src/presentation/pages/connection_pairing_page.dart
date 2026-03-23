@@ -22,7 +22,7 @@ class ConnectionPairingPage extends StatefulWidget {
 
   const ConnectionPairingPage({
     super.key,
-    this.signalingBaseUrl = 'http://127.0.0.1:8080',
+    required this.signalingBaseUrl,
     required this.backend,
     this.settings,
     this.onDomainChanged,
