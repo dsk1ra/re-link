@@ -24,6 +24,27 @@ pub struct SessionRegistry {
 }
 
 impl SessionRegistry {
+    fn normalize_device_label(device_label: &str) -> String {
+        let trimmed = device_label.trim();
+        if trimmed.is_empty() {
+            return "Peer".to_string();
+        }
+
+        // Keep display labels compact for status banners.
+        let mut normalized = trimmed.chars().take(24).collect::<String>();
+        if normalized.is_empty() {
+            normalized = "Peer".to_string();
+        }
+        normalized
+    }
+
+    fn build_display_name(device_label: &str, client_id: &ClientId) -> String {
+        let label = Self::normalize_device_label(device_label);
+        let id = client_id.to_string();
+        let short = id.split('-').next().unwrap_or("unknown");
+        format!("{}-{}", label, short)
+    }
+
     pub fn new(session_ttl: Duration, heartbeat_interval: Duration) -> Self {
         Self {
             repository: InMemorySessionRepository::new(),
@@ -53,11 +74,7 @@ impl SessionRegistry {
 
         let client_id = Uuid::new_v4();
         let session_token = Uuid::new_v4().to_string();
-        // Assign incremental display name based on current active clients count + 1
-        let display_name = {
-            let count = self.repository.get_client_count().await;
-            format!("Client {}", count + 1)
-        };
+        let display_name = Self::build_display_name(&request.device_label, &client_id);
         let new_record = ClientRecord {
             device_label: request.device_label,
             session_token: session_token.clone(),

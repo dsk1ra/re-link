@@ -268,8 +268,6 @@ async fn mailbox_send(
         .await
         .map_err(rendezvous_err)?;
 
-    // Push notify subscribers of peer mailbox
-    info!(mailbox_id = %peer_mailbox_id, "Pushing notification to mailbox");
     state.push.notify(&peer_mailbox_id, msg_json).await;
 
     Ok(StatusCode::ACCEPTED)

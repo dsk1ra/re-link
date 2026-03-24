@@ -1,4 +1,5 @@
 import 'package:application/src/rust/api/connection.dart' as rust_connection;
+import 'package:application/src/features/network/data/windows_tls_compat.dart';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -12,7 +13,8 @@ class ConnectionService {
   final http.Client httpClient;
 
   ConnectionService({required this.signalingBaseUrl, http.Client? httpClient})
-    : httpClient = httpClient ?? http.Client();
+    : httpClient =
+          httpClient ?? createPlatformHttpClientForBaseUrl(signalingBaseUrl);
 
   /// Step 1: Initialize a connection locally (Client A)
   /// Generates a high-entropy secret and derives encryption keys
@@ -182,7 +184,7 @@ class ConnectionService {
       if (isDisposed) return;
 
       try {
-        channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+        channel = connectPlatformWebSocket(wsUrl);
 
         channel!.stream.listen(
           (data) {

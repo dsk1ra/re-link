@@ -1,13 +1,22 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:application/src/presentation/pages/welcome_screen.dart';
 import 'package:application/src/presentation/pages/connection_pairing_page.dart';
+import 'package:application/src/presentation/ui/ui_config.dart';
 import 'package:application/src/features/pairing/data/http/http_signaling_backend.dart';
 import 'package:application/src/features/settings/data/local_settings.dart';
 import 'package:application/src/rust/frb_generated.dart';
 
 Future<void> main() async {
+  // Reset preferences if RESET_APP_PREFS environment variable is set
+  final shouldResetPrefs = Platform.environment.containsKey('RESET_APP_PREFS');
+  if (shouldResetPrefs) {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    debugPrint('Preferences cleared. Welcome screen will show on next launch.');
+  }
   Logger.root.level = Level.INFO;
   Logger.root.onRecord.listen((record) {
     debugPrint(
@@ -49,27 +58,8 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Rust Remote Desktop',
+      title: 'ReLink',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFcc3f0c),
-          primary: const Color(0xFF1C0F13),
-          secondary: const Color(0xFFcc3f0c),
-          surface: const Color(0xFFd8cbc7),
-        ),
-        scaffoldBackgroundColor: const Color(0xFFd8cbc7),
-        useMaterial3: true,
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFcc3f0c),
-            foregroundColor: const Color(0xFFffffff),
-          ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: const Color(0xFF1C0F13)),
-        ),
-      ),
       home: FutureBuilder<LocalSettings>(
         future: _settingsFuture,
         builder: (context, snapshot) {
@@ -82,9 +72,10 @@ class _MyAppState extends State<MyApp> {
           }
 
           final settings = snapshot.data!;
+          final configuredDomain = settings.getDomain();
 
-          // If welcome hasn't been shown, display it first
-          if (!settings.hasSeenWelcome()) {
+          // Show welcome until the user has both seen onboarding and set a domain.
+          if (!settings.hasSeenWelcome() || !settings.hasDomain()) {
             return WelcomeScreen(
               settings: settings,
               onDomainConfigured: (domain) {
@@ -104,7 +95,7 @@ class _MyAppState extends State<MyApp> {
           // Otherwise, go straight to pairing page
           return _PairingPageWrapper(
             settings: settings,
-            initialDomain: settings.getDomain(),
+            initialDomain: configuredDomain!,
           );
         },
       ),
@@ -173,16 +164,19 @@ class _LoadingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFd8cbc7),
+      backgroundColor: AppColors.background,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFcc3f0c)),
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
             ),
             const SizedBox(height: 16),
-            Text('Loading...', style: Theme.of(context).textTheme.bodyMedium),
+            const Text(
+              'Loading...',
+              style: TextStyle(color: AppColors.textPrimary),
+            ),
           ],
         ),
       ),
@@ -199,23 +193,27 @@ class _ErrorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFd8cbc7),
+      backgroundColor: AppColors.background,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, color: Color(0xFFcc3f0c), size: 48),
+            const Icon(Icons.error_outline, color: AppColors.error, size: 48),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               'Initialization Error',
-              style: Theme.of(context).textTheme.headlineSmall,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 24,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
                 error,
-                style: Theme.of(context).textTheme.bodySmall,
+                style: const TextStyle(color: AppColors.textMuted),
                 textAlign: TextAlign.center,
               ),
             ),

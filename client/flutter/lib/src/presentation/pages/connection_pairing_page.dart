@@ -22,7 +22,7 @@ class ConnectionPairingPage extends StatefulWidget {
 
   const ConnectionPairingPage({
     super.key,
-    this.signalingBaseUrl = 'http://127.0.0.1:8080',
+    required this.signalingBaseUrl,
     required this.backend,
     this.settings,
     this.onDomainChanged,
@@ -54,7 +54,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
     });
 
     try {
-      await widget.backend.register(deviceLabel: 'Flutter P2P Client');
+      await widget.backend.register(deviceLabel: 'Client');
       setState(() => _connecting = false);
     } catch (e) {
       setState(() {
@@ -126,7 +126,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'P2P Connect',
+          'ReLink',
           style: AppTypography.title(size: AppUiMetrics.appBarTitleFontSize),
         ),
         centerTitle: true,

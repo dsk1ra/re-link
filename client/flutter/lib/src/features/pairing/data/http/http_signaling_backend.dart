@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:application/src/features/network/data/windows_tls_compat.dart';
 import 'package:http/http.dart' as http;
 
 import '../../domain/models.dart';
@@ -19,7 +20,7 @@ class HttpSignalingBackend implements SignalingBackend {
   String? _displayName;
 
   HttpSignalingBackend(this.baseUrl, {http.Client? client})
-    : _client = client ?? http.Client(),
+    : _client = client ?? createPlatformHttpClientForBaseUrl(baseUrl),
       _ownsClient = client == null;
 
   @override
@@ -42,7 +43,18 @@ class HttpSignalingBackend implements SignalingBackend {
     if (resp.statusCode != 200) {
       throw Exception('Register failed: ${resp.statusCode} ${resp.body}');
     }
-    final data = RegisterResponse.fromJson(jsonDecode(resp.body));
+    late final RegisterResponse data;
+    try {
+      final parsed = jsonDecode(resp.body);
+      if (parsed is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object response');
+      }
+      data = RegisterResponse.fromJson(parsed);
+    } on FormatException {
+      throw Exception(
+        'Server returned an invalid response. Verify the server URL and prefer HTTPS.',
+      );
+    }
     _clientId = data.clientId;
     _sessionToken = data.sessionToken;
     _heartbeatIntervalSecs = data.heartbeatIntervalSecs;

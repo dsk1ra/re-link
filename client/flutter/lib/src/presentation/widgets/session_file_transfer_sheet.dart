@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:application/src/features/file_transfer/file_transfer_service.dart';
 import 'package:application/src/features/file_transfer/file_transfer_widget.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
 import 'package:application/src/presentation/ui/spacing.dart';
@@ -9,6 +10,7 @@ import 'package:application/src/presentation/ui/ui_config.dart';
 Future<void> showSessionFileTransferSheet({
   required BuildContext context,
   required WebRTCManager webrtcManager,
+  required FileTransferService fileTransferService,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -17,15 +19,21 @@ Future<void> showSessionFileTransferSheet({
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
-    builder: (ctx) =>
-        _SessionFileTransferSheetFrame(webrtcManager: webrtcManager),
+    builder: (ctx) => _SessionFileTransferSheetFrame(
+      webrtcManager: webrtcManager,
+      fileTransferService: fileTransferService,
+    ),
   );
 }
 
 class _SessionFileTransferSheetFrame extends StatelessWidget {
-  const _SessionFileTransferSheetFrame({this.webrtcManager});
+  const _SessionFileTransferSheetFrame({
+    this.webrtcManager,
+    this.fileTransferService,
+  });
 
   final WebRTCManager? webrtcManager;
+  final FileTransferService? fileTransferService;
 
   static const double _dragHandleWidth = 40;
   static const double _dragHandleHeight = 4;
@@ -36,7 +44,8 @@ class _SessionFileTransferSheetFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final manager = webrtcManager;
-    if (manager == null) {
+    final transferService = fileTransferService;
+    if (manager == null || transferService == null) {
       return const SizedBox.shrink();
     }
 
@@ -81,7 +90,10 @@ class _SessionFileTransferSheetFrame extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
-              FileTransferWidget(webrtcManager: manager),
+              FileTransferWidget(
+                webrtcManager: manager,
+                fileTransferService: transferService,
+              ),
             ],
           ),
         ),

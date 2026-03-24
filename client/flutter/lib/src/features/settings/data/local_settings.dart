@@ -4,24 +4,29 @@ import 'package:shared_preferences/shared_preferences.dart';
 class LocalSettings {
   static const String _keyDomain = 'signaling_domain';
   static const String _keyWelcomeShown = 'welcome_shown';
-  static const String _defaultDomain = 'http://127.0.0.1:8080';
 
   final SharedPreferences _prefs;
 
   LocalSettings(this._prefs);
 
-  /// Get the stored signaling domain, or default to localhost
-  String getDomain() {
-    return _prefs.getString(_keyDomain) ?? _defaultDomain;
+  /// Get the stored signaling domain, or null if not configured yet
+  String? getDomain() {
+    return _prefs.getString(_keyDomain);
+  }
+
+  /// Check whether a signaling domain is configured
+  bool hasDomain() {
+    final domain = getDomain();
+    return domain != null && domain.trim().isNotEmpty;
   }
 
   /// Save the signaling domain
   Future<void> setDomain(String domain) async {
-    // Normalize the domain (add http:// if missing)
+    // Normalize the domain (default to HTTPS when scheme is omitted)
     String normalizedDomain = domain.trim();
     if (!normalizedDomain.startsWith('http://') &&
         !normalizedDomain.startsWith('https://')) {
-      normalizedDomain = 'http://$normalizedDomain';
+      normalizedDomain = 'https://$normalizedDomain';
     }
     // Remove trailing slash if present
     if (normalizedDomain.endsWith('/')) {

@@ -56,9 +56,11 @@ class SessionConnectingView extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(),
+          const CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+          ),
           const SizedBox(height: AppSpacing.lg),
-          Text(message),
+          Text(message, style: AppTypography.body(color: AppColors.textMuted)),
         ],
       ),
     );

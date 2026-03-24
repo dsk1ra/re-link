@@ -20,8 +20,13 @@ class FileTransferWidget extends StatefulWidget {
   static const double _fileInfoBorderRadius = 8;
 
   final WebRTCManager webrtcManager;
+  final FileTransferService? fileTransferService;
 
-  const FileTransferWidget({super.key, required this.webrtcManager});
+  const FileTransferWidget({
+    super.key,
+    required this.webrtcManager,
+    this.fileTransferService,
+  });
 
   @override
   State<FileTransferWidget> createState() => _FileTransferWidgetState();
@@ -29,18 +34,23 @@ class FileTransferWidget extends StatefulWidget {
 
 class _FileTransferWidgetState extends State<FileTransferWidget> {
   late FileTransferService _service;
+  late bool _ownsService;
   File? _selectedFile;
   bool _isDragging = false;
 
   @override
   void initState() {
     super.initState();
-    _service = FileTransferService(widget.webrtcManager);
+    _ownsService = widget.fileTransferService == null;
+    _service =
+        widget.fileTransferService ?? FileTransferService(widget.webrtcManager);
   }
 
   @override
   void dispose() {
-    _service.dispose();
+    if (_ownsService) {
+      _service.dispose();
+    }
     super.dispose();
   }
 

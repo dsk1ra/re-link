@@ -1,4 +1,4 @@
-; Inno Setup installer script for Rust Remote Desktop - Windows Client
+; Inno Setup installer script for ReLink Desktop - Windows Client
 ; This script packages the Flutter Windows release into a single .exe installer
 ; Requires: Inno Setup 6.0 or later
 
@@ -6,12 +6,12 @@
   #define AppVersion "0.1.0"
 #endif
 
-#define AppName "Rust Remote Desktop"
+#define AppName "ReLink"
 #define AppPublisher "dsk1ra"
-#define AppExeName "application.exe"
-#define AppPublisherURL "https://github.com/dsk1ra/rust-remote-desktop"
-#define AppSupportURL "https://github.com/dsk1ra/rust-remote-desktop/issues"
-#define AppUpdatesURL "https://github.com/dsk1ra/rust-remote-desktop/releases"
+#define AppExeName "ReLink.exe"
+#define AppPublisherURL "https://github.com/dsk1ra/re-link"
+#define AppSupportURL "https://github.com/dsk1ra/re-link/issues"
+#define AppUpdatesURL "https://github.com/dsk1ra/re-link/releases"
 #define SourceDir "client\flutter\build\windows\x64\runner\Release"
 
 [Setup]
@@ -26,10 +26,10 @@ AppUpdatesURL={#AppUpdatesURL}
 AppVerName={#AppName} {#AppVersion}
 
 ; Installation paths and behavior
-DefaultDirName={autopf}\{#AppName}
+DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 AllowNoIcons=no
-OutputBaseFilename=RustRemoteDesktopSetup
+OutputBaseFilename=ReLinkSetup
 OutputDir=.
 Compression=lzma2
 SolidCompression=yes
@@ -58,10 +58,10 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "*.pdb,*.ilk,*.exp,*.lib"; Flags: ignoreversion recursesubdirs
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
-Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\{#AppName}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: quicklaunch
-Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
+Name: "{autoprograms}\{#AppName}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
