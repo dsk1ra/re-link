@@ -82,7 +82,7 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
               cursorColor: AppColors.primary,
               style: const TextStyle(color: AppColors.textMuted),
               decoration: InputDecoration(
-                hintText: 'localhost:8080 or your-domain.com',
+                hintText: 'https://your-domain.com or localhost:8080',
                 hintStyle: const TextStyle(color: AppColors.textMuted),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -110,7 +110,7 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
             Text(
               'Examples:\n'
               '• localhost:8080 (local development)\n'
-              '• example.com (production)\n'
+              '• https://example.com (production)\n'
               '• relay.example.com:8443 (custom port)',
               style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),

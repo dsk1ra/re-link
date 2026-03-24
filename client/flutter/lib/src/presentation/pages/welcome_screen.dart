@@ -75,7 +75,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   // Welcome header
                   const SizedBox(height: 24),
                   Text(
-                    'Welcome to Re-Link',
+                    'Welcome to ReLink',
                     style: const TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 24,
@@ -116,7 +116,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                             cursorColor: AppColors.primary,
                             style: const TextStyle(color: AppColors.textMuted),
                             decoration: InputDecoration(
-                              hintText: 'localhost:8080 or your-domain.com',
+                              hintText:
+                                  'https://your-domain.com or localhost:8080',
                               hintStyle: const TextStyle(
                                 color: AppColors.textMuted,
                               ),
@@ -148,7 +149,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Examples: localhost:8080, example.com, relay.example.com:8443',
+                            'Examples: localhost:8080, https://example.com, relay.example.com:8443',
                             style: const TextStyle(
                               color: AppColors.textMuted,
                               fontSize: 11,
