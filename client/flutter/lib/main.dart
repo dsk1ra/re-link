@@ -58,7 +58,7 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Re-Link',
+      title: 'ReLink',
       debugShowCheckedModeBanner: false,
       home: FutureBuilder<LocalSettings>(
         future: _settingsFuture,

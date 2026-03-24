@@ -126,7 +126,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'P2P Connect',
+          'ReLink',
           style: AppTypography.title(size: AppUiMetrics.appBarTitleFontSize),
         ),
         centerTitle: true,
