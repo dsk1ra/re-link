@@ -22,11 +22,11 @@ class LocalSettings {
 
   /// Save the signaling domain
   Future<void> setDomain(String domain) async {
-    // Normalize the domain (add http:// if missing)
+    // Normalize the domain (default to HTTPS when scheme is omitted)
     String normalizedDomain = domain.trim();
     if (!normalizedDomain.startsWith('http://') &&
         !normalizedDomain.startsWith('https://')) {
-      normalizedDomain = 'http://$normalizedDomain';
+      normalizedDomain = 'https://$normalizedDomain';
     }
     // Remove trailing slash if present
     if (normalizedDomain.endsWith('/')) {

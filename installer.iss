@@ -6,9 +6,9 @@
   #define AppVersion "0.1.0"
 #endif
 
-#define AppName "Re-Link"
+#define AppName "ReLink"
 #define AppPublisher "dsk1ra"
-#define AppExeName "application.exe"
+#define AppExeName "ReLink.exe"
 #define AppPublisherURL "https://github.com/dsk1ra/re-link"
 #define AppSupportURL "https://github.com/dsk1ra/re-link/issues"
 #define AppUpdatesURL "https://github.com/dsk1ra/re-link/releases"

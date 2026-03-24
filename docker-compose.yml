@@ -5,9 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ${PROJECT_NAME:-remote_app}_server
-    ports:
-      - "127.0.0.1:8080:8080"
+    container_name: ${PROJECT_NAME:-relink}_server
     environment:
       - SIGNALING_ADDR=${SIGNALING_ADDR:-0.0.0.0}
       - SIGNALING_PORT=${SIGNALING_PORT:-8080}
@@ -29,7 +27,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: ${PROJECT_NAME:-remote_app}_redis
+    container_name: ${PROJECT_NAME:-relink}_redis
     command: redis-server --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
     networks:
       - internal
@@ -37,7 +35,7 @@ services:
 
   caddy:
     image: caddy:2-alpine
-    container_name: ${PROJECT_NAME:-remote_app}_caddy
+    container_name: ${PROJECT_NAME:-relink}_caddy
     ports:
       - "80:80"
       - "443:443"
