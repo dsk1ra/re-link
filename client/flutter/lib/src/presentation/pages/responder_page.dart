@@ -112,7 +112,6 @@ class _ResponderPageState extends State<ResponderPage> {
     _iceCandidateQueue = SerialTaskQueue<RTCIceCandidate>(
       processor: (candidate) async {
         await _sendIceCandidate(candidate);
-        await Future.delayed(const Duration(milliseconds: 100));
       },
       onError: (error, _) {
         _log.warning('Error sending queued ICE candidate: $error');
@@ -187,10 +186,7 @@ class _ResponderPageState extends State<ResponderPage> {
         }
       });
 
-      // 1. Process any messages already waiting in the mailbox (e.g. the Offer)
-      await _fetchAndProcessExistingMessages();
-
-      // 2. Listen for new messages (e.g. ICE candidates)
+      // Listen for mailbox history and new messages over the same stream.
       _startListeningForSignals();
     } catch (e) {
       _cancelHandshakeTimeout();
@@ -352,22 +348,6 @@ class _ResponderPageState extends State<ResponderPage> {
         _joiningConnection = false;
         _joinError = e.toString();
       });
-    }
-  }
-
-  Future<void> _fetchAndProcessExistingMessages() async {
-    try {
-      final messages = await _connectionService.fetchMessages(
-        mailboxId: _responderMailboxId!,
-      );
-      for (final msg in messages) {
-        await _handleIncomingSignal(msg);
-      }
-    } catch (e) {
-      _log.warning('Failed to fetch existing messages: $e');
-      if (_isRendezvousStatusError(e)) {
-        rethrow;
-      }
     }
   }
 

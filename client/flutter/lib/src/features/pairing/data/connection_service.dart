@@ -3,12 +3,14 @@ import 'package:application/src/features/network/data/windows_tls_compat.dart';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'dart:convert';
 import 'dart:async';
+import 'dart:convert';
 
 /// Service for managing connection-based blind rendezvous pairing
 class ConnectionService {
   static final Logger _log = Logger('ConnectionService');
+  static const Duration _initialReconnectDelay = Duration(milliseconds: 250);
+  static const Duration _maxReconnectDelay = Duration(seconds: 2);
   final String signalingBaseUrl;
   final http.Client httpClient;
 
@@ -158,66 +160,106 @@ class ConnectionService {
 
     _log.info('Connecting to WebSocket: $wsUrl');
 
-    final controller = StreamController<Map<String, dynamic>>.broadcast();
+    final controller = StreamController<Map<String, dynamic>>.broadcast(
+      sync: true,
+    );
     WebSocketChannel? channel;
     bool isDisposed = false;
+    bool isConnecting = false;
+    int reconnectAttempt = 0;
+    Timer? reconnectTimer;
+    final deliveredMessages = <String>{};
+    late Future<void> Function() connect;
 
-    // Initial fetch to ensure no messages are missed
-    fetchMessages(mailboxId: mailboxId)
-        .then((messages) {
-          for (final msg in messages) {
-            if (!controller.isClosed) {
-              controller.add(msg);
-            }
-          }
-        })
-        .catchError((e, st) {
-          _log.warning('Initial fetch error', e, st);
-          return null;
-        });
+    String messageKey(Map<String, dynamic> msg) {
+      final sender = msg['from_mailbox_id'] as String? ?? '';
+      final payload = msg['ciphertext_b64'] as String? ?? '';
+      return '$sender:$payload';
+    }
 
-    void connect() {
-      if (isDisposed) return;
+    void emitIfNew(Map<String, dynamic> msg) {
+      final key = messageKey(msg);
+      if (!deliveredMessages.add(key) || controller.isClosed) {
+        return;
+      }
+      controller.add(msg);
+    }
+
+    Future<void> syncMailboxHistory() async {
+      try {
+        final messages = await fetchMessages(mailboxId: mailboxId);
+        for (final msg in messages) {
+          emitIfNew(msg);
+        }
+      } catch (e, st) {
+        _log.warning('Mailbox sync error', e, st);
+      }
+    }
+
+    Duration nextReconnectDelay() {
+      var delay = _initialReconnectDelay;
+      for (var i = 0; i < reconnectAttempt; i++) {
+        final doubled = delay * 2;
+        delay = doubled > _maxReconnectDelay ? _maxReconnectDelay : doubled;
+      }
+      return delay;
+    }
+
+    void scheduleReconnect() {
+      if (isDisposed || reconnectTimer != null) return;
+      final delay = nextReconnectDelay();
+      reconnectAttempt++;
+      reconnectTimer = Timer(delay, () {
+        reconnectTimer = null;
+        unawaited(connect());
+      });
+    }
+
+    connect = () async {
+      if (isDisposed || isConnecting) return;
+      isConnecting = true;
 
       try {
-        channel = connectPlatformWebSocket(wsUrl);
+        final nextChannel = connectPlatformWebSocket(wsUrl);
+        channel = nextChannel;
 
-        channel!.stream.listen(
+        nextChannel.stream.listen(
           (data) {
+            if (isDisposed || channel != nextChannel) return;
             try {
               final msg = jsonDecode(data as String);
-              if (!controller.isClosed) {
-                controller.add(msg as Map<String, dynamic>);
-              }
+              emitIfNew(msg as Map<String, dynamic>);
             } catch (e) {
               _log.warning('WS message decode error: $e');
             }
           },
           onError: (e) {
+            if (channel != nextChannel) return;
             _log.warning('WS Error: $e');
-            if (!isDisposed) {
-              Future.delayed(const Duration(seconds: 2), () => connect());
-            }
+            scheduleReconnect();
           },
           onDone: () {
+            if (channel != nextChannel) return;
             _log.info('WS Closed');
-            if (!isDisposed) {
-              Future.delayed(const Duration(seconds: 2), () => connect());
-            }
+            scheduleReconnect();
           },
         );
+
+        reconnectAttempt = 0;
+        unawaited(syncMailboxHistory());
       } catch (e) {
         _log.warning('WS Connect Exception: $e');
-        if (!isDisposed) {
-          Future.delayed(const Duration(seconds: 2), () => connect());
-        }
+        scheduleReconnect();
+      } finally {
+        isConnecting = false;
       }
-    }
+    };
 
-    connect();
+    unawaited(connect());
 
     controller.onCancel = () {
       isDisposed = true;
+      reconnectTimer?.cancel();
       channel?.sink.close();
       controller.close();
     };

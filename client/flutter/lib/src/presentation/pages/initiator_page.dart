@@ -85,7 +85,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
   String? _connectionLink;
   String? _initiatorServerMailboxId;
   bool _generatingLink = false;
-  bool _pollingPeer = false;
+  bool _waitingForPeer = false;
 
   String? _incomingRequestFrom;
   bool _peerAccepted = false;
@@ -146,7 +146,6 @@ class _InitiatorPageState extends State<InitiatorPage> {
     _iceCandidateQueue = SerialTaskQueue<RTCIceCandidate>(
       processor: (candidate) async {
         await _sendIceCandidate(candidate);
-        await Future.delayed(const Duration(milliseconds: 100));
       },
       onError: (error, _) {
         _log.warning('Error sending queued ICE candidate: $error');
@@ -222,7 +221,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
         _webrtcManager = null;
         _webrtcState = null;
         _peerAccepted = false;
-        _pollingPeer = false;
+        _waitingForPeer = false;
         _incomingRequestFrom = null;
       });
 
@@ -529,7 +528,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
         _initiatorResult = initResult;
         _connectionLink = link;
         _generatingLink = false;
-        _pollingPeer = serverMailboxId != null;
+        _waitingForPeer = serverMailboxId != null;
         _peerAccepted = false;
         _incomingRequestFrom = null;
         _mailboxExpiresAtEpochMs = expiresAtEpochMs;
@@ -608,7 +607,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
   void _startListeningForPeer(String mailboxId) {
     _mailboxSubscription?.cancel();
-    setState(() => _pollingPeer = true);
+    setState(() => _waitingForPeer = true);
 
     _mailboxSubscription = _connectionService
         .subscribeMailbox(mailboxId: mailboxId)
@@ -616,7 +615,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
           (evt) {
             if (!_peerAccepted && _incomingRequestFrom == null) {
               setState(() {
-                _pollingPeer = false;
+                _waitingForPeer = false;
                 _incomingRequestFrom = evt['from_mailbox_id'] as String?;
               });
               _showIncomingDialog();
@@ -625,7 +624,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
             }
           },
           onError: (_) {
-            setState(() => _pollingPeer = false);
+            setState(() => _waitingForPeer = false);
           },
         );
   }
@@ -1069,7 +1068,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
                     ),
                   ],
                 ),
-                if (_pollingPeer) ...[
+                if (_waitingForPeer) ...[
                   const SizedBox(height: AppSpacing.lg),
                   AppCard(
                     child: Row(

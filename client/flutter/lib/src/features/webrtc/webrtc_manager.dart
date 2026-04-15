@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:logging/logging.dart';
 
+enum _AutoQualityProfile { stable, recovery, minimum }
+
 /// Manages WebRTC peer connection with minimal signaling
 class WebRTCManager {
   static final Logger _log = Logger('WebRTCManager');
@@ -20,26 +22,21 @@ class WebRTCManager {
   static const int _MIN_FRAMERATE = 1;
   static const int _MAX_WIDTH = 1920;
   static const int _MAX_HEIGHT = 1080;
-  static const int _ADAPTIVE_QUALITY_POLL_INTERVAL_SECONDS = 5;
-  static const int _QUALITY_TIER_MAX = 3;
-  static const double _QUALITY_BAD_FRACTION_LOST_THRESHOLD = 0.05;
-  static const double _QUALITY_GOOD_FRACTION_LOST_THRESHOLD = 0.01;
-  static const double _QUALITY_BAD_RTT_THRESHOLD = 0.5;
-  static const double _QUALITY_GOOD_RTT_THRESHOLD = 0.2;
-  static const int _CONSECUTIVE_BAD_POLLS_FOR_DOWNGRADE = 2;
-  static const int _CONSECUTIVE_GOOD_POLLS_FOR_UPGRADE = 4;
   static const int _FILE_CHANNEL_WAIT_TIMEOUT_SECONDS = 10;
-  static const int _FILE_CHANNEL_POLL_INTERVAL_MS = 100;
-  // Quality tier bitrate/fps/scale factors
-  static const double _TIER1_BITRATE_FACTOR = 0.6;
-  static const double _TIER1_FPS_FACTOR = 0.8;
-  static const double _TIER1_SCALE = 1.5;
-  static const double _TIER2_BITRATE_FACTOR = 0.35;
-  static const double _TIER2_FPS_FACTOR = 0.5;
-  static const double _TIER2_SCALE = 2.25;
-  static const int _TIER3_BITRATE_KBPS = 300;
-  static const int _TIER3_FPS = 10;
-  static const double _TIER3_SCALE = 3.0;
+  static const int _AUTO_QUALITY_SAMPLE_INTERVAL_MS = 1000;
+  // Auto-quality fallback profiles for transport disruptions.
+  static const double _RECOVERY_BITRATE_FACTOR = 0.6;
+  static const double _RECOVERY_FPS_FACTOR = 0.8;
+  static const double _RECOVERY_SCALE = 1.5;
+  static const double _MINIMUM_BITRATE_FACTOR = 0.35;
+  static const double _MINIMUM_FPS_FACTOR = 0.5;
+  static const double _MINIMUM_SCALE = 2.25;
+  static const double _BAD_FRACTION_LOST_THRESHOLD = 0.05;
+  static const double _GOOD_FRACTION_LOST_THRESHOLD = 0.01;
+  static const double _BAD_RTT_THRESHOLD = 0.5;
+  static const double _GOOD_RTT_THRESHOLD = 0.2;
+  static const int _BAD_SAMPLES_FOR_DOWNGRADE = 2;
+  static const int _GOOD_SAMPLES_FOR_UPGRADE = 4;
   static const int _MIN_BITRATE_KBPS = 300;
   static const int _MIN_FPS_LOW_QUALITY = 10;
   static const int _MIN_FPS_MID_QUALITY = 15;
@@ -54,14 +51,14 @@ class WebRTCManager {
   // Video sender – kept so encoder parameters can be updated live
   RTCRtpSender? _videoSender;
 
-  // Adaptive quality state
+  // Auto quality state
   bool _autoQuality = false;
   int _baseBitrateKbps = _DEFAULT_BITRATE_KBPS;
   int _baseFps = _DEFAULT_FPS;
-  int _qualityTier = 0; // 0 = best quality
-  int _consecutiveGoodPolls = 0;
-  int _consecutiveBadPolls = 0;
-  Timer? _adaptiveQualityTimer;
+  _AutoQualityProfile? _autoQualityProfile;
+  int _consecutiveBadSamples = 0;
+  int _consecutiveGoodSamples = 0;
+  Timer? _autoQualityTimer;
 
   final _onQualityChangeController = StreamController<String>.broadcast();
 
@@ -96,7 +93,7 @@ class WebRTCManager {
   MediaStream? get remoteStream => _remoteStream;
   MediaStream? get localScreenStream => _localScreenStream;
 
-  /// Emits a human-readable string whenever adaptive quality changes tier.
+  /// Emits a human-readable string whenever auto quality changes profile.
   Stream<String> get onQualityChange => _onQualityChangeController.stream;
 
   bool get isConnected =>
@@ -261,7 +258,7 @@ class WebRTCManager {
 
   /// Start capturing the local screen and add it as a video track.
   ///
-  /// [bitrateKbps] – null enables automatic adaptive quality control;
+  /// [bitrateKbps] – null enables native auto quality control;
   /// a positive integer fixes the encoder to that bitrate ceiling.
   /// Resolution is capped at 1080p; framerate uses hard min/max bounds (Fix B).
   Future<void> startScreenCapture({
@@ -360,7 +357,7 @@ class WebRTCManager {
         scaleDown: 1.0,
       );
     } else {
-      _startAdaptiveQuality();
+      await _startAdaptiveQuality();
     }
   }
 
@@ -443,36 +440,36 @@ class WebRTCManager {
 
   Future<void> _waitForFileChannelOpen() async {
     if (_fileTransferChannel == null) return;
-      if (_fileTransferChannel!.state ==
-          RTCDataChannelState.RTCDataChannelOpen) {
-        return;
+    if (_fileTransferChannel!.state ==
+        RTCDataChannelState.RTCDataChannelOpen) {
+      return;
+    }
+
+    final completer = Completer<void>();
+
+    final subscription = onFileChannelState.listen((state) {
+      if (state == RTCDataChannelState.RTCDataChannelOpen &&
+          !completer.isCompleted) {
+        completer.complete();
       }
+    });
 
-      final completer = Completer<void>();
-      
-      final subscription = onFileChannelState.listen((state) {
-        if (state == RTCDataChannelState.RTCDataChannelOpen &&
-            !completer.isCompleted) {
-          completer.complete();
-        }
-      });
+    // Double-check the state after subscribing to avoid dropping the event.
+    if (_fileTransferChannel!.state == RTCDataChannelState.RTCDataChannelOpen &&
+        !completer.isCompleted) {
+      completer.complete();
+    }
 
-      // Double-check the state *after* subscribing to avoid dropping the event
-      if (_fileTransferChannel!.state ==
-          RTCDataChannelState.RTCDataChannelOpen) {
-        if (!completer.isCompleted) {
-          completer.complete();
-        }
-      }
-
-      try {
-        await completer.future.timeout(
-          const Duration(seconds: _FILE_CHANNEL_WAIT_TIMEOUT_SECONDS),
-        );
-      } on TimeoutException {
-        throw Exception('Timeout waiting for file transfer channel to open');
-      } finally {
-        subscription.cancel();
+    try {
+      await completer.future.timeout(
+        const Duration(seconds: _FILE_CHANNEL_WAIT_TIMEOUT_SECONDS),
+      );
+    } on TimeoutException {
+      throw Exception('Timeout waiting for file transfer channel to open');
+    } finally {
+      subscription.cancel();
+    }
+  }
 
   void _setupControlChannel(RTCDataChannel channel) {
     channel.onMessage = (message) {
@@ -513,20 +510,21 @@ class WebRTCManager {
     required int bitrateKbps,
     required int fps,
     required double scaleDown,
+    RTCDegradationPreference? degradationPreference,
   }) async {
     final sender = _videoSender;
     if (sender == null) return;
     try {
-      final params = RTCRtpParameters(
-        encodings: [
-          RTCRtpEncoding(
-            active: true,
-            maxBitrate: bitrateKbps * _KBPS_TO_BPS_MULTIPLIER,
-            maxFramerate: fps,
-            scaleResolutionDownBy: scaleDown,
-          ),
-        ],
-      );
+      final params = sender.parameters;
+      final encoding = params.encodings != null && params.encodings!.isNotEmpty
+          ? params.encodings!.first
+          : RTCRtpEncoding();
+      encoding.active = true;
+      encoding.maxBitrate = bitrateKbps * _KBPS_TO_BPS_MULTIPLIER;
+      encoding.maxFramerate = fps;
+      encoding.scaleResolutionDownBy = scaleDown;
+      params.encodings = [encoding];
+      params.degradationPreference = degradationPreference;
       await sender.setParameters(params);
       _log.info(
         'WebRTC: Encoder params set — '
@@ -537,135 +535,193 @@ class WebRTCManager {
     }
   }
 
-  // ─── Adaptive quality ────────────────────────────────────────────────────
+  // ─── Auto quality ────────────────────────────────────────────────────────
 
-  void _startAdaptiveQuality() {
-    _qualityTier = 0;
-    _consecutiveGoodPolls = 0;
-    _consecutiveBadPolls = 0;
-    _adaptiveQualityTimer?.cancel();
-    _adaptiveQualityTimer = Timer.periodic(
-      const Duration(seconds: _ADAPTIVE_QUALITY_POLL_INTERVAL_SECONDS),
-      (_) => _checkAndAdaptQuality(),
+  Future<void> _startAdaptiveQuality() async {
+    stopAdaptiveQuality();
+    _autoQualityProfile = null;
+    _consecutiveBadSamples = 0;
+    _consecutiveGoodSamples = 0;
+    await _applyAutoQualityProfile(_AutoQualityProfile.stable, force: true);
+    _autoQualityTimer = Timer.periodic(
+      const Duration(milliseconds: _AUTO_QUALITY_SAMPLE_INTERVAL_MS),
+      (_) => unawaited(_sampleAndAdaptQuality()),
     );
-    _log.info('WebRTC: Adaptive quality monitoring started');
+    _log.info('WebRTC: Stats-based auto quality monitoring started');
   }
 
   void stopAdaptiveQuality() {
-    _adaptiveQualityTimer?.cancel();
-    _adaptiveQualityTimer = null;
+    _autoQualityTimer?.cancel();
+    _autoQualityTimer = null;
+    _autoQualityProfile = null;
+    _consecutiveBadSamples = 0;
+    _consecutiveGoodSamples = 0;
   }
 
-  Future<void> _checkAndAdaptQuality() async {
-    if (_peerConnection == null || _videoSender == null) return;
+  Future<void> _sampleAndAdaptQuality() async {
+    final peerConnection = _peerConnection;
+    final sender = _videoSender;
+    if (!_autoQuality || peerConnection == null || sender == null) return;
+
     try {
-      final stats = await _peerConnection!.getStats(null);
+      var stats = await peerConnection.getStats(sender.track);
       double fractionLost = -1;
       double rtt = -1;
       String limitReason = 'none';
 
       for (final report in stats) {
-        final v = report.values;
+        final values = report.values;
         if (report.type == 'remote-inbound-rtp') {
           fractionLost =
-              (v['fractionLost'] as num?)?.toDouble() ??
-              (v['fraction-lost'] as num?)?.toDouble() ??
+              (values['fractionLost'] as num?)?.toDouble() ??
+              (values['fraction-lost'] as num?)?.toDouble() ??
               fractionLost;
           rtt =
-              (v['roundTripTime'] as num?)?.toDouble() ??
-              (v['round-trip-time'] as num?)?.toDouble() ??
+              (values['roundTripTime'] as num?)?.toDouble() ??
+              (values['round-trip-time'] as num?)?.toDouble() ??
               rtt;
         }
         if (report.type == 'outbound-rtp' &&
-            (v['mediaType'] == 'video' || v['kind'] == 'video')) {
+            (values['mediaType'] == 'video' || values['kind'] == 'video')) {
           limitReason =
-              (v['qualityLimitationReason'] as String?) ?? limitReason;
+              (values['qualityLimitationReason'] as String?) ?? limitReason;
         }
       }
 
-      // No usable stats yet — skip
-      if (fractionLost < 0) return;
+      // Some platforms omit track-scoped remote stats; fall back to broader stats.
+      if (fractionLost < 0 && rtt < 0) {
+        stats = await peerConnection.getStats();
+        for (final report in stats) {
+          final values = report.values;
+          if (report.type == 'remote-inbound-rtp') {
+            fractionLost =
+                (values['fractionLost'] as num?)?.toDouble() ??
+                (values['fraction-lost'] as num?)?.toDouble() ??
+                fractionLost;
+            rtt =
+                (values['roundTripTime'] as num?)?.toDouble() ??
+                (values['round-trip-time'] as num?)?.toDouble() ??
+                rtt;
+          }
+          if (report.type == 'outbound-rtp' &&
+              (values['mediaType'] == 'video' ||
+                  values['kind'] == 'video')) {
+            limitReason =
+                (values['qualityLimitationReason'] as String?) ?? limitReason;
+          }
+        }
+      }
+
+      final hasLoss = fractionLost >= 0;
+      final hasRtt = rtt >= 0;
+      if (!hasLoss && !hasRtt && limitReason == 'none') {
+        return;
+      }
 
       final isBad =
-          fractionLost > _QUALITY_BAD_FRACTION_LOST_THRESHOLD ||
-          (rtt >= 0 && rtt > _QUALITY_BAD_RTT_THRESHOLD) ||
+          (hasLoss && fractionLost > _BAD_FRACTION_LOST_THRESHOLD) ||
+          (hasRtt && rtt > _BAD_RTT_THRESHOLD) ||
           limitReason == 'bandwidth' ||
           limitReason == 'cpu';
       final isGood =
-          fractionLost < _QUALITY_GOOD_FRACTION_LOST_THRESHOLD &&
-          (rtt < 0 || rtt < _QUALITY_GOOD_RTT_THRESHOLD) &&
+          (!hasLoss || fractionLost < _GOOD_FRACTION_LOST_THRESHOLD) &&
+          (!hasRtt || rtt < _GOOD_RTT_THRESHOLD) &&
           limitReason == 'none';
 
       if (isBad) {
-        _consecutiveBadPolls++;
-        _consecutiveGoodPolls = 0;
-        if (_consecutiveBadPolls >= _CONSECUTIVE_BAD_POLLS_FOR_DOWNGRADE &&
-            _qualityTier < _QUALITY_TIER_MAX) {
-          _qualityTier++;
-          _consecutiveBadPolls = 0;
-          await _applyQualityTier();
+        _consecutiveBadSamples++;
+        _consecutiveGoodSamples = 0;
+        if (_consecutiveBadSamples >= _BAD_SAMPLES_FOR_DOWNGRADE) {
+          _consecutiveBadSamples = 0;
+          final nextProfile = switch (_autoQualityProfile) {
+            _AutoQualityProfile.stable => _AutoQualityProfile.recovery,
+            _AutoQualityProfile.recovery => _AutoQualityProfile.minimum,
+            _AutoQualityProfile.minimum => _AutoQualityProfile.minimum,
+            null => _AutoQualityProfile.recovery,
+          };
+          await _applyAutoQualityProfile(nextProfile);
         }
-      } else if (isGood) {
-        _consecutiveGoodPolls++;
-        _consecutiveBadPolls = 0;
-        // Require N consecutive good polls before upgrading to avoid flapping
-        if (_consecutiveGoodPolls >= _CONSECUTIVE_GOOD_POLLS_FOR_UPGRADE &&
-            _qualityTier > 0) {
-          _qualityTier--;
-          _consecutiveGoodPolls = 0;
-          await _applyQualityTier();
-        }
-      } else {
-        _consecutiveGoodPolls = 0;
-        _consecutiveBadPolls = 0;
+        return;
       }
+
+      if (isGood) {
+        _consecutiveGoodSamples++;
+        _consecutiveBadSamples = 0;
+        if (_consecutiveGoodSamples >= _GOOD_SAMPLES_FOR_UPGRADE) {
+          _consecutiveGoodSamples = 0;
+          final nextProfile = switch (_autoQualityProfile) {
+            _AutoQualityProfile.minimum => _AutoQualityProfile.recovery,
+            _AutoQualityProfile.recovery => _AutoQualityProfile.stable,
+            _AutoQualityProfile.stable => _AutoQualityProfile.stable,
+            null => _AutoQualityProfile.stable,
+          };
+          await _applyAutoQualityProfile(nextProfile);
+        }
+        return;
+      }
+
+      _consecutiveBadSamples = 0;
+      _consecutiveGoodSamples = 0;
     } catch (e) {
-      _log.warning('WebRTC: Adaptive quality stats check failed: $e');
+      _log.warning('WebRTC: Auto quality stats sampling failed: $e');
     }
   }
 
-  Future<void> _applyQualityTier() async {
+  Future<void> _applyAutoQualityProfile(
+    _AutoQualityProfile profile, {
+    bool force = false,
+  }) async {
+    if (!force && _autoQualityProfile == profile) return;
+
     late int kbps;
     late int fps;
     late double scale;
     late String label;
+    late RTCDegradationPreference degradationPreference;
 
-    switch (_qualityTier) {
-      case 0:
+    switch (profile) {
+      case _AutoQualityProfile.stable:
         kbps = _baseBitrateKbps;
         fps = _baseFps;
         scale = 1.0;
         label = '1080p';
-      case 1:
-        kbps = (_baseBitrateKbps * _TIER1_BITRATE_FACTOR).round().clamp(
+        degradationPreference = RTCDegradationPreference.BALANCED;
+        break;
+      case _AutoQualityProfile.recovery:
+        kbps = (_baseBitrateKbps * _RECOVERY_BITRATE_FACTOR).round().clamp(
           _MIN_BITRATE_KBPS,
           _baseBitrateKbps,
         );
-        fps = (_baseFps * _TIER1_FPS_FACTOR).round().clamp(
+        fps = (_baseFps * _RECOVERY_FPS_FACTOR).round().clamp(
           _MIN_FPS_MID_QUALITY,
           _MAX_FPS,
         );
-        scale = _TIER1_SCALE; // ~720p from 1080p source
+        scale = _RECOVERY_SCALE;
         label = '720p';
-      case 2:
-        kbps = (_baseBitrateKbps * _TIER2_BITRATE_FACTOR).round().clamp(
+        degradationPreference = RTCDegradationPreference.MAINTAIN_RESOLUTION;
+        break;
+      case _AutoQualityProfile.minimum:
+        kbps = (_baseBitrateKbps * _MINIMUM_BITRATE_FACTOR).round().clamp(
           _MIN_BITRATE_KBPS,
           _baseBitrateKbps,
         );
-        fps = (_baseFps * _TIER2_FPS_FACTOR).round().clamp(
+        fps = (_baseFps * _MINIMUM_FPS_FACTOR).round().clamp(
           _MIN_FPS_LOW_QUALITY,
           20,
         );
-        scale = _TIER2_SCALE; // ~480p from 1080p source
+        scale = _MINIMUM_SCALE;
         label = '480p';
-      default: // tier 3 — minimum footprint
-        kbps = _TIER3_BITRATE_KBPS;
-        fps = _TIER3_FPS;
-        scale = _TIER3_SCALE; // ~360p from 1080p source
-        label = '360p';
+        degradationPreference = RTCDegradationPreference.MAINTAIN_RESOLUTION;
+        break;
     }
 
-    await _applyEncoderParams(bitrateKbps: kbps, fps: fps, scaleDown: scale);
+    await _applyEncoderParams(
+      bitrateKbps: kbps,
+      fps: fps,
+      scaleDown: scale,
+      degradationPreference: degradationPreference,
+    );
+    _autoQualityProfile = profile;
 
     final msg = 'Auto quality → $label (${kbps}kbps, ${fps}fps)';
     _log.info('WebRTC: $msg');
@@ -677,7 +733,7 @@ class WebRTCManager {
   // ─── SDP bandwidth annotation (Fix C) ────────────────────────────────────
 
   /// Injects b=AS and b=TIAS into the video m-section of an SDP blob.
-  static String _mungeSdpBandwidth(String sdp, int bitrateKbps) {
+  String _mungeSdpBandwidth(String sdp, int bitrateKbps) {
     final lines = sdp.split('\r\n');
     final result = <String>[];
     bool inVideo = false;
