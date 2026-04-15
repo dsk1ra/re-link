@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
+import 'package:application/src/features/network/data/windows_tls_compat.dart';
 import 'package:application/src/features/settings/data/local_settings.dart';
 import 'package:application/src/presentation/pages/initiator_page.dart';
 import 'package:application/src/presentation/pages/responder_page.dart';
@@ -41,6 +43,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
   static const double _cardSubtitleFontSize = 12;
 
   bool _connecting = false;
+  bool _serverReachable = false;
 
   @override
   void initState() {
@@ -53,19 +56,28 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
       _connecting = true;
     });
 
+    final client = createPlatformHttpClientForBaseUrl(widget.signalingBaseUrl);
     try {
-      await widget.backend.register(deviceLabel: 'Client');
-      setState(() => _connecting = false);
+      final response = await client.get(
+        Uri.parse('${widget.signalingBaseUrl}/health'),
+      );
+      setState(() {
+        _serverReachable = response.statusCode == 200;
+        _connecting = false;
+      });
     } catch (e) {
       setState(() {
+        _serverReachable = false;
         _connecting = false;
       });
       _showSnackBar('Connection failed: $e');
+    } finally {
+      client.close();
     }
   }
 
   void _navigateToInitiator() {
-    if (!widget.backend.isRegistered) {
+    if (!_serverReachable) {
       _showSnackBar('Not connected to server');
       return;
     }
@@ -74,13 +86,14 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
         builder: (context) => InitiatorPage(
           signalingBaseUrl: widget.signalingBaseUrl,
           backend: widget.backend,
+          iceServers: _configuredIceServers(),
         ),
       ),
     );
   }
 
   void _navigateToResponder() {
-    if (!widget.backend.isRegistered) {
+    if (!_serverReachable) {
       _showSnackBar('Not connected to server');
       return;
     }
@@ -89,9 +102,27 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
         builder: (context) => ResponderPage(
           signalingBaseUrl: widget.signalingBaseUrl,
           backend: widget.backend,
+          iceServers: _configuredIceServers(),
         ),
       ),
     );
+  }
+
+  List<Map<String, dynamic>>? _configuredIceServers() {
+    final settings = widget.settings;
+    if (settings == null) {
+      return null;
+    }
+
+    final parsed = settings.getIceServers();
+    if (parsed == null || parsed.isEmpty) {
+      return null;
+    }
+
+    // Deep copy to avoid accidental mutation across pages.
+    return parsed
+        .map((server) => Map<String, dynamic>.from(jsonDecode(jsonEncode(server)) as Map))
+        .toList();
   }
 
   void _showSnackBar(String message) {
@@ -120,7 +151,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
 
   @override
   Widget build(BuildContext context) {
-    final connected = widget.backend.isRegistered;
+    final connected = _serverReachable;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -149,7 +180,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
           ServerStatusBanner(
             connecting: _connecting,
             connected: connected,
-            connectedText: widget.backend.displayName ?? 'Connected to server',
+            connectedText: 'Connected to server',
             onRetry: _connectToServer,
           ),
 

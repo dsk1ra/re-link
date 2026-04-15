@@ -8,6 +8,11 @@ import 'package:logging/logging.dart';
 class WebRTCManager {
   static final Logger _log = Logger('WebRTCManager');
 
+  WebRTCManager({List<Map<String, dynamic>>? iceServers})
+    : _iceServers = iceServers;
+
+  final List<Map<String, dynamic>>? _iceServers;
+
   // ─── Magic number constants ────────────────────────────────────────────
   static const int _KBPS_TO_BPS_MULTIPLIER = 1000;
   static const int _DEFAULT_BITRATE_KBPS = 2000;
@@ -113,10 +118,15 @@ class WebRTCManager {
 
   Future<void> initialize() async {
     _log.info('WebRTC: Initializing...');
-    final config = {
-      'iceServers': [
+    final iceServers =
+      (_iceServers?.isNotEmpty ?? false)
+      ? _iceServers
+      : [
         {'urls': 'stun:stun.l.google.com:19302'},
-      ],
+        ];
+
+    final config = {
+      'iceServers': iceServers,
       'sdpSemantics': 'unified-plan',
     };
 
@@ -433,40 +443,36 @@ class WebRTCManager {
 
   Future<void> _waitForFileChannelOpen() async {
     if (_fileTransferChannel == null) return;
-    if (_fileTransferChannel!.state == RTCDataChannelState.RTCDataChannelOpen) {
-      return;
-    }
+      if (_fileTransferChannel!.state ==
+          RTCDataChannelState.RTCDataChannelOpen) {
+        return;
+      }
 
-    final waitForOpen = onFileChannelState.firstWhere(
-      (state) => state == RTCDataChannelState.RTCDataChannelOpen,
-    );
+      final completer = Completer<void>();
+      
+      final subscription = onFileChannelState.listen((state) {
+        if (state == RTCDataChannelState.RTCDataChannelOpen &&
+            !completer.isCompleted) {
+          completer.complete();
+        }
+      });
 
-    final pollCompleter = Completer<void>();
-    Timer? timer;
-    try {
-      timer = Timer.periodic(
-        const Duration(milliseconds: _FILE_CHANNEL_POLL_INTERVAL_MS),
-        (t) {
-          if (_fileTransferChannel?.state ==
-              RTCDataChannelState.RTCDataChannelOpen) {
-            if (!pollCompleter.isCompleted) {
-              pollCompleter.complete();
-            }
-            t.cancel();
-          }
-        },
-      );
+      // Double-check the state *after* subscribing to avoid dropping the event
+      if (_fileTransferChannel!.state ==
+          RTCDataChannelState.RTCDataChannelOpen) {
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      }
 
-      await Future.any([waitForOpen, pollCompleter.future]).timeout(
-        const Duration(seconds: _FILE_CHANNEL_WAIT_TIMEOUT_SECONDS),
-        onTimeout: () {
-          throw Exception('Timeout waiting for file transfer channel to open');
-        },
-      );
-    } finally {
-      timer?.cancel();
-    }
-  }
+      try {
+        await completer.future.timeout(
+          const Duration(seconds: _FILE_CHANNEL_WAIT_TIMEOUT_SECONDS),
+        );
+      } on TimeoutException {
+        throw Exception('Timeout waiting for file transfer channel to open');
+      } finally {
+        subscription.cancel();
 
   void _setupControlChannel(RTCDataChannel channel) {
     channel.onMessage = (message) {

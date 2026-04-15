@@ -1,0 +1,218 @@
+1. Introduction
+Remote access software is now a vital part of modern computing infrastructure. Organisations use commercial tools like TeamViewer, AnyDesk, and Microsoft’s Remote Desktop Protocol (RDP) for IT support, system administration, distributed collaboration, and remote work. The global shift toward remote work intensified during the COVID-19 pandemic. This made companies more dependent on these tools [https://www.bls.gov/opub/btn/volume-13/remote-work-productivity.htm]. According to TeamViewer’s annual financial reports, Q1 2020 billings rose by about 75% year-over-year [1] and reached 2.5 billion installations worldwide [2]. Yet, this widespread use conceals a key limitation: most leading remote access software connects via centralised, vendor-controlled cloud infrastructure.
+
+The centralised model requires users to place complete trust in the service provider, with all data transmitted through their infrastructure. It introduces three critical categories of risk:
+
+- Privacy Erosion
+Vendor-controlled servers must observe connection metadata to establish connections. In TeamViewer’s case, this includes username, display name, email, IP address, profile picture (optional), language preference, meeting ID, location, and password [3]. This is a vast collection of user identifiers that enables sophisticated profiling. TeamViewer’s Data Processing Agreement lists all personal data processed. Device identifiers and usage data are confirmed in their Privacy Policy [4]. Aggregating such metadata creates a honeypot that attracts state intelligence agencies and commercial surveillance by the service operators themselves.
+
+- Censorship Vulnerability
+Centralised services are notorious for being blocked relatively simply and methodologically, as they present a single point of control and failure. Authoritarian regimes systematically restrict access to communication services outside their control. The Great Firewall of China (GFW), a state-run Internet censorship system, has historically restricted access to foreign IP addresses and domains for numerous services, including Signal and Discord [5][6]. Russia has similarly imposed widespread blocks on remote access services and Virtual Private Networks (VPNs) [7][8]. A single nation-state takedown order may render the system inaccessible to users.
+
+- Operational Dependency
+Reliance on third-party infrastructure implies loss of autonomy, especially when access to targeted user accounts gets restricted. The February 2024 AnyDesk breach [9] demonstrates a prominent case of the potential damages associated with such risk. During a security audit, attackers were found to have compromised production systems, stealing source code and code-signing certificates [10][11], with exposed customer credentials subsequently sold on the dark web [12][13]. Such breaches threaten both software integrity and user privacy. Additionally, vendor-controlled platforms reserve the right to deny service based on company-defined policies, effectively eliminating the ability to use the software.
+
+The Privacy-Functionality Gap
+The impact of these risks becomes further amplified for vulnerable populations - human rights activists, investigative journalists gathering information in conflict zones, and Non-Governmental Organizations (NGOs) working under state surveillance. Confidentiality and availability of remote access tools are the existential requirements for such groups.
+The market presents a false dilemma. There are privacy-focused communication tools available, such as Signal. It provides strong end-to-end encryption (E2EE) and minimal server observation – but was designed for messaging and lacks real-time remote access capabilities. Moreover, the conversation history remains persistently stored on user devices. On the contrary, commercial remote access platforms provide mature real-time functionality – but are fundamentally incapable of satisfying privacy requirements due to the centralised origin of the architecture and persistent metadata collection. Users in high-risk environments are forced to choose between secure communication without remote access or remote access without security.
+In recent years, new organisations have emerged that attempt to mitigate the aforementioned risks. Yet, the proposed solutions are designed around data ownership, not minimisation – customers become the data controllers by hosting and managing their own signalling servers. While this is a step forward from centralised systems, the danger of compromise fundamentally remains unaddressed. In the event of infiltration into a self-hosted system, data exfiltration becomes a matter of hours [doi.org/10.48550/arXiv.1810.11655]
+Re:Link addresses this gap by combining privacy with remote access in a single architecture. The connection lifecycle is designed not to persistently retain server-side knowledge of user identity or activity. The sequence of the connection flow goes as follows:
+
+1. Initialisation (Out-of-Band): The Initiator generates a token (link) and shares it with the Responder through an independent, uncontrolled channel (e.g., Tailscale tunnel). The server does not have the ability to observe this token.
+2. Blind Registration: Clients register with the server anonymously – the server issues temporary credentials but stores no persistent user identifiers.
+
+3. 3. Mailbox Creation: The Initiator establishes a temporary “mailbox” – a short-lived random token acting as a rendezvous identifier. Key detail – the server cannot decrypt it.
+4. Responder Join: The Responder is pointed to the mailbox with the token and joins. The server acknowledges both parties.
+
+5. Signalling: The clients exchange Session Description Protocol (SDP) offers -> answers -> Interactive Connectivity Establishment (ICE) candidates through the server. The server perceives them as encrypted opaque blobs. Peer-to-Peer Connection: Once ICE negotiation succeeds, the clients can establish a direct Web Real-Time Communication (WebRTC) tunnel. All data now flows peer-to-peer, and the server is no longer needed.
+7. Metadata Destruction: As soon as the connection has been established or timed out, the server’s Redis ephemeral store automatically evicts all mailbox data via time-to-live (TTL) expiry. The result: no persistent trace. The architecture is designed to ensure that even in the case of the signalling server compromise, the attacker could only congregate very little data, which has no investigative value.
+
+Problem Statement
+The core problem this dissertation addresses is the absence of a well-architected remote access solution that simultaneously achieves four design objectives:
+
+1. Peer-to-peer connectivity – independence from the central servers
+2. End-to-end encryption – server’s inability to decrypt transmitted data
+3. Self-hostability – organisations’ and individuals’ ability to operate independent instances
+4. Minimal metadata storage – lack of retention for persistent user identifiers or activity logs
+
+RustDesk [14] is a notable open-source project that attempts to address these challenges. However, it falls short on the metadata objective – its architecture persists device ID registrations and last-known peer addresses at the rendezvous server [15][16]. Similarly, Matrix [] partially satisfies these objectives through its federated and self-hostable design, but it does not address the remote-access use case directly. Besides, it retains persistent identifiers and state as fundamental elements of its protocol architecture. No existing system offers a signalling architecture that both prevents user profiling and delivers real-time remote access performance.
+
+1.3 Approach
+
+This dissertation presents Re:Link – a prototype of an alternative, self-hostable remote access system designed to simultaneously satisfy all four objectives outlined above. The system is grounded in privacy-by-design principles [17], established by Dr. Ann Cavoukian, which serve as a framework for architectural decisions regarding user privacy. Re:Link comprises two components: server and client.
+
+The server stack comprises a Rust-based signalling server, Redis ephemeral key-value storage with automatic TTL expiry, and Caddy as a Transport Layer Security (TLS) terminating reverse proxy. These are packaged using Docker Compose [20] for straightforward deployment in any environment.
+
+The client component utilises a Flutter [21] frontend providing a Windows-based user interface (limited to a single operating system). Flutter enables trivial implementation of cross-platform with a shared code base, bound to a Rust [22] cryptographic and WebRTC core via the Flutter Rust Bridge (FRB) [23] Foreign Function Interface (FFI) [24]. This combination enables Flutter to delegate compute-intensive operations to Rust seamlessly, achieving high performance in I/O and cryptographic operations.
+
+The connection establishment uses a blind rendezvous protocol in which the signalling server acts as an opaque relay. Once the WebRTC connection is negotiated, all data flows directly between peers over an E2EE channel, never transiting the server.
+
+1.4 Contributions
+
+1. Design of a blind rendezvous protocol for anonymous session initiation over an untrusted signalling server that ensures the server is not capable of inspecting the payloads (the actual data being sent, such as files) or determining who is connecting to whom.
+
+2. Design of a self-hostable ephemeral-only backend architecture that ensures that no user identifiers are stored persistently, guaranteeing that no non-essential user data is persistently stored at rest.
+
+3. Implementation of a Windows-based desktop client application using a hybrid Flutter/Rust architecture with application-layer E2EE integrated above WebRTC’s native transport security.
+
+4. Evaluation of the system’s privacy, security, performance, and usability against existing open-source, self-hosted alternatives (RustDesk, OnionShare, Magic Wormhole).
+
+1.5 Research Questions
+
+RQ1: How can a signalling protocol be designed to establish peer-to-peer connections over an untrusted server without exposing identifiable user metadata or connection graphs?
+
+RQ2: To what extent can an ephemeral-only backend architecture eliminate the persistent storage of user data while maintaining reliable session establishment and routing capabilities?
+
+RQ3: How effectively does the integration of application-layer E2EE, applied alongside WebRTC’s native transport security, protect the system against infrastructure compromises and untrusted intermediaries?
+
+RQ4: What is the performance overhead of implementing privacy-by-design limitations and a hybrid architecture on a client application?
+
+RQ5: How does the implemented system compare with existing open-source, self-hosted alternatives in terms of its demonstrable metadata and anonymity guarantees?
+
+1.6 Aims and Objectives
+
+The primary aim of this study is to design and implement a prototype system that provides an architecture capable of supplying a privacy-preserving, self-hostable, peer-to-peer remote access. This system must eliminate persistent metadata storage and mitigate risks of privacy, censorship, or operational reliability associated with centralised, vendor-controlled infrastructure. Objectives also include appropriate evaluation and comparison of such systems against existing, widely-adopted solutions in terms of performance, usability, reliability, and anonymity.
+
+1.7 Scope and Limitations
+
+The research and the produced prototype are bound to the foundational mechanisms of the secure session establishment, rather than developing a fully featured commercial product that is ready for production use. To maximise the efficiency of the development work and produce a high-quality prototype with a custom connection protocol, the implementation scope is targeted to a Windows-only client for the duration of the project. The client prototype will be utilising a hybrid Flutter and Rust architecture, alongside a custom, lightweight, self-hostable signalling server. Features beyond basic screen and file sharing explicitly fall outside of the domain of this study to enable feature expansion in future work. Furthermore, the evaluation is confined to assessing the performance and feasibility of such a cryptographic approach to measure the overhead and metadata footprint against the comparable self-hosting solutions. This deliberate constraint is meant to allow for more detailed focus on privacy measures and anonymity evaluations, rather than large-scale human-computer interaction (HCI) usability trials.
+
+The architectural design of the Re:Link prototype introduces technical and user experience trade-offs. Foremost, the connection protocol requires the initial out-of-band token (link) exchange, meaning that the system’s security guarantees remain dependent on the integrity of third-party communication methods. Additionally, reliance on WebRTC for peer-to-peer connections introduces network-level constraints related to the topology. This means that User Datagram Protocol (UDP) hole punching [29] may not reliably operate in restricted network environments, for example, for users behind strict Symmetric Network Address Translations (NATs). Such a constraint may mean requiring a Traversal Using Relays around NAT (TURN) relay server [30], which meets the encryption needs, but inherently introduces additional operational costs alongside latency [31][32][33]. Finally, prioritising privacy via ephemerality over data ownership dictates that in the case of network interruption during the initial signalling phase, the session will terminate. This sacrifices user convenience for maximised lack of traceability.
+
+The system does not provide network-level anonymity (e.g., resistance to passive traffic analysis by network observers) – a threat model addressed by Tor-based systems (OnionShare, Briar) at substantial latency and throughput cost. Re:Link targets operational privacy from service operators and legal compulsion, suitable for users operating in environments with state-level surveillance but without nation-state level passive network monitoring.
+
+2. Literature Review
+
+The development of secure, privacy-preserving communication systems falls at the overlap of distributed systems engineering and digital rights literacy, with a touch of applied cryptography. As a substantial percentage of the world’s population has migrated toward a handful of major centralised platforms for data exchange, the attack surface for mass surveillance and profiling, predictably, has proportionally increased. Given these circumstances, the Re:Link system described in this report is motivated by the understanding that the privacy erosion in today’s state of the software industry is a consequence of decisions made throughout the last 50 years at the infrastructure level. Fortunately, these can be reversed if privacy-by-design principles are purposefully applied [17].
+
+This literature review outlines four interrelated directions of research that support the design rationale of Re:Link. It first places the evolution of file-sharing architectures from centralized cloud storage to federated and finally fully decentralized peer-to-peer systems, and the various privacy trade-offs between such architectures in context. Next, it discusses the WebRTC protocol stack and reviews the increasing number of works using its DataChannel primitive in privacy-preserving file transfer. Subsequently, it summarises the literature on zero-knowledge and server-blind communication paradigms, focusing on blind rendezvous protocols as a type of privacy-preserving bootstrapping mechanism. Finally, it summarises academic literature on metadata minimization, ephemeral storage, and identifier elimination as technical and legal controls against user profiling and censorship.
+
+This review of the existing literature identifies a consistent gap: none of the tools surveyed here meet the following requirements simultaneously: (a) trivially self-hostable deployment, (b) a cryptographically blind relay server, (c) modern E2EE transport over WebRTC, and (d) zero persistent user identifiers. Re:Link is designed to fill that gap.
+
+2.1 Centralised vs Decentralised Architectures
+
+2.1.1 Centralised Cloud Storage
+
+The modern file-sharing landscape is mostly dominated by a framework where user data is stored on the servers owned and controlled by a small number of commercial operators. Services like Dropbox, Google Drive, WeTransfer, and OneDrive are prominent examples – the user’s files are transported through and kept on third-party infrastructure, which has both the capability and, under many legal jurisdictions, the obligation to disclose that content upon lawful demand. Bruce Schneier [49] characterises the aggregation of sensitive user data at a small number of cloud providers as a core vulnerability of the modern internet: this centralisation means users “no longer control [their] data”, while the corporate systems built to collect and store it have been tapped by the NSA (National Security Agency) and other governments through programs such as PRISM [https://epic.org/documents/epic-v-doj-prism/], turning the providers into high-value targets for surveillance and potential compromise.
+
+Additionally, the economic logic underlying this model has been theorised most comprehensively by Shoshana Zuboff [53] under the framework of surveillance capitalism. In Zuboff’s account, “human experience is unilaterally claimed as free raw material for translation into behavioural data”. Centralised aggregation and extraction are inherently a business model of dominant platform firms. Extra data about people’s behaviour is collected and used by AI/ML systems to fabricate predictions that are then sold in behavioural futures markets [53]. File-sharing activity, which includes metadata like identity of the peers and timing of the exchange (among a surprisingly immense list of other attributes), demonstrates an example of the kind of behavioural signal that feeds this extraction logic. Centralised architectures thus take advantage of a structural privacy cost that arises from the system’s duties.
+
+From a security engineering standpoint, the threat model extends beyond commercial exploitation. The Snowden disclosures of 2013 [https://www.theguardian.com/world/2013/jun/06/us-tech-giants-nsa-data] provided evidence that major cloud storage providers were subject to forced participation in mass surveillance programmes such as PRISM, often in ways conflicting with their own public privacy policies. Centralised systems create an irresistible single point of pressure where an access demand to one provider can yield the communications and data of numerous users. The asymmetry in the effort required versus harm caused is a fundamental structural issue that decentralisation can address.
+
+2.1.2 Federated Models
+Federated architectures are those in which multiple independent servers communicate through a shared protocol. They are still niche but getting more popular due to offering a partial mitigation away from the centralisation danger. Consequently, protocols such as XMPP [48] and Matrix [54] let users choose or run their own servers. This spreads where data is collected, so a single server compromise or forced data handover has as much impact. The adoption of ActivityPub as a W3C standard for federated communication has further legitimised this model.
+
+However, federation only displaces the metadata problem. In the Matrix protocol, for example, room membership lists and event graphs are replicated across all participating homeservers – a user’s social graph may be visible to an arbitrarily large number of server operators. Wang et al. [https://www.sciencedirect.com/science/article/pii/S2666281726000065] have demonstrated through forensic analysis of Synapse, an open-source Matrix homeserver, that a substantial server-side metadata footprint persists, including communication timelines, room memberships, and user relationship patterns, which allows reconstruction of these elements even in E2EE rooms. Thus, federation changes the extent to which the trust is needed, but not what kind of trust. Instead of relying on a single central provider, users depend on multiple server operators; this still does not eliminate potential danger because such a model provides no technical guarantee that any of the operators will respect users’ privacy preferences.
+In the case of file transfer, federation introduces extra complexity without commensurate benefit. Large binary payloads must still be routed through the server, which affects throughput and occupies storage on intermediate nodes. The main architectural insight behind peer-to-peer approaches is that the payload itself should never touch the infrastructure responsible for coordination.
+
+2.1.3 Peer-to-Peer Models
+
+Fully decentralised peer-to-peer systems entirely remove the middleman from the data path. The BitTorrent protocol [37] shows that direct peer exchange could reach high throughput and resiliency, which is a performance that centralised servers could not match. Yet, it is designed around efficiency and robustness rather than privacy – the IP addresses of all peers are disclosed to other peers and to the tracker. Such architecture creates a wide surveillance surface, most extensively exploited by copyright enforcement agencies. The InterPlanetary File System (IPFS) [35] solves issues like identifying content by its data and keeping it available over time. However, once something is published on IPFS, it is globally discoverable. This is the opposite of what’s needed for ephemeral private file sharing, where access should be temporary and limited only to specific people.
+
+More relevant to Re:Link’s design are purpose-built private file transfer tools. Magic Wormhole [52] addresses the usability problem of establishing a shared secret between two peers by generating human-transcribable phrases, using the SPAKE2 key exchange protocol to create an encrypted channel. OnionShare [41] takes a different approach, running an ephemeral Tor onion service on the sender’s machine. It provides an autonomous transfer channel, but at the cost of substantial latency and reachability of the Tor network. Both systems fit well for the purpose of server-minimal or server-free file transfer, but each carries constraints: Magic Wormhole transmits payload through a relay server it operates; OnionShare requires Tor and is therefore subject to censorship and capped at the Tor network performance level.
+Re:Link occupies a different position – it uses a minimal centralised rendezvous server strictly for WebRTC signalling, after which the communication is fully peer-to-peer and end-to-end encrypted. Nonetheless, the relay server is architecturally incapable of reading either the content or the metadata of the transferred files by design.
+
+2.2 WebRTC and Privacy-Preserving Peer-to-Peer Transfer
+2.2.1 Security Architecture
+Web Real-Time Communication (WebRTC) is a set of standards developed by the W3C and the IETF RTCWEB working group, initially motivated by the need for browser-native voice and video communication without plugins [26]. Its security architecture [46] requires all media and data traffic to be encrypted by default – using the DTLS-SRTP framework, it ensures that no data can ever be transmitted in plain text. Additionally, this is a qualitatively stronger guarantee than that offered by most application-layer encryption schemes, where encryption is a policy choice that can be misconfigured or deliberately circumvented. Hence, from a privacy engineering perspective, mandatory transport encryption means that even a compromised or malicious relay cannot observe the content of a DataChannel stream.
+
+WebRTC DataChannel [47] is well-suited for file transfer because it supports reliable delivery and flow control over an encrypted peer-to-peer channel. The use of DataChannels has been explored in a number of prototypical file transfer systems, among which are ShareDrop and FilePizza, which validate the feasibility of the approach.
+
+2.2.2 NAT Traversal and the Privacy Cost of TURN Relays
+The primary obstacle to direct peer-to-peer connectivity is Network Address Translation (NAT), which is the most prevalent in consumer and enterprise networking and prevents arbitrary incoming connections to devices behind Carrier-Grade NAT (CGNAT). The core issue that NAT was designed to address is the IPv4 address range – only about 4.3 billion addresses, which, at the time of the development of internet technology, was considered infinitely many, but nowhere near enough to serve all devices nowadays. The Interactive Connectivity Establishment (ICE) framework [45] addresses this by gathering candidate network addresses and testing them in priority order to find a viable direct or relayed path between peers.
+However, ICE candidate gathering implies important privacy concerns. Host candidates expose a device’s local IP address, while server-reflexive candidates expose its public IP address. Reiter and Rubin’s [44] anonymity framework, although pre-dating WebRTC, helps illustrate why exposing an IP address is a genuine privacy risk. It allows an eavesdropper to link communication activity to a specific network location, and potentially to the end user. New research has revealed that browser-based WebRTC implementations can be exploited to de-anonymise VPN users by leaking local IP addresses via ICE candidate gathering. Chromium’s subsequent adoption of obfuscating local IP addresses with ephemeral hostnames in the ICE candidate list mitigates this attack for browser implementations.
+Fallback TURN relay servers are the main privacy risk in the WebRTC stack - they can inspect the whole data stream. Hence, on the architectural level, this is equivalent to routing through a trusted third-party and neutralizes the benefits of peer-to-peer connectivity if TURN is systematically required. For the timeline of this project, Re:Link’s architecture accepts this trade-off. In restricted network environments, where direct connectivity is impossible, a TURN relay may be required and will, in fact, observe encrypted (but opaque to it) DataChannel traffic. This is an acknowledged limitation and an area where future work might enhance privacy measures (See Chapter ? .? for a fuller discussion.
+
+2.2.3 Comparison with Alternative Transport Approaches
+The alternative to WebRTC for encrypted peer-to-peer transfer would be a custom-built protocol using, for example, TLS mutual authentication over TCP or the QUIC transport protocol. Such an approach would avoid the complexity and the NAT-traversal privacy costs of ICE, but would forfeit the NAT traversal machinery itself - requiring either port forwarding, a relay server, or a transport-level hole-punching library, each of which introduces comparable or worse privacy trade-offs. WebRTC’s ICE machinery represents decades of accumulated engineering for the specific problem of peer connectivity through NAT, and its mandatory encryption provides a stronger baseline guarantee than most application-layer TLS deployments, which are subject to misconfiguration. Re:Link’s choice of WebRTC DataChannels therefore reflects a deliberate balance between the engineering cost of NAT traversal, the strength of the transportation security guarantee, and the maturity of the available execution library.
+
+2.3 Zero-Knowledge Signalling and Blind Rendezvous Protocols
+2.3.1 Defining Server-Blind Operation
+The term “zero-knowledge” in the literature typically refers to a class of interactive proof systems in which a prover can convince a verifier of the truth of a statement without conveying any additional information beyond the validity of the statement itself [39]. In communication systems, the term is usually looser in the operational sense - used to describe architectures where the service is technically unable to observe the content or users’ metadata. This project employs the latter approach: it does not persistently store data, nor does it require the server to observe data; it is not strictly zero-knowledge in a cryptographic sense. This report uses this term to describe systems where the server’s role is bound to routing or coordination without access to the payload.
+Server-blind signalling mandates that any shared secrets necessary for end-to-end encryption be established out-of-band (secret shared outside service infrastructure) and that the identifiers used by the server have no value without those secrets.
+
+2.3.2 Prior Art in Blind Rendezvous Design
+The most relevant prior work is Magic Wormhole [52] - an open-source tool that generates short code phrases and uses them as inputs to the SPAKE2 password-authenticated key exchange protocol. The result is a protocol that uses a "mailbox server" to store encrypted blobs identified by the wormhole code but cannot decrypt the content because it lacks the shared secret. 
+This is architecturally close to Re:Link’s blind-mailbox pattern: each uses a server-side store of short-lived opaque blobs identified by a token exchanged via an alternative path. The main differences are that Magic Wormhole uses SPAKE2 for encryption key derivation (tolerating some brute-force risk), whereas Re:Link generates a cryptographically strong, high-entropy random token and requires users to share it out of band. Moreover, Magic Wormhole transmits files through its relay server as a fallback, while Re:Link uses the server only for WebRTC signalling and transfers the payload entirely peer-to-peer.
+OnionShare [41] provides stronger anonymity by setting up the rendezvous point as a Tor onion service on the sender’s machine. The service address is ephemeral and bound to the identity key; so, there is no persistent identifier created, preventing network-level observers from correlating IP addresses with the transfer activity.
+Because the onion service address is ephemeral and bound to the sender’s Tor identity key, no persistent identifier is created, and network-level observers cannot correlate the sender’s IP address with the transfer activity. This makes the sender control the rendezvous and transfer infrastructure, which removes reliance on third parties entirely. Yet, the cost is substantial - Tor network latency is several hundred milliseconds to several seconds per round trip. Essentially, it is impossible to achieve the throughput required for large file transfers. Besides, the requirement for Tor to be reachable makes OnionShare ineffective in environments where Tor is restricted - exactly the environments where censorship resistance is most needed.
+Another example of a similar architecture is the Briar messaging system [36]. It utilizes the Bramble Rendezvous Protocol (BRP) that derives shared secrets to find a contact’s "mailbox" on an onion rendezvous server. This stops the server from being able to connect the mailbox identifier to the contact’s identity. Briar’s model is the closest to Re:Link in terms of the threat model, but it is designed for asynchronous messaging rather than remote screen and file sharing. In addition, it depends on Tor, which reintroduces the throughput and reachability limitations noted above.
+A prominent implementation of server-blind metadata in messaging systems is Signal’s Sealed Sender feature [50]. It has a narrower form of server-blindness - the central server can deliver a message to its recipient without learning the sender’s identity, because the sender's identity is encrypted under the recipient’s public key. The Signal server still processes and stores messages but shows steps of movement toward server-blind design principles in a major production system.
+
+2.3.3 Positioning Re:Link’s Contribution
+Re:Link’s rendezvous mechanism is inspired by a mix of technologies mentioned above and occupies a specific niche - a blind-mailbox pattern in which the server keeps short-lived, opaque WebRTC signalling blobs indexed by a randomly generated mailbox identifier that is meaningless to the server. The token for mailbox location is shared outside of Re:Links infrastructure and is never sent to the server in plaintext. The reason why this design is more usable than Tor-based approaches is that it has no additional (Tor) dependency and near-native throughput. Re:Link is also more self-hostable than Magic Wormhole’s default relay - the entire stack is packaged as a Docker Compose deployment. It is more prominently server-blind than federated approaches due to the server’s inability to correlate mailbox IDs or link them to end-user identities. The trade-off - Re:Link does not offer network-level anonymity. Passive network monitoring can flag IP addresses that communicated with the signalling server in temporal proximity, which helps them to establish a WebRTC connection. While such monitoring is resource-intensive, both computationally and in terms of required infrastructure, this is an acknowledged and explicitly scoped limitation.
+
+2.4 Metadata Minimisation, Ephemerality, and Resistance to Profiling
+2.4.1 Metadata as the Primary Threat Vector
+A common finding in both industry and academic work on surveillance is that metadata is often more revealing than the content itself. Mayer, Mutchler, and Mitchell [42] demonstrate this empirically - they conducted a controlled study of telephone call records of who called whom, when, and for how long. The experiment demonstrated that even limited metadata is enough to infer medical conditions, political affiliations, religious, professional, and personal relationships, without accessing the content of any communication. While content-focused encryption is necessary, these findings provide grounds for the argument that it is insufficient as a privacy control, and systems must also minimise the generated metadata.
+2.4.2 Privacy-by-Design and Legal Frameworks
+The Privacy-by-Design framework [17] suggests embedding privacy measures during the design level of system architecture rather than retrofitted for compliance. Three principles of it are directly instantiated in Re:Link’s design: 
+    • Privacy as the default setting: user action is not required to avoid generating persistent identifiers because the system just does not create them
+    • End-to-end security: the WebRTC DataChannel encryption works in such a way that guarantees security and does not depend on the reliability of the intermediary
+    • Visibility and transparency: the open-source approach and the ability to self-host allow any operator to verify or amend how the system behaves.
+The legal representation of the data minimisation principle is found in Article 5(1)(c) of the General Data Protection Regulation (GDPR). It requires that personal data be "adequate, relevant and limited to what is necessary in relation to the purposes for which they are processed". In the context of a remote access and file sharing service, the only data necessary is a temporary routing identifier for the signalling exchange. Therefore, any extra data, such as user accounts or IP address logs, overextends what is necessary and poses an avoidable privacy (and regulatory) risk. Re:Link minimises personal data by design to explicitly abstain from data collection beyond what is operationally required, and even that is destroyed immediately upon use. The core feature of this approach is that this logic is embedded into the architecture, not merely as a policy.
+2.4.3 Ephemeral Storage
+The concept of self-destructing or ephemeral data as a privacy control has been explored in the academic literature since at least the work of Geambasu et al. [38], who proposed the Vanish system, in which data objects are encrypted under keys derived from distributed hash table nodes; as those nodes naturally churn and discard the key material, the encrypted data becomes permanently undecipherable, achieving a form of cryptographic self-destruction without requiring the user to take any action. Reardon, Basin, and Capkun [43] provide a systematic treatment of secure data deletion across storage media and system layers, demonstrating that deletion is a technically difficult property to guarantee in complex systems with caching layers, journalling file systems, and backup infrastructure.
+Re:Link's approach to ephemerality lies in the signalling data stored in a Redis[https://redis.io/] instance configured as a pure in-memory cache with aggressive TTL values on all keys. With this setup, connection metadata is automatically purged within a fixed short time frame, regardless of the connection result. If this were compared to Vanish, it is, in fact, weaker cryptographically, yet operationally sufficient for the use case and threat model. The adversary would most likely want to extract server-side logs, against which TTL deletion returns a technically sound “nothing to produce” response. This is further hardened by the absence of persistent application-layer logs. The design guarantees that the signalling server accumulates no record of who communicated with whom or when.
+2.4.4 Identifier Elimination
+The elimination of persistent user IDs is a design choice that affects both privacy enhancement and censorship resistance. Services that require account registration are fundamentally prone to pressure from platform operators or regimes. An account can be blocked or profiled across time and network location. Even organisations that present themselves as privacy-preserving, such as ProtonMail [https://proton.me/mail] or Tresorit[https://tresorit.com/], can be compelled to monitor specific users or disclose registration metadata under legal process.
+The right to encryption debate, prominently described in the Keys Under Doormats report [34], has focused on the role of the government in data control and its right to access to encryption keys or plaintext. The report argues that any requirement for key escrow or backdoors would weaken security for all users. Moreover, it is technically impossible to enforce against sophisticated solutions that simply use non-compliant implementations. From the censorship resistance point of view, a better answer to this is to design systems where there exist no key and no account. Using this reasoning, if the server holds no secrets and maintains no user records, then there is simply nothing of value to disclose.
+
+2.5 Overall Thoughts
+Re:link has been designed to overcome the problems highlighted by the literature review and in the following chapters these aspects are discussed further.
+
+References
+[1] https://ir.teamviewer.com/media/document/5a27a312-d22e-4f2d-bf9b-0b39d3e181b5/assets/DE000A2YN900-Q1-2020-EQ-E-00.pdf 
+[2] https://www.teamviewer.com/en-us/global/company/press/2020/teamviewer-celebrates-its-15-year-anniversary/ 
+[3] https://teamviewer.scene7.com/is/content/teamviewergmbh/teamviewer/central-image-hub/pdf/en/teamviewer-dpa-annex-1-details-of-processing-en.pdf 
+[4] https://www.teamviewer.com/en/legal/privacy-and-cookies 
+[5] https://www.vice.com/en/article/signal-blocked-in-china/ 
+[6] https://insidetelecom.com/is-discord-banned-in-china/ 
+[7] https://www.reuters.com/technology/russia-goes-after-vpns-great-crackdown-gathers-pace-2026-03-31/ 
+[8] https://www1.ru/en/news/2026/01/22/roskomnadzor-ogranicil-dostup-k-439-vpn-servisam-v-rossii.html 
+[9] https://anydesk.com/en/public-statement-2-2-2024 
+[10] https://www.akamai.com/blog/security-research/anydesk-breach-what-to-know-mitigations-and-recommendations 
+[11] https://www.cybereason.com/blog/threat-alert-the-anydesk-breach-aftermath 
+[12] https://www.resecurity.com/blog/article/following-the-anydesk-incident-customer-credentials-leaked-and-published-for-sale-on-the-dark-web 
+[13] https://securityboulevard.com/2024/02/anydesk-revokes-certificates-urges-password-changes-after-attack/ 
+[14] https://rustdesk.com/ 
+[15] https://rustdesk.com/docs/en/self-host/ 
+[16] https://billing.flokinet.is/index.php?rp=%2Fknowledgebase%2F124%2FSelf-hosted-RustDesk-server.html 
+[17] https://www.sfu.ca/~palys/Cavoukian-2011-PrivacyByDesign-7FoundationalPrinciples.pdf 
+[18] https://redis.io/docs/latest/ 
+[19] https://caddyserver.com/docs/quick-starts/reverse-proxy 
+[20] https://docs.docker.com/get-started/ 
+[21] https://docs.flutter.dev/ 
+[22] https://doc.rust-lang.org/book/ 
+[23] https://pub.dev/packages/flutter_rust_bridge 
+[24] https://docs.flutter.dev/platform-integration/bind-native-code 
+[25] https://ijsrcseit.com/paper/CSEIT217647.pdf 
+[26] https://datatracker.ietf.org/doc/html/rfc8825 
+[27] https://flutter-webrtc.netlify.app/docs/flutter-webrtc/introduction 
+[28] https://github.com/cloudwebrtc/webrtc-rs 
+[29] https://datatracker.ietf.org/doc/html/rfc5128#section-3.3 
+[30] https://datatracker.ietf.org/doc/html/rfc8656 
+[31] https://wiki.geant.org/download/attachments/56918574/GN4-1%20SA8T2%20Tech%20Scout%20-%20STUN_TURN_ICE%20-%20v1.0-final.pdf?api=v2 
+[32] https://datatracker.ietf.org/doc/html/rfc5389 
+[33] https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0207512 
+[34] https://dspace.mit.edu/handle/1721.1/97690
+[35] https://arxiv.org/pdf/1407.3561.pdf 
+[36] https://briarproject.org/ 
+[37] https://www.bittorrent.org/beps/bep_0003.html 
+[38] https://www.usenix.org/legacy/event/sec09/tech/full_papers/sec09_crypto.pdf
+[39] https://www.proquest.com/docview/919784312?parentSessionId=Btviz00zLVTTFEh%2F%2FW2dmRapSIHnQCLfMUErIey0I%2Bk%3D&pq-origsite=primo&accountid=16607&sourcetype=Scholarly%20Journals
+[41] https://onionshare.org/ 
+[42] https://www.pnas.org/doi/10.1073/pnas.1508081113 
+[43] https://people.inf.ethz.ch/basin/pubs/onsecuredeletion.pdf
+[44] https://smg.media.mit.edu/library/reiter1998.pdf 
+[45] https://datatracker.ietf.org/doc/html/rfc8445 
+[46] https://datatracker.ietf.org/doc/html/rfc8827 
+[47] https://datatracker.ietf.org/doc/html/rfc8831 
+[48] https://datatracker.ietf.org/doc/html/rfc6120 
+[49] https://ciberativismoeguerra.wordpress.com/wp-content/uploads/2017/09/bruce-schneier-data-and-goliath_-2015.pdf 
+[50] https://signal.org/blog/sealed-sender/
+[52] https://github.com/magic-wormhole/magic-wormhole
+[53] https://we.riseup.net/assets/533560/Zuboff%2C+Shoshana.The+Age+of+Surveillance+Capitalism.2019.pdf
+[54] https://matrix.org/
+
+

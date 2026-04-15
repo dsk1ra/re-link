@@ -1,0 +1,320 @@
+%You can delete all the comments after you have finished your document
+
+%this sets up the defaults for the documents, 12pt font and A4 size. The article type sets this up as such as opposed to letter or memo.
+
+%for the finer points LaTeX see [https://www.wikibooks.org/wiki/LaTeX](https://www.wikibooks.org/wiki/LaTeX) or [http://tex.stackexchange.com/](http://tex.stackexchange.com/)
+
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{titlesec} %these are how we import packages, one helps set up footers and title layout
+\usepackage{float} % in the preamble
+
+
+\usepackage{fancyhdr}
+
+\usepackage{titlesec}
+
+\newcommand{\sectionbreak}{\clearpage}
+
+% !TEX TS-program = pdflatex
+
+% !TEX encoding = UTF-8 Unicode
+
+\usepackage[utf8]{inputenc} % set input encoding (not needed with XeLaTeX)
+
+\usepackage{graphicx} % support the \includegraphics command and options
+
+% \usepackage[parfill]{parskip} % Activate to begin paragraphs with an empty line rather than an indent
+
+%%% PACKAGES
+
+\usepackage{booktabs} % for much better looking tables
+
+\usepackage{array} % for better arrays (eg matrices) in maths
+
+\usepackage{paralist} % very flexible & customisable lists (eg. enumerate/itemize, etc.)
+
+\usepackage{verbatim} % adds environment for commenting out blocks of text & for better verbatim
+
+\usepackage{subfig} % make it possible to include more than one captioned figure/table in a single float
+
+\usepackage[toc,page]{appendix}
+
+% These packages are all incorporated in the memoir class to one degree or another...
+
+%header and footer settings
+
+\pagestyle{fancyplain}
+
+\fancyhf{}
+
+\renewcommand{\headrulewidth}{0.5pt}
+
+\renewcommand{\footrulewidth}{0.5pt}
+
+\setlength{\headheight}{15pt}
+
+\fancyhead[L]{Denys Skira - 40628952}
+
+\fancyhead[R]{SOC10101 Honours Project}
+
+\fancyfoot[L]{}
+
+\fancyfoot[C]{\thepage}
+
+%this starts the document
+
+\begin{document}
+
+%Title Page
+
+\begin{titlepage}
+
+\centering
+
+\vspace*{2cm}
+
+{\Large \textbf{Design and Implementation of a Secure Peer-to-Peer Remote Access System with Minimal Server Support}}
+
+\vspace{1.5cm}
+
+{\large Denys Skira}
+
+{\large 40628952}
+
+\vspace{1.5cm}
+
+{\large SOC10101 Honours Project}
+
+{\large Interim Report}
+
+\vspace{\fill}
+
+{\large Edinburgh Napier University}
+
+{\large School of Computing}
+
+{\large December 2025}
+
+\end{titlepage}
+
+\pagebreak
+
+%LaTeX let you define the abstract separately so it wont get sucked into the main document.
+
+\begin{abstract}
+
+This interim report documents the progress of initial research and prototype development for a secure peer-to-peer (P2P) remote access system designed for minimal server dependency. During the project research and development, I explore the viability of an alternative architecture to commercial cloud-based solutions such as TeamViewer and AnyDesk. The focus of this project is on addressing privacy erosion, censorship vulnerability and operational dependency concerns. The report contains a literature review of relevant protocols and technologies, justification of the technical stack selection, description of the current system architecture and a roadmap for future development. The prototype successfully establishes encrypted peer-to-peer connections within local networks.
+
+\end{abstract}\pagebreak
+
+\tableofcontents
+\newpage
+
+\listoffigures
+
+\newpage
+
+\section*{Acknowledgements}
+
+I would like to thank my project supervisor Professor Jon Kerridge and my second marker Andreas Steyven for guidance and constructive feedback throughout the first trimester until this interim phase.
+
+\newpage
+
+\section{Introduction}
+
+Remote access software has become an invaluable tool in distributed and collaborative work. Commercial instruments such as TeamViewer, AnyDesk, and Microsoft Remote Desktop Protocol (RDP) have become the most widely used solutions, but they all rely on vendor-controlled centralised cloud architecture. This type of solution introduces fundamental architectural constraints that can cause three critical problems:
+
+\begin{itemize}
+    \item \textbf{Privacy erosion.} Connection metadata usually contains sensitive information such as IP addresses and geolocation, as well as connection timestamps along with a long list of other types of data that could be used for profiling and de-anonymisation. Users could be subject to unilateral data harvesting that could be later used for commercial or malicious purposes.
+
+    \item \textbf{Censorship vulnerability.} Centralised services present a single point of failure that authoritarian regimes can take control of. The most famous demonstration of this is China's Great Firewall, which restricts commercial Virtual Private Networks (VPNs) and remote access providers.
+
+    \item \textbf{Operational dependency.} Recent incidents with service outages from cloud providers like Amazon Web Services (AWS) demonstrate that reliance on central infrastructure may result in unexpected downtime. Furthermore, vendor-controlled systems have their own policies that may allow for user account termination, effectively eliminating critical communication channels without user recourse.
+\end{itemize}
+
+For vulnerable groups of individuals like human rights activists, investigative journalists, or Non-Governmental Organizations (NGOs) operating in crisis zones, these represent an existential operational risk. Classic secure communication tools like Signal offer end-to-end encrypted messaging but lack real-time remote access capabilities. On the other hand, commercial remote access platforms provide solid functionality but are fundamentally incapable of satisfying requirements for privacy-focused architectures.
+
+This project investigates the viability of a peer-to-peer architecture with minimised centralised server coordination to provide an alternative to cloud-based remote access without compromising usability for both non-technical and expert users.
+
+\subsection{Development Objectives}
+
+The core development objectives include:
+
+\begin{itemize} \itemsep0pt
+    \item Research, design, implement, and evaluate a prototype that allows the establishment of encrypted connections with optional relay dependency (off by default).
+    \item Achieve solid NAT (Network Address Translation) traversal rates in real-world complex networks utilizing commercial WebRTC solutions.
+    \item Ensure cross-platform support for Windows (Minimum Viable Product), Linux, macOS, Android, and iOS. Where platform limitations apply, include at least a view-only mode.
+    \item Demonstrate the integration of security features commonly used in contemporary privacy-focused products, such as metadata minimisation, forward secrecy, authenticated key exchange, and cloud-less data transit.
+    \item Collect and evaluate performance benchmarks including latency, packet loss, frame transmission rate, and file transfer speed.
+\end{itemize}
+
+\subsection{Architectural Data Flow}
+
+The initial system architecture was designed to enable peer-to-peer communication while strictly limiting the signaling server to metadata handling. As illustrated in Figure \ref{fig:p2p_v1}, the system design ensures the server never handles screen data, inputs, or files. The connection lifecycle follows the numbered sequence below:
+
+\begin{enumerate}
+    \item \textbf{Registration (Action 1):} Both Client A (Initiator) and Client B (Responder) register with the Central Infrastructure to establish presence.
+    
+    \item \textbf{Discovery and Handshake (Actions 2-3):} The Initiator performs discovery (2) and invites the Responder. The server coordinates the handshake (3) to pair the clients.
+    
+    \item \textbf{NAT Traversal (Action 4):} The system attempts to negotiate a direct path between clients through NAT traversal and candidate exchange.
+    
+    \item \textbf{Tunnel Establishment (Action 5):} Upon successful traversal, a secure tunnel is established directly between the peers.
+    
+    \item \textbf{Secure Data Streams (Actions 6-7):} Once connected, real-time screen/input data (6) and file transfers (7) flow directly between clients via the End-to-End Encrypted green zone, bypassing the server entirely.
+    
+    \item \textbf{Fallback (Action 8):} In difficult network environments where direct NAT traversal fails, an optional Relay (8) can be opted-into, handling only encrypted data packets.
+\end{enumerate}
+
+\section{Literature and Technical Background}
+
+\subsection{Remote access Protocols and Architectures}
+
+Remote access systems generally use three main architectural approaches. \\
+Microsoft's \textbf{Remote Desktop Protocol (RDP)} \cite{DH23} provides a comprehensive remote desktop experience but typically operates within trusted networks, assuming infrastructure security unsuitable for ad-hoc peer-to-peer scenarios.\\ 
+\textbf{Virtual Network Computing (VNC)}, defined in RFC 6143 \cite{RFC6143}, focuses on platform independence and simplicity, but lacks built-in NAT traversal and dynamic peer discovery. \\
+\textbf{WebRTC} \cite{KS22} offers the most relevant functionality because it was originally designed for internet-based peer-to-peer communication. Its architecture matches the project requirements well, offering built-in NAT traversal and using the central signalling server only to establish the initial connection parameters (SDP) as defined in RFC 8866 \cite{RFC8866}, while media flows directly between peers or via Traversal Using Relays around NAT (TURN) relays when necessary.
+
+\subsection{NAT traversal and connectivity}
+
+NAT \cite{Fay25} constitutes the major technical bottleneck for peer-to-peer systems. According to research, symmetric and carrier-grade NATs affect a significant portion of internet users, more commonly in mobile networks where direct peer-to-peer connectivity is often blocked \cite{Sha25}. The Interactive Connectivity Establishment (ICE) framework (RFC 8445) \cite{AKH18} provides NAT traversal through prioritised candidate gathering and connectivity verification. ICE collects candidates from multiple sources: direct address, server-reflexive candidates and relay candidates. Recent real-world analysis of WebRTC deployment shows that direct peer connections and server-reflexive paths succeed in approximately 75-80\% of consumer Internet sessions, with the remaining 20-25\% requiring TURN relay fallback \cite{GS25}.
+
+Session Traversal Utilities for NAT (STUN) (RFC 8489) \cite{PHR20} allows clients to discover public IPs as stateless services. TURN (RFC 8656) \cite{TRM20} offers a fallback relay mechanism in cases when direct connections fail. This creates latency and bandwidth costs, but ensures that connection is alive. TURN relay services can cost approximately £75-£150 per month for typical bandwidth usage, adding a considerable amount to a total operational cost for systems aiming to minimise central infrastructure dependency \cite{TURN25}.
+
+\subsection{Transport protocols}
+
+Traditional remote access protocols work over Transmission Control Protocol (TCP) because it is more reliable by design \cite{RFC793}, but introduces latency due to its delivery guarantee. Studies show that TCP's congestion control, defined in RFC 5681 \cite{RFC5681}, can add 300ms latency when a connection is experiencing packet loss.
+
+Quick UDP Internet Connections (QUIC) (RFC 9000) \cite{IETF9000} combines TCP's reliability, User Datagram Protocol (UDP) performance and Transport Layer Security (TLS) 1.3 \cite{Res18} encryption at the transport layer. Research \cite{IETF9000} indicates that QUIC reduces connection establishment time by 30-40\% compared to TCP+TLS configurations, more prominently visible in high-latency or packet loss conditions, although benefits vary significantly depending on network conditions. The trade-off for QUIC is infrastructural challenges against UDP traffic and higher CPU overhead compared to TCP.
+
+\subsection{Cryptographic frameworks}
+
+TLS 1.3 (RFC 8446) \cite{Res18} underpins the system's security with mandatory perfect forward secrecy. Perfect Forward Secrecy (PFS) is a cryptographic property that prevents long-term key compromise from affecting past session keys. This is achieved through ephemeral key exchange mechanisms such as ephemeral Diffie-Hellman (DHE) or elliptic curve Diffie-Hellman (ECDHE), where each session uses a unique, short-lived key pair that is discarded after use \cite{NIST_SP80052}. The Noise Protocol Framework \cite{Noise18} offers alternatives specifically for peer-to-peer scenarios, providing modular cryptographic patterns enabling mutual authentication without certificate infrastructure.
+
+Argon2 (RFC 9106) \cite{BDK21} provides strong password hashing that is resistant to GPU attacks. It can be adapted for specific threat models, therefore will increase the offline attack costs compared to bcrypt \cite{Buch24} or PBKDF2 \cite{Team23}.
+
+\subsection{Privacy Design}
+
+Privacy-preserving architectures are based around design principles where central servers are prevented from accessing user data or communication. This can be accomplished by introducing ephemeral credential storage with short time-to-live (TTL) intervals and strong cryptographic commitments, potentially adopting quantum-resistant schemes for future resilience \cite{NIST24}.
+
+This becomes crucial when considering cryptographic design principles for high-risk environments, including state-backed attackers with retrospective surveillance capabilities, where forward secrecy and credential lifecycle management are essential security controls \cite{NIST_SP80052}.
+
+\subsection{Platform Considerations}
+
+Cross-platform compatibility may be challenging due to each platform's different security models. Windows provides a rather easy screen capture via Desktop Duplication Application Programming Interface (API) \cite{stev21} and input via SendInput \cite{WinInput}. Android's MediaProjection API \cite{AD25} also provides good capture and control, but requires explicit user consent.
+
+Conversely, iOS has the most restrictive environment. Screen capture is only allowed on Mobile Device Management (MDM) enrolled \cite{AS25} devices or through private APIs that cannot be used in applications downloaed from app store App Store, complicating the publication \cite{Intune25}. This project addresses iOS constraints through view-only screen sharing.
+
+\section{Technical Stack Justification}
+
+\subsection{Backend: Rust}
+
+The selection of Rust \cite{Buch21} as a base implementation technology is based around deep analysis of memory safety requirements and performance features. Memory safety vulnerabilities contribute to over 70\% of security issues in systems software \cite{CC19}. Rust's ownership mechanism enforces memory safety at compile time without a garbage collection overhead. Recent wide adoption of Rust demonstrates practical impact across industry \cite{IN25, MS19b}. Google's comprehensive shift to memory-safe languages, including Rust, contributed to a significant reduction in Android's memory-related vulnerabilities from 76\% (2019) to 24\% (2024) \cite{Goo25}.
+
+Rust's concurrency model prevents data races at compile time, making parallel processing safe and efficient. Asynchronous syntax and mature runtimes like Tokio \cite{Tok25} give convenient concurrent programming that matches C++ speed without race conditions and deadlocks. Rust's ecosystem provides a vast library of crates (libraries) for cryptography (rustls, ring) \cite{Buch21}, networking (quinn, tokio) \cite{Leap25b}, serialisation (serde) \cite{End24} and the whole WebRTC stack (webrtc).
+
+Alternative languages were also considered but ultimately rejected. C++ offers great performance, has one of the best framework libraries available on the market and is widely adopted in the industry, but requires constant vigilance over memory safety \cite{MS19b}. Go \cite{Golang} lacks a well-established desktop capture API, there are only some open-source projects that are not used in commercial software. Node.js is single threaded, so it would be impractical to use in software that required complex CPU operations like encoding and encryption/decryption.
+
+\subsection{Frontend: Flutter}
+
+Flutter \cite{Flutt} enables sharing of substantial source code across Windows, Android and iOS with platform-specific User Interface (UI) conventions, exactly what the project is aiming for. Dart \cite{TP24}, the language that powers Flutter, compiles directly to native machine code using its own engine, reducing memory usage. Unlike JavaScript, Flutter has much lower overhead with frame times typically within 10-15\% of platform-specific frameworks. A plugin architecture makes it easily integrable with platforms' native APIs and allows simple cross-platform development.
+
+Qt \cite{Qt24} with C++ offers great multimedia support but presents difficulties with licensing for commercial use, offering limited functionality under open-source license \cite{Qt25}. Users report that it is rather simple and useful, but this is mitigated by the C++ memory management complexity. React Native \cite{BR25} has support for vast number of libraries, although there are complications with adapters, but it eventually was eliminated due to large performance overhead and limited desktop support. Electron \cite{FT21} was rejected for massive binary sizes that are disproportionally big compared to what they offer, along with significant memory consumption overhead compared to native frameworks.
+
+\subsection{Interoperability: Flutter Rust Bridge}
+
+Flutter Rust Bridge (FRB) \cite{fzy25} is automatically generated using cargo (build system and package manager). It provides automated two-way communication between Dart UI and Rust logic. This removes the need for manual Foreign Function Interface (FFI) \cite{Rust_FFI} maintenance and eliminates integration complexity. FRB generates type-safe Dart interfaces for Rust APIs, that will automatically handle memory management.
+
+Performance results match the requirements for real-time applications. The Flutter side can receive streams directly from Rust async iterators running in the background, enabling efficient data transfer without unnecessary memory copying.
+
+\subsection{Supporting Infrastructure}
+
+Redis \cite{Redis} serves as a session store for its performance. It runs in Random Access Memory (RAM), that makes it faster than any persistent data storage. It also offers built-in Time-To-Live (TTL) support that aligns with the ephemeral credential design that was chosen. The Key-Value model maps to session management where room IDs and tokens serve as keys.
+
+Axum \cite{Leap25a} serves as the Hypertext Transfer Protocol (HTTP) framework, selected for its strong performance and type-safe routing. It also has good integration with Tokio, allowing for smoother, less complex development. Benchmarks indicate strong performance characteristics suitable for handling concurrent connections.
+
+Tokio provides the asynchronous runtime underpinning of all input/output (I/O) operations. It distributes work across all available CPU cores by allowing concurrent connection handling with minimal context switch overhead.
+
+\section{System Architecture}
+
+\subsection{Architectural pattern}
+
+The current implementation is based around a three-tier architecture separating client applications, signalling and state storage \cite{Chia24}. The design allows solid scalability without the overhead of a Microservices architecture. It separates the concerns and accelerates development speed by allowing independent development of tiers. The stateless signalling server can scale horizontally via load balancing, while session state remains accessible from multiple Redis server instances.
+
+\subsection{Session Establishment}
+
+The Room-based model implies one peer to be an Initiator and the other is a Receiver. The initiator creates a room via the signalling API, that returns a room Identifier (ID) and password. For now, these need to be communicated to the Receiver through a third-party channel. Future implementations will explore QR code scanning, deep linking, and cryptographic protocols for key exchange to eliminate this out-of-bounds credential exchange requirement.
+
+When the room is created, the APIs generate room credentials and store them in Redis with a 5-minute TTL. The Initiator receives a unique session token that is used for status checks and room management. When the responder provides valid credentials, the room state is changed to connected and the responder receives a session token.
+
+\subsection{Data Flow}
+
+The interaction between the Flutter clients and the backend infrastructure follows a specific sequence of HTTP-based signaling actions. As illustrated in Figure \ref{fig:sys_design}, these actions are numbered to correspond with this lifecycle:
+
+\begin{enumerate}
+    \item \textbf{Registration (Action 1):} Both the Initiator and Responder post a device label to the Rust signaling server. After this, they receive a client Universally Unique Identifier (UUID), session token, display name and heartbeat intervals.
+    
+    \item \textbf{Heartbeat (Maintenance):} The client then periodically updates its status to allow the server to renew timestamps and manage sessions.
+    
+    \item \textbf{Room Creation (Action 2):} The Initiator posts credentials to the server. The server issues a room ID, password, initiator token and Time-to-Live (TTL), then stores these in Redis with AES-256-GCM encryption.
+    
+    \item \textbf{Status Polling (Action 4):} As shown by the orange dashed line in the diagram, the Initiator continuously polls the server until the Receiver successfully joins.
+    
+    \item \textbf{Room Joins (Action 3):} The Receiver enters the room ID and password. The server verifies the hash, emits tokens, sets the joined flag and deletes the room metadata to finalise the handshake.
+\end{enumerate}
+
+The system architecture has developed from the initial high-level idea, moving to a current working prototype. Figure 1 demonstrated the first attempt to model the system based around minimal server involvement, where the signaling server handled only metadata. Figure \ref{fig:sys_design} reflects the system as it exists now and plans for near-future development, where peers would eventually communicate directly using WebRTC-based NAT traversal over different networks. The new version retains the same high-level structure but using HTTP-based signaling, Redis-backed session storage and polling-driven updates to coordinate connections. At this stage, the signaling server manages peer discovery and session status with plans for direct P2P transport for future iterations.
+
+
+\subsection{Current Limitations}
+
+The current implementation is restricted to same-network connectivity, which is the most significant limitation. The prototype successfully establishes connection from Client to Signalling Server when peers share a local network with direct IP routing. Later stages will upgrade the connection to handle cross-network connectivity. The other issue is out-of-bounds credential exchange, which adds extra friction to the process and complicates the connection.
+
+Finally, polling-based status checking adds avoidable latency and server load, compared to WebSocket or Webhook real-time updates. Currently clients poll the status every second, which can introduce approximately 500ms delay between connection state change and client awareness, as polling mechanisms exhibit inherent latency due to the time interval between successive requests.
+
+\section{Roadmap and Next Steps}
+
+\subsection{Cross-network connectivity}
+
+The most important milestone for the nearest future is developing cross-network connectivity with WebRTC-based NAT traversal. This will be separated into three stages for different candidate nomination. It will start with STUN integration for server-reflexive candidate discovery, then expand to ICE candidate exchange and finish with TURN relay as a fallback for signalling infrastructure. Initially the STUN will use public servers with future potential to migrate to a self-hosted server ready for production.
+
+To satisfy the needs of ICE candidate exchange, the signalling logic will need to be refactored for bi-directional transmission between peers. The current polling mechanism will be reconsidered in favour of a more robust solution, that will enable users to search for new candidates until a connection is made. Implementation will use Rust's webrtc crate that provides support for all ICE, STUN and TURN.
+
+\subsection{Screen Capture and Transmission}
+
+After successful cross-network connectivity implementation, the development will shift towards real-time screen capture and transmission. The compression and transmission logic would be shared, but the capture logic would be platform specific with their appropriate requirements. Windows and Android do have relevant APIs to utilize for such tasks, although Android will require user consent for screen capture. iOS does not allow third-party screen capture, so it will have to rely on view-only functionality.
+
+The capture frames require compression in order to be transmitted over the network with an acceptable bandwidth consumption and latency. Initial implementation will explore JPEG compression as it offers acceptable results with little complexity. Later the project may compare performance of codecs such as AV1 \cite{RA25} and VP8/VP9 \cite{Rue24} to determine which offers better performance in benchmarking tests.
+
+To transmit the data, the implementation will test a solution with UDP-based approach for minimal latency. It could later potentially migrate to QUIC for improved packet loss recovery and congestion control. It will also include adjusting frame rate and compression quality to adapt for network capabilities. Performance target for a standard broadband connection speed (10-11Mbps) is 30fps and end-to-end latency under 100ms.
+
+\subsection{Remote Input and Control}
+
+Remote input implementation will allow a Receiver to manipulate the Initiator's system via cursor and keyboard input over the peer connection. There would be different input injection specific requirements for the platforms, like SendInput on Windows and AccessibilityService on Android.
+
+To reinforce the security, there will need to be toggleable clipboard and restricted system commands execution to prevent potential abuse. The system will require explicit user consent before allowing input from remote host, with appropriate UI indicators that display a remote control status. Users will have an ability to instantly deny permissions for remote input using an emergency hotkey or a UI gesture.
+
+\subsection{Evaluation and User Surveys}
+
+The evaluation stage will assess the prototype across multiple performance, security and usability indicators. Performance would be measured for NAT traversal success rates across different network conditions and setups, latency, bandwidth and power consumption. Security aspect will evaluate impenetrability and resistance from man-in-the-middle attacks, session hijacking, credential enumeration and remote code execution. The testing will also extend to secure key handling and data storage.
+
+In the later stages of the development, there are plans to conduct a set of surveys and user evaluations to gather relevant feedback from representative target audience. The study will be conducted in accordance with Edinburgh Napier University academic and privacy guidelines with explicit written consent of participants. Participants will complete realistic scenarios to help determine usability issues and collect measurable feedback. The results will assist with final improvements before the project submission to provide a higher quality prototype and build a roadmap for further development.
+
+\section{Conclusion}
+
+This interim report shows the progress of initial research and prototype development of a secure peer-to-peer remote access system, key focus of which is demonstrating viability of cloud-minimal approach. The core design choices and infrastructure development in the second stage of the project established a foundation for completing the remaining part of the work. Selected technical stack, Rust and Flutter, provides a memory-safe, cross-platform solution necessary for production-level code quality. The remaining part of the project will focus on completing cross-network connectivity, screen capture and transmission, as well as remote input control. The prototype will provide a system, that demonstrates peer-to-peer remote access concepts and will prove that alternative P2P approach is competitive with cloud-centric solutions.
+
+The project addresses the needs of privacy-conscious users, many of whom may have a higher risk of being targeted. This includes journalists and NGOs in hostile environments, where commercial surveillance is a major risk. By showing that P2P architecture can provide practical remote access without heavily relying on the central server, this work contributes to a more global goal of developing privacy-preserving alternatives to centralised internet services.
+
+\sectionbreak
+
+\bibliographystyle{ieeetr}
+
+\bibliography{bibliography}
+
+%you can crate this on a extra tex document just like the title or any other part of the document.
+
+\newpage
+
+\end{document}

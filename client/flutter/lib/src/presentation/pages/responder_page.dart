@@ -26,12 +26,14 @@ class ResponderPage extends StatefulWidget {
   final String signalingBaseUrl;
   final SignalingBackend backend;
   final String? initialToken;
+  final List<Map<String, dynamic>>? iceServers;
 
   const ResponderPage({
     super.key,
     required this.signalingBaseUrl,
     required this.backend,
     this.initialToken,
+    this.iceServers,
   });
 
   @override
@@ -149,7 +151,7 @@ class _ResponderPageState extends State<ResponderPage> {
   Future<void> _startWebRTCHandshake() async {
     try {
       _disposeFileTransferService();
-      _webrtcManager = WebRTCManager();
+      _webrtcManager = WebRTCManager(iceServers: widget.iceServers);
       await _webrtcManager!.initialize();
       _attachFileTransferService(_webrtcManager!);
 

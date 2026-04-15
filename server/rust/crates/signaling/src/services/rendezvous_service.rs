@@ -52,7 +52,6 @@ impl RendezvousService {
         let mailbox_state = MailboxState {
             mailbox_id: mailbox_id.clone(),
             peer_mailbox_id: None,
-            created_at_epoch_ms: now_ms,
             expires_at_epoch_ms: expires_ms,
         };
 
@@ -117,7 +116,6 @@ impl RendezvousService {
         let responder_state = MailboxState {
             mailbox_id: responder_mailbox_id.clone(),
             peer_mailbox_id: Some(initiator_mailbox_id.clone()),
-            created_at_epoch_ms: initiator_state.created_at_epoch_ms,
             expires_at_epoch_ms: initiator_state.expires_at_epoch_ms,
         };
         self.repo
@@ -130,19 +128,9 @@ impl RendezvousService {
             .map_err(RendezvousError::Redis)?;
 
         // Create join message for initiator
-        let seq = self
-            .repo
-            .get_message_count(&initiator_mailbox_id)
-            .await
-            .map_err(RendezvousError::Redis)?;
         let join_msg = MailboxMessageStored {
             from_mailbox_id: responder_mailbox_id.clone(),
             ciphertext_b64: "".to_string(),
-            sequence: seq,
-            timestamp_epoch_ms: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("SystemTime is before UNIX_EPOCH when creating join message timestamp")
-                .as_millis(),
         };
 
         self.repo
@@ -197,17 +185,9 @@ impl RendezvousService {
             return Err(RendezvousError::SessionExpired);
         }
 
-        let seq = self
-            .repo
-            .get_message_count(&peer_mailbox_id)
-            .await
-            .map_err(RendezvousError::Redis)?;
-
         let msg = MailboxMessageStored {
             from_mailbox_id: mailbox_id,
             ciphertext_b64,
-            sequence: seq,
-            timestamp_epoch_ms: now_ms,
         };
         self.repo
             .push_message(&peer_mailbox_id, &msg, self.mailbox_ttl.as_secs())
@@ -235,22 +215,15 @@ impl RendezvousService {
             .await
             .map_err(RendezvousError::Redis)?;
 
-        let last_sequence = stored_msgs.last().map(|m| m.sequence).unwrap_or(0);
-
         let messages: Vec<MailboxMessage> = stored_msgs
             .into_iter()
             .map(|s| MailboxMessage {
                 from_mailbox_id: s.from_mailbox_id,
                 ciphertext_b64: s.ciphertext_b64,
-                sequence: s.sequence,
-                timestamp_epoch_ms: s.timestamp_epoch_ms,
             })
             .collect();
 
-        Ok(MailboxRecvResponse {
-            messages,
-            last_sequence,
-        })
+        Ok(MailboxRecvResponse { messages })
     }
 
     pub async fn verify_mailbox(&self, mailbox_id: &str) -> Result<bool, RendezvousError> {

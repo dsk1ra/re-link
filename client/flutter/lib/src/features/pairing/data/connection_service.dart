@@ -43,16 +43,12 @@ class ConnectionService {
   /// Step 2: Send connection init to server (Client A)
   /// Server creates a mailbox and stores the rendezvous token
   Future<Map<String, dynamic>> sendConnectionInit({
-    required String clientId,
-    required String sessionToken,
     required String rendezvousId,
   }) async {
     final response = await httpClient.post(
       Uri.parse('$signalingBaseUrl/connection/init'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
-        'client_id': clientId,
-        'session_token': sessionToken,
         'rendezvous_id_b64': rendezvousId,
       }),
     );

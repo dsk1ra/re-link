@@ -1,0 +1,26 @@
+\contentsline {section}{\numberline {1}Introduction}{5}{}%
+\contentsline {subsection}{\numberline {1.1}Development Objectives}{6}{}%
+\contentsline {subsection}{\numberline {1.2}Architectural Data Flow}{6}{}%
+\contentsline {section}{\numberline {2}Literature and Technical Background}{8}{}%
+\contentsline {subsection}{\numberline {2.1}Remote access Protocols and Architectures}{8}{}%
+\contentsline {subsection}{\numberline {2.2}NAT traversal and connectivity}{8}{}%
+\contentsline {subsection}{\numberline {2.3}Transport protocols}{9}{}%
+\contentsline {subsection}{\numberline {2.4}Cryptographic frameworks}{9}{}%
+\contentsline {subsection}{\numberline {2.5}Privacy Design}{9}{}%
+\contentsline {subsection}{\numberline {2.6}Platform Considerations}{10}{}%
+\contentsline {section}{\numberline {3}Technical Stack Justification}{11}{}%
+\contentsline {subsection}{\numberline {3.1}Backend: Rust}{11}{}%
+\contentsline {subsection}{\numberline {3.2}Frontend: Flutter}{11}{}%
+\contentsline {subsection}{\numberline {3.3}Interoperability: Flutter Rust Bridge}{12}{}%
+\contentsline {subsection}{\numberline {3.4}Supporting Infrastructure}{12}{}%
+\contentsline {section}{\numberline {4}System Architecture}{13}{}%
+\contentsline {subsection}{\numberline {4.1}Architectural pattern}{13}{}%
+\contentsline {subsection}{\numberline {4.2}Session Establishment}{13}{}%
+\contentsline {subsection}{\numberline {4.3}Data Flow}{13}{}%
+\contentsline {subsection}{\numberline {4.4}Current Limitations}{14}{}%
+\contentsline {section}{\numberline {5}Roadmap and Next Steps}{15}{}%
+\contentsline {subsection}{\numberline {5.1}Cross-network connectivity}{15}{}%
+\contentsline {subsection}{\numberline {5.2}Screen Capture and Transmission}{15}{}%
+\contentsline {subsection}{\numberline {5.3}Remote Input and Control}{16}{}%
+\contentsline {subsection}{\numberline {5.4}Evaluation and User Surveys}{16}{}%
+\contentsline {section}{\numberline {6}Conclusion}{17}{}%

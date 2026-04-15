@@ -71,8 +71,6 @@ impl SignalingClientConfigDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionInitRequest {
-    pub client_id: ClientId,
-    pub session_token: String,
     pub rendezvous_id_b64: String, // high-entropy random ID from initiator
 }
 
@@ -108,12 +106,9 @@ pub struct ConnectionCloseRequest {
 pub struct MailboxMessage {
     pub from_mailbox_id: String,
     pub ciphertext_b64: String,
-    pub sequence: u64,
-    pub timestamp_epoch_ms: u128,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MailboxRecvResponse {
     pub messages: Vec<MailboxMessage>,
-    pub last_sequence: u64,
 }

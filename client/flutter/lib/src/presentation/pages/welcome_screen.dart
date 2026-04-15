@@ -19,16 +19,21 @@ class WelcomeScreen extends StatefulWidget {
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
   late TextEditingController _domainController;
+  late TextEditingController _iceServersController;
 
   @override
   void initState() {
     super.initState();
     _domainController = TextEditingController();
+    _iceServersController = TextEditingController(
+      text: widget.settings.getIceServersJson() ?? '',
+    );
   }
 
   @override
   void dispose() {
     _domainController.dispose();
+    _iceServersController.dispose();
     super.dispose();
   }
 
@@ -41,6 +46,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
     try {
       await widget.settings.setDomain(domain);
+      await widget.settings.setIceServersJson(_iceServersController.text);
       await widget.settings.markWelcomeSeen();
       if (mounted) {
         widget.onDomainConfigured(widget.settings.getDomain() ?? domain);
@@ -154,6 +160,53 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                               color: AppColors.textMuted,
                               fontSize: 11,
                             ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Optional ICE Servers (JSON)',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _iceServersController,
+                            maxLines: 4,
+                            cursorColor: AppColors.primary,
+                            style: const TextStyle(color: AppColors.textMuted),
+                            decoration: InputDecoration(
+                              hintText:
+                                  '[{"urls":"stun:stun.l.google.com:19302"},{"urls":["turn:turn.example.com:3478?transport=udp"],"username":"user","credential":"pass"}]',
+                              hintStyle: const TextStyle(
+                                color: AppColors.textMuted,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: AppColors.outline,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: AppColors.outline,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: AppColors.primary,
+                                  width: 1.5,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                            ),
+                            onChanged: (_) => setState(() {}),
                           ),
                         ],
                       ),

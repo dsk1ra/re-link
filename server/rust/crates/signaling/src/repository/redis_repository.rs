@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 pub struct MailboxState {
     pub mailbox_id: String,
     pub peer_mailbox_id: Option<String>,
-    pub created_at_epoch_ms: u128,
     pub expires_at_epoch_ms: u128,
 }
 
@@ -14,8 +13,6 @@ pub struct MailboxState {
 pub struct MailboxMessageStored {
     pub from_mailbox_id: String,
     pub ciphertext_b64: String,
-    pub sequence: u64,
-    pub timestamp_epoch_ms: u128,
 }
 
 #[derive(Clone)]

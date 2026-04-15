@@ -1,5 +1,4 @@
 pub mod config;
-pub mod registry;
 pub mod repository;
 pub mod server;
 pub mod services;

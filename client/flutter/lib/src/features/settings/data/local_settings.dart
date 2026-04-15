@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Local settings storage for domain and onboarding state
 class LocalSettings {
   static const String _keyDomain = 'signaling_domain';
+  static const String _keyIceServersJson = 'webrtc_ice_servers_json';
   static const String _keyWelcomeShown = 'welcome_shown';
 
   final SharedPreferences _prefs;
@@ -18,6 +21,104 @@ class LocalSettings {
   bool hasDomain() {
     final domain = getDomain();
     return domain != null && domain.trim().isNotEmpty;
+  }
+
+  /// Returns raw ICE servers JSON configured by the user (if any).
+  String? getIceServersJson() {
+    return _prefs.getString(_keyIceServersJson);
+  }
+
+  /// Parse and sanitize ICE server configuration for flutter_webrtc.
+  ///
+  /// Expected format:
+  /// [
+  ///   {"urls": "stun:stun.l.google.com:19302"},
+  ///   {
+  ///     "urls": ["turn:turn.example.com:3478?transport=udp"],
+  ///     "username": "user",
+  ///     "credential": "pass"
+  ///   }
+  /// ]
+  List<Map<String, dynamic>>? getIceServers() {
+    final raw = getIceServersJson();
+    if (raw == null || raw.trim().isEmpty) {
+      return null;
+    }
+
+    try {
+      return _sanitizeIceServers(jsonDecode(raw));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Save ICE servers as JSON; pass empty text to clear custom config.
+  Future<void> setIceServersJson(String iceServersJson) async {
+    final trimmed = iceServersJson.trim();
+    if (trimmed.isEmpty) {
+      await _prefs.remove(_keyIceServersJson);
+      return;
+    }
+
+    final parsed = jsonDecode(trimmed);
+    final sanitized = _sanitizeIceServers(parsed);
+    if (sanitized == null || sanitized.isEmpty) {
+      throw const FormatException(
+        'ICE servers JSON must be a non-empty array with valid "urls" entries',
+      );
+    }
+
+    await _prefs.setString(_keyIceServersJson, jsonEncode(sanitized));
+  }
+
+  List<Map<String, dynamic>>? _sanitizeIceServers(dynamic raw) {
+    if (raw is! List) {
+      return null;
+    }
+
+    final sanitized = <Map<String, dynamic>>[];
+    for (final item in raw) {
+      if (item is! Map) {
+        continue;
+      }
+
+      final map = Map<String, dynamic>.from(item);
+      final urls = map['urls'];
+      final normalizedUrls = _normalizeIceUrls(urls);
+      if (normalizedUrls == null) {
+        continue;
+      }
+
+      final server = <String, dynamic>{'urls': normalizedUrls};
+
+      final username = map['username'];
+      if (username is String && username.isNotEmpty) {
+        server['username'] = username;
+      }
+
+      final credential = map['credential'];
+      if (credential is String && credential.isNotEmpty) {
+        server['credential'] = credential;
+      }
+
+      sanitized.add(server);
+    }
+
+    return sanitized.isEmpty ? null : sanitized;
+  }
+
+  dynamic _normalizeIceUrls(dynamic rawUrls) {
+    if (rawUrls is String && rawUrls.isNotEmpty) {
+      return rawUrls;
+    }
+    if (rawUrls is List) {
+      final urls = rawUrls.whereType<String>().where((u) => u.isNotEmpty).toList();
+      if (urls.isEmpty) {
+        return null;
+      }
+      return urls;
+    }
+    return null;
   }
 
   /// Save the signaling domain
@@ -51,6 +152,7 @@ class LocalSettings {
   /// Reset all settings (for testing or app reset)
   Future<void> reset() async {
     await _prefs.remove(_keyDomain);
+    await _prefs.remove(_keyIceServersJson);
     await _prefs.remove(_keyWelcomeShown);
   }
 }

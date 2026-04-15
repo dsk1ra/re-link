@@ -1,0 +1,15 @@
+The idea of this project is to build a prototype of an alternative, self-hostable architecture designed to combat privacy erosion. The system consists of two main elements: 
+a) A backend stack managed via Docker Compose, including containers for a custom Rust-based Signaling Server, Redis for ephemeral data storage, and Caddy acting as a reverse proxy. 
+b) A hybrid desktop application acting as the client, utilizing a Flutter frontend for cross-platform UI and a highly optimized Rust core (via flutter_rust_bridge) for high-performance I/O, WebRTC management, and local cryptography.
+
+System administrators can set up this environment by hosting the Docker Compose stack on a server and exposing the reverse proxy for users. To establish a connection, users utilize a "blind rendezvous protocol": the initiator generates a link or QR code containing a rendezvous token. When the other peer scans or opens this link, their ephemeral mailboxes are linked on the signaling server without ever revealing user identities.
+
+This setup focuses on maintaining a high level of security by utilizing an architecture that never stores user identifiers or any user-related data persistently, making user profiling impossible. All signaling state is held in-memory using Redis. If the server is ever compromised, simply restarting it completely flushes all connection data.
+
+Furthermore, Redis only stores the essential routing parameters and signaling data required for initial connection establishment, and these have a very short Time-To-Live (TTL) by default (e.g., 5 minutes). This makes compromised keys useless, as they are either invalidated immediately upon successful consumption during the WebRTC handshake or expire naturally. Session hijacking or replay attacks are effectively prevented because the signaling data is discarded the moment the peer-to-peer session is established.
+
+In addition to WebRTC's native transport-layer encryption (DTLS/SRTP), the application implements strict End-to-End Encryption (E2EE) using local cryptographic algorithms (AES-GCM, SHA-2, HMAC) provided by a tightly integrated shared Rust crate. Once the WebRTC session is negotiated, the encrypted traffic flows directly peer-to-peer. This rules out any possibility of eavesdropping on a compromised signaling server, as no media or file data is ever relayed through it.
+
+The WebRTC stack enables screen sharing by adding a media track and listing available desktop sources to share, negotiating dynamic bitrates natively. File transfer operates concurrently by establishing a dedicated "control" channel and a "file_transfer" channel utilizing WebRTC DataChannels, streaming locally encrypted binary chunks directly between peers. 
+
+For demonstration purposes, the development server script can wire the local environment to a Cloudflare Tunnel, exposing the local signaling server through a public Cloudflare domain for clients to connect to easily.

@@ -19,6 +19,7 @@ class DomainConfigDialog extends StatefulWidget {
 
 class _DomainConfigDialogState extends State<DomainConfigDialog> {
   late TextEditingController _controller;
+  late TextEditingController _iceServersController;
 
   @override
   void initState() {
@@ -26,11 +27,15 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
     _controller = TextEditingController(
       text: widget.settings.getDomain() ?? '',
     );
+    _iceServersController = TextEditingController(
+      text: widget.settings.getIceServersJson() ?? '',
+    );
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _iceServersController.dispose();
     super.dispose();
   }
 
@@ -43,6 +48,7 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
 
     try {
       await widget.settings.setDomain(domain);
+      await widget.settings.setIceServersJson(_iceServersController.text);
       if (mounted) {
         final updatedDomain = widget.settings.getDomain() ?? domain;
         Navigator.pop(context, updatedDomain);
@@ -113,6 +119,42 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
               '• https://example.com (production)\n'
               '• relay.example.com:8443 (custom port)',
               style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Optional: ICE servers JSON (STUN/TURN)',
+              style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _iceServersController,
+              maxLines: 5,
+              cursorColor: AppColors.primary,
+              style: const TextStyle(color: AppColors.textMuted),
+              decoration: InputDecoration(
+                hintText:
+                    '[{"urls":"stun:stun.l.google.com:19302"},{"urls":["turn:turn.example.com:3478?transport=udp"],"username":"user","credential":"pass"}]',
+                hintStyle: const TextStyle(color: AppColors.textMuted),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: AppColors.outline),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: AppColors.outline),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                    color: AppColors.primary,
+                    width: 1.5,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
             ),
           ],
         ),

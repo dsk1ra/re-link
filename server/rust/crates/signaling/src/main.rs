@@ -15,6 +15,6 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = SignalingServerConfig::from_env()?;
-    info!(configuration = ?config, "Loaded signaling server configuration");
+    info!("Loaded signaling server configuration");
     run_server(config).await
 }

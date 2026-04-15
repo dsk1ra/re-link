@@ -29,11 +29,13 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 class InitiatorPage extends StatefulWidget {
   final String signalingBaseUrl;
   final SignalingBackend backend;
+  final List<Map<String, dynamic>>? iceServers;
 
   const InitiatorPage({
     super.key,
     required this.signalingBaseUrl,
     required this.backend,
+    this.iceServers,
   });
 
   @override
@@ -165,7 +167,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
     try {
       _log.info('Initiator: Starting WebRTC Handshake...');
       _disposeFileTransferService();
-      _webrtcManager = WebRTCManager();
+      _webrtcManager = WebRTCManager(iceServers: widget.iceServers);
       _log.info('Initiator: Initializing WebRTCManager...');
       await _webrtcManager!.initialize();
       _log.info('Initiator: WebRTCManager initialized.');
@@ -512,8 +514,6 @@ class _InitiatorPageState extends State<InitiatorPage> {
       );
 
       final initResp = await _connectionService.sendConnectionInit(
-        clientId: widget.backend.clientId ?? '',
-        sessionToken: widget.backend.sessionToken ?? '',
         rendezvousId: initResult.rendezvousId,
       );
       final serverMailboxId = initResp['mailbox_id'] as String?;

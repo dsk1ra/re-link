@@ -1,11 +1,9 @@
 use crate::config::SignalingServerConfig;
-use crate::registry::{RegistryError, SessionRegistry};
 use crate::repository::redis_repository::RedisRepository;
 use crate::services::rendezvous_service::{RendezvousError, RendezvousService};
 use shared::models::{
     ConnectionCloseRequest, ConnectionInitRequest, ConnectionInitResponse, ConnectionJoinRequest,
-    ConnectionJoinResponse, HeartbeatRequest, MailboxRecvResponse, MailboxSendRequest,
-    RegisterRequest, SignalFetchRequest, SignalFetchResponse, SignalSubmitRequest,
+    ConnectionJoinResponse, MailboxRecvResponse, MailboxSendRequest,
 };
 
 use axum::extract::ws::{Message, WebSocket};
@@ -61,18 +59,12 @@ struct ErrorResponse {
 
 #[derive(Clone)]
 struct AppState {
-    registry: Arc<SessionRegistry>,
     config: Arc<SignalingServerConfig>,
     push: Arc<PushHub>,
     rendezvous_service: Arc<RendezvousService>,
 }
 
 pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
-    let registry = Arc::new(SessionRegistry::new(
-        config.session_ttl,
-        config.heartbeat_interval,
-    ));
-
     if config.redis_require_tls && !config.redis_url.starts_with("rediss://") {
         anyhow::bail!(
             "Redis TLS required but URL is not rediss:// (got: {}). Set SIGNALING_REDIS_REQUIRE_TLS=false only for local development.",
@@ -91,7 +83,6 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
     let ws_push_buffer_capacity = config.ws_push_buffer_capacity;
 
     let state = AppState {
-        registry,
         config: Arc::new(config),
         push: Arc::new(PushHub::new(ws_push_buffer_capacity)),
         rendezvous_service,
@@ -100,10 +91,6 @@ pub async fn run_server(config: SignalingServerConfig) -> anyhow::Result<()> {
     let router = Router::new()
         .route("/", get(root))
         .route("/health", get(healthcheck))
-        .route("/register", post(register))
-        .route("/heartbeat", post(heartbeat))
-        .route("/signal", post(send_signal))
-        .route("/signal/fetch", post(fetch_signal))
         // connection-based blind rendezvous endpoints
         .route("/connection/init", post(connection_init))
         .route("/connection/join", post(connection_join))
@@ -139,67 +126,6 @@ struct SignalingServerInfo {
     heartbeat_interval_secs: u64,
 }
 
-#[instrument(skip(state, payload))]
-async fn register(
-    State(state): State<AppState>,
-    Json(payload): Json<RegisterRequest>,
-) -> impl IntoResponse {
-    let response = state.registry.register(payload).await;
-    (StatusCode::OK, Json(response))
-}
-
-#[instrument(skip(state, payload))]
-async fn heartbeat(
-    State(state): State<AppState>,
-    Json(payload): Json<HeartbeatRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    state
-        .registry
-        .heartbeat(payload)
-        .await
-        .map(|resp| (StatusCode::OK, Json(resp)))
-        .map_err(registry_err)
-}
-
-#[instrument(skip(state, payload))]
-async fn send_signal(
-    State(state): State<AppState>,
-    Json(payload): Json<SignalSubmitRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    state
-        .registry
-        .enqueue_signal(payload)
-        .await
-        .map(|()| StatusCode::ACCEPTED)
-        .map_err(registry_err)
-}
-
-#[instrument(skip(state, payload))]
-async fn fetch_signal(
-    State(state): State<AppState>,
-    Json(payload): Json<SignalFetchRequest>,
-) -> Result<(StatusCode, Json<SignalFetchResponse>), (StatusCode, Json<ErrorResponse>)> {
-    state
-        .registry
-        .fetch_signals(payload)
-        .await
-        .map(|messages| (StatusCode::OK, Json(messages)))
-        .map_err(registry_err)
-}
-
-fn registry_err(err: RegistryError) -> (StatusCode, Json<ErrorResponse>) {
-    let status = match err {
-        RegistryError::ClientNotFound => StatusCode::NOT_FOUND,
-        RegistryError::InvalidToken => StatusCode::UNAUTHORIZED,
-    };
-    (
-        status,
-        Json(ErrorResponse {
-            message: err.to_string(),
-        }),
-    )
-}
-
 fn rendezvous_err(err: RendezvousError) -> (StatusCode, Json<ErrorResponse>) {
     let status = match err {
         RendezvousError::MailboxNotFound => StatusCode::NOT_FOUND,
@@ -224,13 +150,6 @@ async fn connection_init(
     State(state): State<AppState>,
     Json(payload): Json<ConnectionInitRequest>,
 ) -> Result<(StatusCode, Json<ConnectionInitResponse>), (StatusCode, Json<ErrorResponse>)> {
-    // verify client/session
-    state
-        .registry
-        .verify_session(&payload.client_id, &payload.session_token)
-        .await
-        .map_err(registry_err)?;
-
     let response = state
         .rendezvous_service
         .init_connection(payload.rendezvous_id_b64)
