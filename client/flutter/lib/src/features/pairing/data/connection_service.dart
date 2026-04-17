@@ -50,15 +50,11 @@ class ConnectionService {
     final response = await httpClient.post(
       Uri.parse('$signalingBaseUrl/connection/init'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'rendezvous_id_b64': rendezvousId,
-      }),
+      body: jsonEncode({'rendezvous_id_b64': rendezvousId}),
     );
 
     if (response.statusCode != 200) {
-      _log.warning(
-        'Connection Init Failed: ${response.statusCode} - ${response.body}',
-      );
+      _log.warning('Connection init failed with status ${response.statusCode}');
       throw Exception('Failed to init connection: ${response.statusCode}');
     }
 
@@ -105,7 +101,6 @@ class ConnectionService {
         if (response.statusCode == 202) return; // Success
 
         if (response.statusCode == 429 && attempt < retries) {
-          _log.info('Send signal 429 (Attempt $attempt), throttling...');
           await Future.delayed(
             Duration(milliseconds: 1000 * attempt),
           ); // Longer backoff
@@ -113,15 +108,14 @@ class ConnectionService {
         }
 
         if (response.statusCode == 500 && attempt < retries) {
-          _log.info('Send signal 500 (Attempt $attempt), retrying...');
           await Future.delayed(Duration(milliseconds: 500 * attempt));
           continue;
         }
 
         throw Exception('Failed to send signal: ${response.statusCode}');
-      } catch (e) {
+      } catch (_) {
         if (attempt >= retries) rethrow;
-        _log.warning('Send signal error (Attempt $attempt): $e, retrying...');
+        _log.warning('Send signal failed; retrying');
         await Future.delayed(Duration(milliseconds: 500 * attempt));
       }
     }
@@ -158,8 +152,6 @@ class ConnectionService {
         .replaceFirst('http://', 'ws://');
     final wsUrl = '$wsBaseUrl/ws/$mailboxId';
 
-    _log.info('Connecting to WebSocket: $wsUrl');
-
     final controller = StreamController<Map<String, dynamic>>.broadcast(
       sync: true,
     );
@@ -191,8 +183,8 @@ class ConnectionService {
         for (final msg in messages) {
           emitIfNew(msg);
         }
-      } catch (e, st) {
-        _log.warning('Mailbox sync error', e, st);
+      } catch (_) {
+        _log.warning('Mailbox sync failed');
       }
     }
 
@@ -229,26 +221,25 @@ class ConnectionService {
             try {
               final msg = jsonDecode(data as String);
               emitIfNew(msg as Map<String, dynamic>);
-            } catch (e) {
-              _log.warning('WS message decode error: $e');
+            } catch (_) {
+              _log.warning('WebSocket message decode failed');
             }
           },
-          onError: (e) {
+          onError: (_) {
             if (channel != nextChannel) return;
-            _log.warning('WS Error: $e');
+            _log.warning('WebSocket connection error');
             scheduleReconnect();
           },
           onDone: () {
             if (channel != nextChannel) return;
-            _log.info('WS Closed');
             scheduleReconnect();
           },
         );
 
         reconnectAttempt = 0;
         unawaited(syncMailboxHistory());
-      } catch (e) {
-        _log.warning('WS Connect Exception: $e');
+      } catch (_) {
+        _log.warning('WebSocket connection failed');
         scheduleReconnect();
       } finally {
         isConnecting = false;

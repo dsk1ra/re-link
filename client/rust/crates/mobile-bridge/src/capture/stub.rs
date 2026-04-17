@@ -20,4 +20,8 @@ impl CaptureProvider for StubCaptureAdapter {
             "Screen capture adapter is only available on Windows for this build"
         ))
     }
+
+    fn stop_capture(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 }

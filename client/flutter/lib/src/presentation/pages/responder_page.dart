@@ -17,9 +17,11 @@ import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
+import 'package:application/src/features/pairing/domain/signaling_message.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
 import 'package:application/src/rust/api/connection.dart' as rust_connection;
-import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart'
+    show RTCVideoRenderer, RTCVideoView, RTCVideoViewObjectFit;
 
 /// Responder screen - joins using connection link
 class ResponderPage extends StatefulWidget {
@@ -64,7 +66,6 @@ class _ResponderPageState extends State<ResponderPage> {
   FileTransferService? _fileTransferService;
   StreamSubscription<FileTransferState>? _fileTransferStateSubscription;
   final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
-  StreamSubscription<MediaStream>? _remoteStreamSubscription;
 
   RTCPeerConnectionState? _webrtcState;
 
@@ -92,35 +93,26 @@ class _ResponderPageState extends State<ResponderPage> {
     );
     _sessionControlProtocol = SessionControlProtocol(
       log: _log,
-      sendControlMessage: (message) async {
-        await _webrtcManager?.sendControlMessage(message);
+      sendPing: (ts) async {
+        await _webrtcManager?.sendPing(ts);
       },
-      onRenegotiationOffer: _handleIncomingRenegotiationOffer,
-      onRenegotiationAnswer: (answer) async {
-        await _webrtcManager?.setRemoteAnswer(answer);
+      sendSessionClosed: ({required String id, String? reason}) async {
+        await _webrtcManager?.sendSessionClosed(id: id, reason: reason);
       },
-      onIceCandidate: (candidate) async {
-        await _webrtcManager?.addIceCandidate(candidate);
-      },
-      onPeerSessionClosed: _handlePeerSessionClosed,
-      onScreenShareStopped: () {
-        _detachRemoteStream();
-        _showSnackBar('Host stopped sharing screen');
-      },
-      showMessage: _showSnackBar,
+      onHeartbeatTimeout: _handlePeerSessionClosed,
     );
     _iceCandidateQueue = SerialTaskQueue<RTCIceCandidate>(
       processor: (candidate) async {
         await _sendIceCandidate(candidate);
       },
-      onError: (error, _) {
-        _log.warning('Error sending queued ICE candidate: $error');
+      onError: (_, _) {
+        _log.warning('Queued ICE candidate send failed');
       },
     );
     _signalQueue = SerialTaskQueue<Map<String, dynamic>>(
       processor: _handleIncomingSignal,
-      onError: (error, _) {
-        _log.warning('Error processing signal queue: $error');
+      onError: (_, _) {
+        _log.warning('Queued signal processing failed');
       },
     );
     unawaited(_initRemoteRenderer());
@@ -129,13 +121,6 @@ class _ResponderPageState extends State<ResponderPage> {
 
   Future<void> _initRemoteRenderer() async {
     await _remoteRenderer.initialize();
-  }
-
-  Future<void> _attachRemoteStream(MediaStream stream) async {
-    _remoteRenderer.srcObject = stream;
-    if (mounted) {
-      setState(() {});
-    }
   }
 
   void _detachRemoteStream() {
@@ -150,24 +135,14 @@ class _ResponderPageState extends State<ResponderPage> {
   Future<void> _startWebRTCHandshake() async {
     try {
       _disposeFileTransferService();
-      _webrtcManager = WebRTCManager(iceServers: widget.iceServers);
+      _webrtcManager = WebRTCManager(
+        connectionId: _responderMailboxId!,
+        iceServers: widget.iceServers,
+      );
       await _webrtcManager!.initialize();
       _attachFileTransferService(_webrtcManager!);
 
-      _remoteStreamSubscription?.cancel();
-      _remoteStreamSubscription = _webrtcManager!.onRemoteStream.listen((
-        stream,
-      ) {
-        _attachRemoteStream(stream);
-      });
-
-      final existingStream = _webrtcManager!.remoteStream;
-      if (existingStream != null) {
-        await _attachRemoteStream(existingStream);
-      }
-
       _webrtcManager!.onStateChange.listen((state) {
-        _log.info('Responder: State changed to $state');
         setState(() => _webrtcState = state);
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _cancelHandshakeTimeout();
@@ -176,11 +151,35 @@ class _ResponderPageState extends State<ResponderPage> {
         }
       });
 
-      _webrtcManager!.onMessage.listen(_handleControlMessage);
+      _webrtcManager!.onRenegotiationOffer.listen((offer) {
+        unawaited(_handleIncomingRenegotiationOffer(offer));
+      });
+      _webrtcManager!.onRenegotiationAnswer.listen((answer) {
+        unawaited(_webrtcManager?.setRemoteAnswer(answer));
+      });
+      _webrtcManager!.onRenegotiationIceCandidate.listen((candidate) {
+        unawaited(_webrtcManager?.addIceCandidate(candidate));
+      });
+      _webrtcManager!.onFileTransferRequested.listen((_) {
+        unawaited(_handleIncomingFileTransferRequest());
+      });
+      _webrtcManager!.onScreenShareStopped.listen((_) {
+        _detachRemoteStream();
+        _showSnackBar('Host stopped sharing screen');
+      });
+      _webrtcManager!.onPeerSessionClosed.listen((_) {
+        unawaited(_handlePeerSessionClosed());
+      });
+      _webrtcManager!.onSessionClosedAck.listen(
+        _sessionControlProtocol.handleSessionClosedAck,
+      );
+      _webrtcManager!.onPong.listen((_) {
+        _sessionControlProtocol.handlePong();
+      });
 
       _webrtcManager!.onIceCandidate.listen((candidate) {
         if (_signalingClosed) {
-          unawaited(_sendDataChannelIce(candidate));
+          unawaited(_webrtcManager!.sendRenegotiationIce(candidate));
         } else {
           _iceCandidateQueue.enqueue(candidate);
         }
@@ -229,7 +228,7 @@ class _ResponderPageState extends State<ResponderPage> {
           RTCPeerConnectionState.RTCPeerConnectionStateConnected;
       if (!_joined || isConnected) return;
 
-      _log.warning('Responder handshake timed out before WebRTC connected');
+      _log.warning('Responder handshake timed out');
       await _mailboxSubscription?.cancel();
       _mailboxSubscription = null;
       await _webrtcManager?.dispose();
@@ -264,7 +263,6 @@ class _ResponderPageState extends State<ResponderPage> {
     _connectionService.dispose();
     _tokenController.dispose();
     _mailboxSubscription?.cancel();
-    _remoteStreamSubscription?.cancel();
     _sessionControlProtocol.dispose();
     _iceCandidateQueue.dispose();
     _signalQueue.dispose();
@@ -373,17 +371,14 @@ class _ResponderPageState extends State<ResponderPage> {
         ciphertextB64: payloadB64,
       );
       final decoded = utf8.decode(decryptedBytes);
-      _log.info('Responder: Received Signal: $decoded');
       final signalingMsg = SignalingMessage.fromJsonString(decoded);
 
       if (signalingMsg.type == 'offer') {
-        _log.info('Responder: Processing Offer...');
         final offer = RTCSessionDescription(
           signalingMsg.data['sdp'] as String,
           signalingMsg.data['type'] as String,
         );
         final answer = await _webrtcManager!.createAnswer(offer);
-        _log.info('Responder: Created Answer');
 
         final answerMsg = SignalingMessage(
           type: 'answer',
@@ -397,9 +392,7 @@ class _ResponderPageState extends State<ResponderPage> {
           mailboxId: _responderMailboxId!,
           ciphertextB64: answerB64,
         );
-        _log.info('Responder: Sent Answer');
       } else if (signalingMsg.type == 'ice') {
-        _log.info('Responder: Processing ICE Candidate...');
         final candidate = RTCIceCandidate(
           signalingMsg.data['candidate'] as String,
           signalingMsg.data['sdpMid'] as String,
@@ -407,7 +400,6 @@ class _ResponderPageState extends State<ResponderPage> {
         );
         await _webrtcManager!.addIceCandidate(candidate);
       } else if (signalingMsg.type == 'disconnect') {
-        _log.info('Responder: Peer disconnected');
         _showSnackBar('Peer has disconnected.');
         _detachRemoteStream();
         await _webrtcManager?.dispose();
@@ -418,8 +410,8 @@ class _ResponderPageState extends State<ResponderPage> {
           _isPeerDisconnected = true;
         });
       }
-    } catch (e) {
-      _log.warning('Responder: Error handling signal: $e');
+    } catch (_) {
+      _log.warning('Responder signal handling failed');
     }
   }
 
@@ -451,8 +443,13 @@ class _ResponderPageState extends State<ResponderPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _handleControlMessage(String message) {
-    unawaited(_sessionControlProtocol.handleMessage(message));
+  Future<void> _handleIncomingFileTransferRequest() async {
+    if (!mounted || _webrtcManager == null || _fileTransferService == null) {
+      return;
+    }
+
+    await _fileTransferService!.syncNow();
+    await _openFileTransferSheet(autoOpened: true);
   }
 
   Future<void> _closeSignalingAfterConnect() async {
@@ -467,14 +464,13 @@ class _ResponderPageState extends State<ResponderPage> {
 
     try {
       await _connectionService.closeConnection(mailboxId: mailboxId);
-    } catch (e) {
-      _log.warning('Failed to close signaling mailbox: $e');
+    } catch (_) {
+      _log.warning('Signaling mailbox cleanup failed');
     }
   }
 
   Future<void> _handlePeerSessionClosed() async {
     _cancelHandshakeTimeout();
-    _log.info('Responder: Peer session closed over WebRTC');
     _showSnackBar('Peer has disconnected.');
     _sessionControlProtocol.stopHeartbeat();
     _detachRemoteStream();
@@ -556,8 +552,8 @@ class _ResponderPageState extends State<ResponderPage> {
         mailboxId: _responderMailboxId!,
         ciphertextB64: encryptedB64,
       );
-    } catch (e) {
-      _log.warning('Error sending disconnect signal: $e');
+    } catch (_) {
+      _log.warning('Disconnect signal failed');
     }
   }
 
@@ -606,23 +602,7 @@ class _ResponderPageState extends State<ResponderPage> {
   ) async {
     if (_webrtcManager == null) return;
     final answer = await _webrtcManager!.createAnswer(offer);
-    final msg = jsonEncode({
-      'type': 'webrtc_answer',
-      'data': {'sdp': answer.sdp, 'type': answer.type},
-    });
-    await _webrtcManager?.sendControlMessage(msg);
-  }
-
-  Future<void> _sendDataChannelIce(RTCIceCandidate candidate) async {
-    final msg = jsonEncode({
-      'type': 'webrtc_ice',
-      'data': {
-        'candidate': candidate.candidate,
-        'sdpMid': candidate.sdpMid,
-        'sdpMLineIndex': candidate.sdpMLineIndex,
-      },
-    });
-    await _webrtcManager?.sendControlMessage(msg);
+    await _webrtcManager?.sendRenegotiationAnswer(answer);
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────

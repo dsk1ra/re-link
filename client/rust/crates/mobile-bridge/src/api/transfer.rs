@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::info;
 pub use webrtc::data_channel::RTCDataChannel;
 pub use webrtc::peer_connection::RTCPeerConnection;
 
@@ -16,6 +15,40 @@ pub struct PeerConnectionHandle {
 pub(crate) static CONNECTIONS: Lazy<Mutex<HashMap<String, PeerConnectionHandle>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
+pub async fn upsert_connection(
+    connection_id: String,
+    pc: Arc<RTCPeerConnection>,
+) -> anyhow::Result<()> {
+    let mut connections = CONNECTIONS.lock().await;
+    connections
+        .entry(connection_id)
+        .and_modify(|handle| {
+            handle.pc = Arc::clone(&pc);
+        })
+        .or_insert(PeerConnectionHandle {
+            pc,
+            data_channels: HashMap::new(),
+        });
+    Ok(())
+}
+
+pub async fn set_data_channel(
+    connection_id: String,
+    label: String,
+    dc: Arc<RTCDataChannel>,
+) -> anyhow::Result<()> {
+    let mut connections = CONNECTIONS.lock().await;
+    if let Some(handle) = connections.get_mut(&connection_id) {
+        handle.data_channels.insert(label, dc);
+    }
+    Ok(())
+}
+
+pub async fn remove_connection(connection_id: &str) {
+    let mut connections = CONNECTIONS.lock().await;
+    connections.remove(connection_id);
+}
+
 #[flutter_rust_bridge::frb(sync)]
 pub fn start_file_transfer(connection_id: String, file_path: String) -> anyhow::Result<()> {
     // This is a sync wrapper that spawns the async task
@@ -26,19 +59,17 @@ pub fn start_file_transfer(connection_id: String, file_path: String) -> anyhow::
         if let Some(handle) = connections.get(&connection_id) {
             if let Some(dc) = handle.data_channels.get("file_transfer") {
                 let dc_clone = Arc::clone(dc);
-                if let Err(e) =
-                    FileTransferService::send_file(dc_clone, PathBuf::from(file_path)).await
+                if FileTransferService::send_file(dc_clone, PathBuf::from(file_path))
+                    .await
+                    .is_err()
                 {
-                    info!("File transfer error: {}", e);
+                    tracing::warn!("file transfer send failed");
                 }
             } else {
-                info!(
-                    "No file_transfer data channel found for connection {}",
-                    connection_id
-                );
+                tracing::warn!("file transfer channel unavailable");
             }
         } else {
-            info!("Connection {} not found", connection_id);
+            tracing::warn!("file transfer connection unavailable");
         }
     });
 
@@ -49,15 +80,7 @@ pub async fn register_connection(
     connection_id: String,
     pc: Arc<RTCPeerConnection>,
 ) -> anyhow::Result<()> {
-    let mut connections = CONNECTIONS.lock().await;
-    connections.insert(
-        connection_id,
-        PeerConnectionHandle {
-            pc,
-            data_channels: HashMap::new(),
-        },
-    );
-    Ok(())
+    upsert_connection(connection_id, pc).await
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -69,10 +92,11 @@ pub fn start_file_receive(connection_id: String, save_dir: String) -> anyhow::Re
         if let Some(handle) = connections.get(&connection_id) {
             if let Some(dc) = handle.data_channels.get("file_transfer") {
                 let dc_clone = Arc::clone(dc);
-                if let Err(e) =
-                    FileTransferService::receive_file(dc_clone, PathBuf::from(save_dir)).await
+                if FileTransferService::receive_file(dc_clone, PathBuf::from(save_dir))
+                    .await
+                    .is_err()
                 {
-                    info!("File receive error: {}", e);
+                    tracing::warn!("file transfer receive failed");
                 }
             }
         }
@@ -90,10 +114,7 @@ pub fn add_data_channel(
     // Note: This might need careful locking if called from different threads
     let runtime = tokio::runtime::Handle::current();
     runtime.spawn(async move {
-        let mut connections = CONNECTIONS.lock().await;
-        if let Some(handle) = connections.get_mut(&connection_id) {
-            handle.data_channels.insert(label, dc);
-        }
+        let _ = set_data_channel(connection_id, label, dc).await;
     });
     Ok(())
 }

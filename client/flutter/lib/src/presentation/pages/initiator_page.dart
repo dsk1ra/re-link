@@ -7,6 +7,7 @@ import 'package:logging/logging.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
+import 'package:application/src/features/pairing/domain/signaling_message.dart';
 import 'package:application/src/features/file_transfer/file_transfer_service.dart';
 import 'package:application/src/features/session/application/serial_task_queue.dart';
 import 'package:application/src/features/session/application/session_control_protocol.dart';
@@ -23,7 +24,6 @@ import 'package:application/src/presentation/widgets/session_menu_overlay.dart';
 import 'package:application/src/presentation/widgets/session_status_views.dart';
 import 'package:application/src/rust/api/connection.dart' as rust_connection;
 import 'package:application/src/rust/api/share.dart' as rust_share;
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 /// Initiator screen - creates and shares connection link
 class InitiatorPage extends StatefulWidget {
@@ -124,37 +124,26 @@ class _InitiatorPageState extends State<InitiatorPage> {
     );
     _sessionControlProtocol = SessionControlProtocol(
       log: _log,
-      sendControlMessage: (message) async {
-        await _webrtcManager?.sendControlMessage(message);
+      sendPing: (ts) async {
+        await _webrtcManager?.sendPing(ts);
       },
-      onRenegotiationOffer: _handleIncomingRenegotiationOffer,
-      onRenegotiationAnswer: (answer) async {
-        await _webrtcManager?.setRemoteAnswer(answer);
+      sendSessionClosed: ({required String id, String? reason}) async {
+        await _webrtcManager?.sendSessionClosed(id: id, reason: reason);
       },
-      onIceCandidate: (candidate) async {
-        await _webrtcManager?.addIceCandidate(candidate);
-      },
-      onPeerSessionClosed: _handlePeerSessionClosed,
-      onScreenShareStopped: () {
-        setState(() {
-          _isScreenSharing = false;
-          _shareStatus = 'Peer stopped sharing screen.';
-        });
-      },
-      showMessage: _showSnackBar,
+      onHeartbeatTimeout: _handlePeerSessionClosed,
     );
     _iceCandidateQueue = SerialTaskQueue<RTCIceCandidate>(
       processor: (candidate) async {
         await _sendIceCandidate(candidate);
       },
-      onError: (error, _) {
-        _log.warning('Error sending queued ICE candidate: $error');
+      onError: (_, _) {
+        _log.warning('Queued ICE candidate send failed');
       },
     );
     _signalQueue = SerialTaskQueue<Map<String, dynamic>>(
       processor: _handleIncomingSignal,
-      onError: (error, _) {
-        _log.warning('Error processing signal queue: $error');
+      onError: (_, _) {
+        _log.warning('Queued signal processing failed');
       },
     );
     _createInitiatorLink();
@@ -164,16 +153,15 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
   Future<void> _startWebRTCHandshake() async {
     try {
-      _log.info('Initiator: Starting WebRTC Handshake...');
       _disposeFileTransferService();
-      _webrtcManager = WebRTCManager(iceServers: widget.iceServers);
-      _log.info('Initiator: Initializing WebRTCManager...');
+      _webrtcManager = WebRTCManager(
+        connectionId: _initiatorServerMailboxId!,
+        iceServers: widget.iceServers,
+      );
       await _webrtcManager!.initialize();
-      _log.info('Initiator: WebRTCManager initialized.');
       _attachFileTransferService(_webrtcManager!);
 
       _webrtcManager!.onStateChange.listen((state) {
-        _log.info('Initiator: State changed to $state');
         setState(() => _webrtcState = state);
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _closeSignalingAfterConnect();
@@ -181,19 +169,44 @@ class _InitiatorPageState extends State<InitiatorPage> {
         }
       });
 
-      _webrtcManager!.onMessage.listen(_handleControlMessage);
+      _webrtcManager!.onRenegotiationOffer.listen((offer) {
+        unawaited(_handleIncomingRenegotiationOffer(offer));
+      });
+      _webrtcManager!.onRenegotiationAnswer.listen((answer) {
+        unawaited(_webrtcManager?.setRemoteAnswer(answer));
+      });
+      _webrtcManager!.onRenegotiationIceCandidate.listen((candidate) {
+        unawaited(_webrtcManager?.addIceCandidate(candidate));
+      });
+      _webrtcManager!.onFileTransferRequested.listen((_) {
+        unawaited(_handleIncomingFileTransferRequest());
+      });
+      _webrtcManager!.onScreenShareStopped.listen((_) {
+        if (!mounted) return;
+        setState(() {
+          _isScreenSharing = false;
+          _shareStatus = 'Peer stopped sharing screen.';
+        });
+      });
+      _webrtcManager!.onPeerSessionClosed.listen((_) {
+        unawaited(_handlePeerSessionClosed());
+      });
+      _webrtcManager!.onSessionClosedAck.listen(
+        _sessionControlProtocol.handleSessionClosedAck,
+      );
+      _webrtcManager!.onPong.listen((_) {
+        _sessionControlProtocol.handlePong();
+      });
 
       _webrtcManager!.onIceCandidate.listen((candidate) {
         if (_signalingClosed) {
-          unawaited(_sendDataChannelIce(candidate));
+          unawaited(_webrtcManager!.sendRenegotiationIce(candidate));
         } else {
           _iceCandidateQueue.enqueue(candidate);
         }
       });
 
-      _log.info('Initiator: Creating Offer...');
       final offer = await _webrtcManager!.createOffer();
-      _log.info('Initiator: Created Offer');
 
       final offerMsg = SignalingMessage(
         type: 'offer',
@@ -203,13 +216,12 @@ class _InitiatorPageState extends State<InitiatorPage> {
         keyHex: _initiatorResult!.kSig,
         plaintext: utf8.encode(offerMsg.toJsonString()),
       );
-      _log.info('Initiator: Sending Offer...');
       await _connectionService.sendSignal(
         mailboxId: _initiatorServerMailboxId!,
         ciphertextB64: offerB64,
       );
     } catch (e) {
-      _log.severe('Initiator: WebRTC Error', e);
+      _log.severe('Initiator WebRTC setup failed');
       _iceCandidateQueue.clear();
       _signalQueue.clear();
       await _webrtcManager?.dispose();
@@ -246,11 +258,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
   Future<void> _loadShareSources() async {
     setState(() => _loadingShareSources = true);
     try {
-      rust_share.init();
-      var sources = await _listDesktopShareSources();
-      if (sources.isEmpty) {
-        sources = rust_share.listShareSources();
-      }
+      final sources = await _webrtcManager?.listShareSources() ?? const [];
 
       final selectedStillValid =
           _selectedSourceId != null &&
@@ -288,7 +296,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
     setState(() => _startingShare = true);
     try {
-      final refreshedSources = await _listDesktopShareSources();
+      final refreshedSources =
+          await _webrtcManager?.listShareSources() ?? const [];
       if (refreshedSources.isNotEmpty) {
         final selectedStillValid = refreshedSources.any(
           (source) => source.sourceId == _selectedSourceId,
@@ -337,15 +346,6 @@ class _InitiatorPageState extends State<InitiatorPage> {
         });
       });
 
-      rust_share.startShare(
-        connectionId: connectionId,
-        sourceId: _selectedSourceId!,
-        config: rust_share.ShareConfig(
-          fps: _autoShareFps,
-          bitratePreset: rust_share.BitratePreset.high,
-        ),
-      );
-
       setState(() {
         _isScreenSharing = true;
         _shareStatus = _buildShareStatus(
@@ -355,11 +355,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
       });
 
       final offer = await _webrtcManager!.createRenegotiationOffer();
-      final msg = jsonEncode({
-        'type': 'webrtc_offer',
-        'data': {'sdp': offer.sdp, 'type': offer.type},
-      });
-      await _webrtcManager?.sendControlMessage(msg);
+      await _webrtcManager?.sendRenegotiationOffer(offer);
     } catch (e) {
       setState(() {
         _shareStatus = 'Failed to start share: $e';
@@ -379,16 +375,10 @@ class _InitiatorPageState extends State<InitiatorPage> {
     setState(() => _stoppingShare = true);
     try {
       await _webrtcManager?.stopScreenCapture();
-
-      final msg = jsonEncode({'type': 'screen_share_stopped'});
-      await _webrtcManager?.sendControlMessage(msg);
+      await _webrtcManager?.sendScreenShareStopped();
 
       final offer = await _webrtcManager!.createRenegotiationOffer();
-      final renegotiateMsg = jsonEncode({
-        'type': 'webrtc_offer',
-        'data': {'sdp': offer.sdp, 'type': offer.type},
-      });
-      await _webrtcManager?.sendControlMessage(renegotiateMsg);
+      await _webrtcManager?.sendRenegotiationOffer(offer);
 
       setState(() {
         _isScreenSharing = false;
@@ -403,31 +393,6 @@ class _InitiatorPageState extends State<InitiatorPage> {
       if (mounted) {
         setState(() => _stoppingShare = false);
       }
-    }
-  }
-
-  Future<List<rust_share.SourceDescriptor>> _listDesktopShareSources() async {
-    try {
-      final sources = await desktopCapturer.getSources(
-        types: <SourceType>[SourceType.Screen, SourceType.Window],
-      );
-
-      return sources
-          .map(
-            (source) => rust_share.SourceDescriptor(
-              sourceId: source.id,
-              kind: source.id.startsWith('window:')
-                  ? rust_share.SourceKind.window
-                  : rust_share.SourceKind.display,
-              name: source.name.isNotEmpty ? source.name : source.id,
-              width: null,
-              height: null,
-            ),
-          )
-          .toList();
-    } catch (e) {
-      _log.warning('Failed to query desktop sources from flutter_webrtc: $e');
-      return const [];
     }
   }
 
@@ -710,18 +675,15 @@ class _InitiatorPageState extends State<InitiatorPage> {
         ciphertextB64: payloadB64,
       );
       final decoded = utf8.decode(decryptedBytes);
-      _log.info('Initiator: Received Signal: $decoded');
       final signalingMsg = SignalingMessage.fromJsonString(decoded);
 
       if (signalingMsg.type == 'answer') {
-        _log.info('Initiator: Processing Answer...');
         final answer = RTCSessionDescription(
           signalingMsg.data['sdp'] as String,
           signalingMsg.data['type'] as String,
         );
         await _webrtcManager!.setRemoteAnswer(answer);
       } else if (signalingMsg.type == 'ice') {
-        _log.info('Initiator: Processing ICE Candidate...');
         final candidate = RTCIceCandidate(
           signalingMsg.data['candidate'] as String,
           signalingMsg.data['sdpMid'] as String,
@@ -729,7 +691,6 @@ class _InitiatorPageState extends State<InitiatorPage> {
         );
         await _webrtcManager!.addIceCandidate(candidate);
       } else if (signalingMsg.type == 'disconnect') {
-        _log.info('Initiator: Peer disconnected');
         _showSnackBar('Peer has disconnected.');
         await _webrtcManager?.dispose();
         _disposeFileTransferService();
@@ -739,8 +700,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
           _isPeerDisconnected = true;
         });
       }
-    } catch (e) {
-      _log.warning('Initiator: Error handling signal: $e');
+    } catch (_) {
+      _log.warning('Initiator signal handling failed');
     }
   }
 
@@ -763,8 +724,13 @@ class _InitiatorPageState extends State<InitiatorPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _handleControlMessage(String message) {
-    unawaited(_sessionControlProtocol.handleMessage(message));
+  Future<void> _handleIncomingFileTransferRequest() async {
+    if (!mounted || _webrtcManager == null || _fileTransferService == null) {
+      return;
+    }
+
+    await _fileTransferService!.syncNow();
+    await _openFileTransferSheet(autoOpened: true);
   }
 
   Future<void> _closeSignalingAfterConnect() async {
@@ -779,13 +745,12 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
     try {
       await _connectionService.closeConnection(mailboxId: mailboxId);
-    } catch (e) {
-      _log.warning('Failed to close signaling mailbox: $e');
+    } catch (_) {
+      _log.warning('Signaling mailbox cleanup failed');
     }
   }
 
   Future<void> _handlePeerSessionClosed() async {
-    _log.info('Initiator: Peer session closed over WebRTC');
     _showSnackBar('Peer has disconnected.');
     _sessionControlProtocol.stopHeartbeat();
     await _webrtcManager?.dispose();
@@ -867,8 +832,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
         mailboxId: _initiatorServerMailboxId!,
         ciphertextB64: encryptedB64,
       );
-    } catch (e) {
-      _log.warning('Error sending disconnect signal: $e');
+    } catch (_) {
+      _log.warning('Disconnect signal failed');
     }
   }
 
@@ -917,23 +882,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
   ) async {
     if (_webrtcManager == null) return;
     final answer = await _webrtcManager!.createAnswer(offer);
-    final msg = jsonEncode({
-      'type': 'webrtc_answer',
-      'data': {'sdp': answer.sdp, 'type': answer.type},
-    });
-    await _webrtcManager?.sendControlMessage(msg);
-  }
-
-  Future<void> _sendDataChannelIce(RTCIceCandidate candidate) async {
-    final msg = jsonEncode({
-      'type': 'webrtc_ice',
-      'data': {
-        'candidate': candidate.candidate,
-        'sdpMid': candidate.sdpMid,
-        'sdpMLineIndex': candidate.sdpMLineIndex,
-      },
-    });
-    await _webrtcManager?.sendControlMessage(msg);
+    await _webrtcManager?.sendRenegotiationAnswer(answer);
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────

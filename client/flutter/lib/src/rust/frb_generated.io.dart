@@ -5,10 +5,12 @@
 
 import 'api/client.dart';
 import 'api/connection.dart';
+import 'api/file_transfer.dart';
 import 'api/models.dart';
 import 'api/share.dart';
 import 'api/simple.dart';
 import 'api/transfer.dart';
+import 'api/webrtc.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -102,7 +104,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  IceCandidateDto dco_decode_box_autoadd_ice_candidate_dto(dynamic raw);
+
+  @protected
+  SessionDescriptionDto dco_decode_box_autoadd_session_description_dto(
+    dynamic raw,
+  );
+
+  @protected
   ShareConfig dco_decode_box_autoadd_share_config(dynamic raw);
+
+  @protected
+  int dco_decode_box_autoadd_u_16(dynamic raw);
 
   @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
@@ -113,7 +126,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  FileTransferStateDto dco_decode_file_transfer_state_dto(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
+
+  @protected
+  IceCandidateDto dco_decode_ice_candidate_dto(dynamic raw);
+
+  @protected
+  IceServerConfig dco_decode_ice_server_config(dynamic raw);
+
+  @protected
+  List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<FileTransferStateDto> dco_decode_list_file_transfer_state_dto(
+    dynamic raw,
+  );
+
+  @protected
+  List<IceServerConfig> dco_decode_list_ice_server_config(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -131,6 +164,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SourceDescriptor> dco_decode_list_source_descriptor(dynamic raw);
 
   @protected
+  List<WebRtcEvent> dco_decode_list_web_rtc_event(dynamic raw);
+
+  @protected
+  String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
 
   @protected
@@ -138,6 +180,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_record_string_auto_owned_rust_opaque_flutter_rust_bridgefor_generated_rust_auto_opaque_inner_arc_rtc_data_channel(
     dynamic raw,
   );
+
+  @protected
+  SessionDescriptionDto dco_decode_session_description_dto(dynamic raw);
 
   @protected
   ShareConfig dco_decode_share_config(dynamic raw);
@@ -155,6 +200,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SourceKind dco_decode_source_kind(dynamic raw);
 
   @protected
+  TransferStatusDto dco_decode_transfer_status_dto(dynamic raw);
+
+  @protected
+  int dco_decode_u_16(dynamic raw);
+
+  @protected
   int dco_decode_u_32(dynamic raw);
 
   @protected
@@ -168,6 +219,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt dco_decode_usize(dynamic raw);
+
+  @protected
+  WebRtcEvent dco_decode_web_rtc_event(dynamic raw);
 
   @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
@@ -236,7 +290,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  IceCandidateDto sse_decode_box_autoadd_ice_candidate_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SessionDescriptionDto sse_decode_box_autoadd_session_description_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ShareConfig sse_decode_box_autoadd_share_config(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
@@ -247,7 +314,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  FileTransferStateDto sse_decode_file_transfer_state_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
+
+  @protected
+  IceCandidateDto sse_decode_ice_candidate_dto(SseDeserializer deserializer);
+
+  @protected
+  IceServerConfig sse_decode_ice_server_config(SseDeserializer deserializer);
+
+  @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<FileTransferStateDto> sse_decode_list_file_transfer_state_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<IceServerConfig> sse_decode_list_ice_server_config(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
@@ -267,11 +358,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<WebRtcEvent> sse_decode_list_web_rtc_event(SseDeserializer deserializer);
+
+  @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer);
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   (String, ArcRtcDataChannel)
   sse_decode_record_string_auto_owned_rust_opaque_flutter_rust_bridgefor_generated_rust_auto_opaque_inner_arc_rtc_data_channel(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SessionDescriptionDto sse_decode_session_description_dto(
     SseDeserializer deserializer,
   );
 
@@ -293,6 +398,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SourceKind sse_decode_source_kind(SseDeserializer deserializer);
 
   @protected
+  TransferStatusDto sse_decode_transfer_status_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  int sse_decode_u_16(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_u_32(SseDeserializer deserializer);
 
   @protected
@@ -306,6 +419,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt sse_decode_usize(SseDeserializer deserializer);
+
+  @protected
+  WebRtcEvent sse_decode_web_rtc_event(SseDeserializer deserializer);
 
   @protected
   void sse_encode_AnyhowException(
@@ -386,10 +502,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_ice_candidate_dto(
+    IceCandidateDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_session_description_dto(
+    SessionDescriptionDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_share_config(
     ShareConfig self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
@@ -401,7 +532,40 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_file_transfer_state_dto(
+    FileTransferStateDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ice_candidate_dto(
+    IceCandidateDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ice_server_config(
+    IceServerConfig self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_file_transfer_state_dto(
+    List<FileTransferStateDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ice_server_config(
+    List<IceServerConfig> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
@@ -426,12 +590,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_web_rtc_event(
+    List<WebRtcEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
 
   @protected
   void
   sse_encode_record_string_auto_owned_rust_opaque_flutter_rust_bridgefor_generated_rust_auto_opaque_inner_arc_rtc_data_channel(
     (String, ArcRtcDataChannel) self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_session_description_dto(
+    SessionDescriptionDto self,
     SseSerializer serializer,
   );
 
@@ -460,6 +642,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_source_kind(SourceKind self, SseSerializer serializer);
 
   @protected
+  void sse_encode_transfer_status_dto(
+    TransferStatusDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_u_16(int self, SseSerializer serializer);
+
+  @protected
   void sse_encode_u_32(int self, SseSerializer serializer);
 
   @protected
@@ -473,6 +664,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_usize(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_web_rtc_event(WebRtcEvent self, SseSerializer serializer);
 }
 
 // Section: wire_class

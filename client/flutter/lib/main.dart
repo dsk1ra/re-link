@@ -15,20 +15,14 @@ Future<void> main() async {
   if (shouldResetPrefs) {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
-    debugPrint('Preferences cleared. Welcome screen will show on next launch.');
   }
-  Logger.root.level = Level.INFO;
+  Logger.root.level = Level.WARNING;
   Logger.root.onRecord.listen((record) {
-    debugPrint(
-      '${record.level.name}: ${record.time.toIso8601String()} '
-      '${record.loggerName}: ${record.message}',
-    );
-    if (record.error != null) {
-      debugPrint('Error: ${record.error}');
-    }
-    if (record.stackTrace != null) {
-      debugPrint(record.stackTrace.toString());
-    }
+    final loggerName = record.loggerName;
+    final prefix = loggerName.isEmpty
+        ? record.level.name
+        : '${record.level.name}: $loggerName';
+    debugPrint('$prefix: ${record.message}');
   });
   await RustLib.init();
   runApp(const MyApp());

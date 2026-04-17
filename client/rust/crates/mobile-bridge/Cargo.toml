@@ -15,8 +15,12 @@ tokio = { workspace = true, features = ["full"] }
 webrtc = { workspace = true }
 hex = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 rand = { workspace = true }
 once_cell = "1.21.3"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Com"] }

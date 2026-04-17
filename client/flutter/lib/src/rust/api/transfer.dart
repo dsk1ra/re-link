@@ -6,6 +6,29 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+Future<void> upsertConnection({
+  required String connectionId,
+  required ArcRtcPeerConnection pc,
+}) => RustLib.instance.api.crateApiTransferUpsertConnection(
+  connectionId: connectionId,
+  pc: pc,
+);
+
+Future<void> setDataChannel({
+  required String connectionId,
+  required String label,
+  required ArcRtcDataChannel dc,
+}) => RustLib.instance.api.crateApiTransferSetDataChannel(
+  connectionId: connectionId,
+  label: label,
+  dc: dc,
+);
+
+Future<void> removeConnection({required String connectionId}) => RustLib
+    .instance
+    .api
+    .crateApiTransferRemoveConnection(connectionId: connectionId);
+
 void startFileTransfer({
   required String connectionId,
   required String filePath,

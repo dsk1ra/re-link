@@ -42,6 +42,15 @@ impl CaptureProvider for WindowsCaptureAdapter {
         *guard = Some(source_id.to_string());
         Ok(())
     }
+
+    fn stop_capture(&self) -> anyhow::Result<()> {
+        let mut guard = self
+            .active_source
+            .lock()
+            .map_err(|_| anyhow::anyhow!("capture adapter state lock poisoned"))?;
+        *guard = None;
+        Ok(())
+    }
 }
 
 fn initialize_apartment() -> WinResult<()> {

@@ -119,6 +119,13 @@ pub fn start_share(
     })
 }
 
+#[flutter_rust_bridge::frb(sync)]
+pub fn stop_share(_connection_id: String) -> anyhow::Result<()> {
+    init()?;
+    let provider = get_provider()?;
+    provider.stop_capture()
+}
+
 fn get_provider() -> anyhow::Result<Arc<dyn CaptureProvider>> {
     let guard = CAPTURE_PROVIDER
         .lock()

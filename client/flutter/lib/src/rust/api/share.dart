@@ -24,6 +24,9 @@ ShareStartResult startShare({
   config: config,
 );
 
+void stopShare({required String connectionId}) =>
+    RustLib.instance.api.crateApiShareStopShare(connectionId: connectionId);
+
 enum BitratePreset { low, medium, high }
 
 class ShareConfig {
