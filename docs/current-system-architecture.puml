@@ -1,0 +1,89 @@
+@startuml
+title ReLink Current System Architecture
+
+left to right direction
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+actor "Initiator\nClient A" as ClientA
+actor "Receiver\nClient B" as ClientB
+cloud "Out-of-band share\nQR code / deep link" as OOB
+cloud "Public Internet / NAT" as Net
+cloud "coturn\nSTUN only\n:3478" as Stun
+
+rectangle "Client Device A" {
+  component "Flutter UI\nInitiatorPage" as InitiatorUi
+  component "ConnectionService" as ConnSvcA
+  component "WebRTCManager" as WebRtcA
+  component "Local Crypto\nFRB + shared::connection" as CryptoA
+}
+
+rectangle "Client Device B" {
+  component "Flutter UI\nResponderPage" as ResponderUi
+  component "ConnectionService" as ConnSvcB
+  component "WebRTCManager" as WebRtcB
+  component "Local Crypto\nFRB + shared::connection" as CryptoB
+}
+
+node "Edge / Server Infrastructure" {
+  component "Caddy Edge Gateway\nHTTPS + WSS reverse proxy" as Caddy
+
+  node "Rust Signaling Server" {
+    component "Axum Router + Handlers\n/connection/init\n/connection/join\n/connection/send\n/connection/recv\n/connection/close\n/ws/:mailbox_id" as Axum
+    component "RendezvousService" as Rendezvous
+    component "PushHub\nin-memory mailbox fan-out" as PushHub
+  }
+
+  database "Redis\nsig:rendezvous:{token}\nsig:mailbox_meta:{id}\nsig:mailbox_msgs:{id}" as Redis
+}
+
+ClientA --> InitiatorUi
+ClientB --> ResponderUi
+
+InitiatorUi --> ConnSvcA
+InitiatorUi --> WebRtcA
+InitiatorUi --> CryptoA
+
+ResponderUi --> ConnSvcB
+ResponderUi --> WebRtcB
+ResponderUi --> CryptoB
+
+InitiatorUi --> OOB : share link
+OOB --> ResponderUi : token + secret
+
+ConnSvcA --> Caddy : HTTPS / WSS
+ConnSvcB --> Caddy : HTTPS / WSS
+Caddy --> Axum : reverse proxy
+
+Axum --> Rendezvous : init / join / send / close
+Axum --> PushHub : WS subscribe + notify
+Rendezvous --> Redis : TTL-backed reads / writes
+
+PushHub --> Axum : broadcast mailbox events
+Axum --> ConnSvcA : WS push + history sync
+Axum --> ConnSvcB : WS push + history sync
+
+WebRtcA --> Stun : ICE candidate gathering
+WebRtcB --> Stun : ICE candidate gathering
+WebRtcA <--> WebRtcB : DTLS / SRTP / SCTP\nDirect P2P session
+
+note bottom of Axum
+Current active flow is blind rendezvous.
+`POST /connection/init` goes directly to
+`RendezvousService::init_connection`.
+No session verification is performed in this path.
+end note
+
+note bottom of Stun
+`docker-compose.yml` starts coturn with `--stun-only`.
+No TURN relay is configured in the default stack.
+end note
+
+note bottom of PushHub
+Mailbox subscriptions use `GET /ws/:mailbox_id`.
+`ConnectionService.subscribeMailbox()` also calls
+`POST /connection/recv` to backfill missed messages.
+end note
+
+@enduml

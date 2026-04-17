@@ -1,0 +1,153 @@
+@startuml
+title ReLink Initial Connection Flow
+
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+actor "Initiator\nClient A" as A
+participant "A Local Crypto\nconnection_init_local\nconnection_encrypt" as ACrypto
+participant "Caddy\nHTTPS / WSS edge" as Caddy
+participant "Axum Router\nhandlers + WS endpoint" as Axum
+participant "RendezvousService" as Rendezvous
+database "Redis" as Redis
+participant "PushHub" as PushHub
+actor "Receiver\nClient B" as B
+participant "B Local Crypto\nconnection_derive_keys\nconnection_encrypt/decrypt" as BCrypto
+participant "WebRTC A" as WebRtcA
+participant "WebRTC B" as WebRtcB
+participant "STUN\ncoturn --stun-only" as Stun
+
+== Phase 1: Link Provisioning ==
+
+A -> ACrypto : Generate `rendezvous_id` + `secret`\nDerive `kSig`, `kMac`, `sas`
+A -> Caddy : `POST /connection/init`\n`{ rendezvous_id_b64 }`
+Caddy -> Axum : Reverse proxy request
+Axum -> Rendezvous : `init_connection(rendezvous_id_b64)`
+Rendezvous -> Redis : `SETEX sig:mailbox_meta:mailboxA`\n`DEL sig:mailbox_msgs:mailboxA`
+Rendezvous -> Redis : `SETEX sig:rendezvous:{token} -> mailboxA`
+Rendezvous --> Axum : `mailboxA`, `expires_at_epoch_ms`
+Axum --> Caddy : `200 OK`
+Caddy --> A : `mailboxA`, `expires_at_epoch_ms`
+
+A -> Caddy : `GET /ws/:mailboxA` (upgrade)
+Caddy -> Axum : Reverse proxy WS upgrade
+Axum -> PushHub : subscribe `mailboxA`
+
+A -> B : Share deep link out-of-band\n`/connection/join?token=<rendezvous_id>#<secret>`
+
+== Phase 2: Join + Pairing ==
+
+B -> BCrypto : Parse secret from URL fragment\nDerive `kSig`, `kMac`, `sas`
+B -> Caddy : `POST /connection/join`\n`{ token_b64 }`
+Caddy -> Axum : Reverse proxy request
+Axum -> Rendezvous : `join_connection(token_b64)`
+Rendezvous -> Redis : `GET sig:rendezvous:{token}`\nthen `DEL`
+Rendezvous -> Redis : `GET sig:mailbox_meta:mailboxA`
+Rendezvous -> Redis : Update `mailboxA.peer_mailbox_id = mailboxB`
+Rendezvous -> Redis : `SETEX sig:mailbox_meta:mailboxB`
+Rendezvous -> Redis : `RPUSH sig:mailbox_msgs:mailboxA`\njoin marker `{from_mailbox_id: mailboxB, ciphertext_b64: ""}`
+Rendezvous --> Axum : `mailboxB`, `expires_at`, join marker
+Axum -> PushHub : notify `mailboxA`
+PushHub --> Axum : broadcast mailboxA event
+Axum --> A : WS push join marker
+
+note right of A
+The blank `ciphertext_b64` join marker is what triggers
+the "Incoming Connection" / "Accept" dialog in `InitiatorPage`.
+end note
+
+B -> Caddy : `GET /ws/:mailboxB` (upgrade)
+Caddy -> Axum : Reverse proxy WS upgrade
+Axum -> PushHub : subscribe `mailboxB`
+
+B -> BCrypto : Encrypt `connect_request`
+B -> Caddy : `POST /connection/send`\n`{ mailbox_id: mailboxB, ciphertext_b64 }`
+Caddy -> Axum : Reverse proxy request
+Axum -> Rendezvous : `send_message(mailboxB, ciphertext)`
+Rendezvous -> Redis : `RPUSH sig:mailbox_msgs:mailboxA`
+Axum -> PushHub : notify `mailboxA`
+PushHub --> Axum : broadcast mailboxA event
+Axum --> A : WS push encrypted `connect_request`
+
+note right of A
+`_handleIncomingSignal()` only handles `answer`, `ice`,
+and `disconnect`, so this encrypted `connect_request`
+is effectively ignored by the initiator parser.
+end note
+
+== Phase 3: SDP Exchange ==
+
+A -> WebRtcA : User accepts dialog\nInitialize peer connection\nCreate SDP offer
+WebRtcA -> ACrypto : Encrypt offer
+A -> Caddy : `POST /connection/send`\n`mailboxA + encrypted offer`
+Caddy -> Axum : Reverse proxy request
+Axum -> Rendezvous : `send_message(mailboxA, offer)`
+Rendezvous -> Redis : `RPUSH sig:mailbox_msgs:mailboxB`
+Axum -> PushHub : notify `mailboxB`
+PushHub --> Axum : broadcast mailboxB event
+Axum --> B : WS push encrypted offer
+
+B -> BCrypto : Decrypt offer
+BCrypto --> B : JSON signaling payload
+B -> WebRtcB : `setRemoteDescription(offer)`\nCreate SDP answer
+WebRtcB -> BCrypto : Encrypt answer
+B -> Caddy : `POST /connection/send`\n`mailboxB + encrypted answer`
+Caddy -> Axum : Reverse proxy request
+Axum -> Rendezvous : `send_message(mailboxB, answer)`
+Rendezvous -> Redis : `RPUSH sig:mailbox_msgs:mailboxA`
+Axum -> PushHub : notify `mailboxA`
+PushHub --> Axum : broadcast mailboxA event
+Axum --> A : WS push encrypted answer
+
+A -> ACrypto : Decrypt answer
+ACrypto --> A : JSON signaling payload
+A -> WebRtcA : `setRemoteAnswer(answer)`
+
+== Phase 4: ICE + Transport Establishment ==
+
+par Initiator ICE
+  WebRtcA -> Stun : STUN binding requests
+  Stun --> WebRtcA : server-reflexive candidates
+  WebRtcA -> ACrypto : Encrypt trickle ICE
+  A -> Caddy : `POST /connection/send`\n`mailboxA + encrypted ice`
+  Caddy -> Axum : Reverse proxy request
+  Axum -> Rendezvous : `send_message(mailboxA, ice)`
+  Rendezvous -> Redis : `RPUSH sig:mailbox_msgs:mailboxB`
+  Axum -> PushHub : notify `mailboxB`
+  PushHub --> Axum : broadcast mailboxB event
+  Axum --> B : WS push encrypted ICE
+  B -> BCrypto : Decrypt ICE
+  B -> WebRtcB : `addIceCandidate(...)`
+else Receiver ICE
+  WebRtcB -> Stun : STUN binding requests
+  Stun --> WebRtcB : server-reflexive candidates
+  WebRtcB -> BCrypto : Encrypt trickle ICE
+  B -> Caddy : `POST /connection/send`\n`mailboxB + encrypted ice`
+  Caddy -> Axum : Reverse proxy request
+  Axum -> Rendezvous : `send_message(mailboxB, ice)`
+  Rendezvous -> Redis : `RPUSH sig:mailbox_msgs:mailboxA`
+  Axum -> PushHub : notify `mailboxA`
+  PushHub --> Axum : broadcast mailboxA event
+  Axum --> A : WS push encrypted ICE
+  A -> ACrypto : Decrypt ICE
+  A -> WebRtcA : `addIceCandidate(...)`
+end
+
+WebRtcA <-> WebRtcB : DTLS handshake\nSRTP / SCTP setup
+WebRtcA <-> WebRtcB : Direct P2P channels established
+
+note over A,B
+After `RTCPeerConnectionStateConnected`, both pages call
+`_closeSignalingAfterConnect()`, close mailbox signaling,
+and move late control / ICE over the direct WebRTC data channels.
+end note
+
+note over A,Axum
+`ConnectionService.subscribeMailbox()` also performs
+`POST /connection/recv` after WS connect to backfill missed messages.
+That recovery path exists in the current implementation but is not
+the primary happy-path signal carrier shown above.
+end note
+
+@enduml
