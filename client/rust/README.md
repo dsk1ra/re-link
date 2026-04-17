@@ -9,4 +9,4 @@ Source of truth:
 
 ## Build
 
-`cargo build --manifest-path crates/mobile-bridge/Cargo.toml`
+`cargo build --manifest-path crates/mobile-bridge/Cargo.toml --release`

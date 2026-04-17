@@ -21,10 +21,10 @@ log "Fetching Flutter dependencies"
     flutter pub get
 )
 
-log "Checking the Rust bridge workspace"
+log "Building the Rust bridge library used by the desktop FRB loader"
 (
     cd "${PROJECT_ROOT}/client/rust"
-    cargo check --manifest-path crates/mobile-bridge/Cargo.toml
+    cargo build --manifest-path crates/mobile-bridge/Cargo.toml --release
 )
 
 log "Launching the Flutter Windows app in debug mode"

@@ -29,6 +29,12 @@ log "Running Rust checks for the client workspace"
     cargo test --workspace
 )
 
+log "Building the Rust bridge library used by the desktop FRB loader"
+(
+    cd "${PROJECT_ROOT}/client/rust"
+    cargo build --manifest-path crates/mobile-bridge/Cargo.toml --release
+)
+
 log "Running Rust checks for the shared crate"
 (
     cd "${PROJECT_ROOT}/shared/rust/shared"
