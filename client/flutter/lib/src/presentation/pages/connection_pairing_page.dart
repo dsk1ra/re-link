@@ -114,14 +114,16 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
       return null;
     }
 
-    final parsed = settings.getIceServers();
-    if (parsed == null || parsed.isEmpty) {
-      return null;
-    }
+    final parsed = settings.resolveIceServersForSignalingDomain(
+      widget.signalingBaseUrl,
+    );
 
     // Deep copy to avoid accidental mutation across pages.
     return parsed
-        .map((server) => Map<String, dynamic>.from(jsonDecode(jsonEncode(server)) as Map))
+        .map(
+          (server) =>
+              Map<String, dynamic>.from(jsonDecode(jsonEncode(server)) as Map),
+        )
         .toList();
   }
 

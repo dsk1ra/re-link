@@ -20,13 +20,22 @@ class WelcomeScreen extends StatefulWidget {
 class _WelcomeScreenState extends State<WelcomeScreen> {
   late TextEditingController _domainController;
   late TextEditingController _iceServersController;
+  late bool _useDefaultIceForDomain;
 
   @override
   void initState() {
     super.initState();
-    _domainController = TextEditingController();
+    final savedDomain = widget.settings.getDomain() ?? '';
+    final savedIceServersJson = widget.settings.getIceServersJson();
+
+    _useDefaultIceForDomain =
+        savedIceServersJson == null || savedIceServersJson.trim().isEmpty;
+
+    _domainController = TextEditingController(text: savedDomain);
     _iceServersController = TextEditingController(
-      text: widget.settings.getIceServersJson() ?? '',
+      text: _useDefaultIceForDomain && savedDomain.isNotEmpty
+          ? widget.settings.defaultIceServersJsonForSignalingDomain(savedDomain)
+          : (savedIceServersJson ?? ''),
     );
   }
 
@@ -46,7 +55,11 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
     try {
       await widget.settings.setDomain(domain);
-      await widget.settings.setIceServersJson(_iceServersController.text);
+      if (_useDefaultIceForDomain) {
+        await widget.settings.setIceServersJson('');
+      } else {
+        await widget.settings.setIceServersJson(_iceServersController.text);
+      }
       await widget.settings.markWelcomeSeen();
       if (mounted) {
         widget.onDomainConfigured(widget.settings.getDomain() ?? domain);
@@ -59,6 +72,27 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: AppColors.error),
+    );
+  }
+
+  String _defaultIceServersJsonForCurrentDomain() {
+    final domain = _domainController.text.trim();
+    if (domain.isEmpty) {
+      return '';
+    }
+
+    return widget.settings.defaultIceServersJsonForSignalingDomain(domain);
+  }
+
+  void _syncDefaultIceServersFromDomain() {
+    if (!_useDefaultIceForDomain) {
+      return;
+    }
+
+    final nextValue = _defaultIceServersJsonForCurrentDomain();
+    _iceServersController.value = TextEditingValue(
+      text: nextValue,
+      selection: TextSelection.collapsed(offset: nextValue.length),
     );
   }
 
@@ -151,7 +185,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                 vertical: 10,
                               ),
                             ),
-                            onChanged: (_) => setState(() {}),
+                            onChanged: (_) {
+                              setState(_syncDefaultIceServersFromDomain);
+                            },
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -163,7 +199,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            'Optional ICE Servers (JSON)',
+                            'ICE Servers (STUN/TURN JSON)',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.textPrimary,
@@ -171,14 +207,46 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                             ),
                           ),
                           const SizedBox(height: 8),
+                          SwitchListTile.adaptive(
+                            value: _useDefaultIceForDomain,
+                            contentPadding: EdgeInsets.zero,
+                            activeColor: AppColors.primary,
+                            title: const Text(
+                              'Use default STUN from server domain',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              _defaultIceServersJsonForCurrentDomain().isEmpty
+                                  ? 'Enter server address to preview default STUN JSON'
+                                  : _defaultIceServersJsonForCurrentDomain(),
+                              style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 11,
+                              ),
+                            ),
+                            onChanged: (value) {
+                              setState(() {
+                                _useDefaultIceForDomain = value;
+                                if (_useDefaultIceForDomain) {
+                                  _syncDefaultIceServersFromDomain();
+                                }
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 8),
                           TextField(
                             controller: _iceServersController,
                             maxLines: 4,
+                            enabled: !_useDefaultIceForDomain,
                             cursorColor: AppColors.primary,
                             style: const TextStyle(color: AppColors.textMuted),
                             decoration: InputDecoration(
                               hintText:
-                                  '[{"urls":"stun:stun.l.google.com:19302"},{"urls":["turn:turn.example.com:3478?transport=udp"],"username":"user","credential":"pass"}]',
+                                  '[{"urls":"stun:your-domain-or-ip:3478"},{"urls":["turn:turn.example.com:3478?transport=udp"],"username":"user","credential":"pass"}]',
                               hintStyle: const TextStyle(
                                 color: AppColors.textMuted,
                               ),
@@ -206,7 +274,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                 vertical: 10,
                               ),
                             ),
-                            onChanged: (_) => setState(() {}),
+                            onChanged: (_) => setState(() {
+                              _useDefaultIceForDomain = false;
+                            }),
                           ),
                         ],
                       ),

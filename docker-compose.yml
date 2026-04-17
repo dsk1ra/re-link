@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   server:
     build:
@@ -53,6 +51,33 @@ services:
       - internal
       - external
     restart: unless-stopped
+
+  coturn:
+    image: coturn/coturn:latest
+    container_name: ${PROJECT_NAME:-relink}_coturn
+    network_mode: "host"
+    environment:
+      - COTURN_STUN_PORT=${COTURN_STUN_PORT:-3478}
+      - COTURN_TLS_ENABLED=${COTURN_TLS_ENABLED:-false}
+      - COTURN_TLS_PORT=${COTURN_TLS_PORT:-5349}
+      - COTURN_REALM=${COTURN_REALM:-${DOMAIN:-localhost}}
+    volumes:
+      - ${COTURN_CERTS_DIR:-./certs}:/etc/coturn/certs:ro
+    restart: unless-stopped
+    command: >
+      sh -c '
+      TLS_FLAGS="--no-tls --no-dtls";
+      if [ "$$COTURN_TLS_ENABLED" = "true" ] || [ "$$COTURN_TLS_ENABLED" = "1" ] || [ "$$COTURN_TLS_ENABLED" = "yes" ]; then
+        TLS_FLAGS="--tls-listening-port $$COTURN_TLS_PORT --cert /etc/coturn/certs/cert.crt --pkey /etc/coturn/certs/priv.key";
+      fi;
+      exec turnserver
+      --stun-only
+      --no-auth
+      --realm $$COTURN_REALM
+      --listening-ip 0.0.0.0
+      --listening-port $$COTURN_STUN_PORT
+      $$TLS_FLAGS
+      '
 
 networks:
   internal:

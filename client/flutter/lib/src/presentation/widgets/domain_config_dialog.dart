@@ -20,15 +20,22 @@ class DomainConfigDialog extends StatefulWidget {
 class _DomainConfigDialogState extends State<DomainConfigDialog> {
   late TextEditingController _controller;
   late TextEditingController _iceServersController;
+  late bool _useDefaultIceForDomain;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(
-      text: widget.settings.getDomain() ?? '',
-    );
+    final savedDomain = widget.settings.getDomain() ?? '';
+    final savedIceServersJson = widget.settings.getIceServersJson();
+
+    _useDefaultIceForDomain =
+        savedIceServersJson == null || savedIceServersJson.trim().isEmpty;
+
+    _controller = TextEditingController(text: savedDomain);
     _iceServersController = TextEditingController(
-      text: widget.settings.getIceServersJson() ?? '',
+      text: _useDefaultIceForDomain && savedDomain.isNotEmpty
+          ? widget.settings.defaultIceServersJsonForSignalingDomain(savedDomain)
+          : (savedIceServersJson ?? ''),
     );
   }
 
@@ -48,7 +55,11 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
 
     try {
       await widget.settings.setDomain(domain);
-      await widget.settings.setIceServersJson(_iceServersController.text);
+      if (_useDefaultIceForDomain) {
+        await widget.settings.setIceServersJson('');
+      } else {
+        await widget.settings.setIceServersJson(_iceServersController.text);
+      }
       if (mounted) {
         final updatedDomain = widget.settings.getDomain() ?? domain;
         Navigator.pop(context, updatedDomain);
@@ -62,6 +73,27 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: AppColors.error),
+    );
+  }
+
+  String _defaultIceServersJsonForCurrentDomain() {
+    final domain = _controller.text.trim();
+    if (domain.isEmpty) {
+      return '';
+    }
+
+    return widget.settings.defaultIceServersJsonForSignalingDomain(domain);
+  }
+
+  void _syncDefaultIceServersFromDomain() {
+    if (!_useDefaultIceForDomain) {
+      return;
+    }
+
+    final nextValue = _defaultIceServersJsonForCurrentDomain();
+    _iceServersController.value = TextEditingValue(
+      text: nextValue,
+      selection: TextSelection.collapsed(offset: nextValue.length),
     );
   }
 
@@ -110,6 +142,9 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
                   vertical: 10,
                 ),
               ),
+              onChanged: (_) {
+                setState(_syncDefaultIceServersFromDomain);
+              },
               autofocus: true,
             ),
             const SizedBox(height: 12),
@@ -122,18 +157,46 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Optional: ICE servers JSON (STUN/TURN)',
+              'ICE servers (STUN/TURN JSON)',
               style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile.adaptive(
+              value: _useDefaultIceForDomain,
+              contentPadding: EdgeInsets.zero,
+              activeColor: AppColors.primary,
+              title: const Text(
+                'Use default STUN from server domain',
+                style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
+              ),
+              subtitle: Text(
+                _defaultIceServersJsonForCurrentDomain().isEmpty
+                    ? 'Enter server address to preview default STUN JSON'
+                    : _defaultIceServersJsonForCurrentDomain(),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textMuted,
+                ),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _useDefaultIceForDomain = value;
+                  if (_useDefaultIceForDomain) {
+                    _syncDefaultIceServersFromDomain();
+                  }
+                });
+              },
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _iceServersController,
               maxLines: 5,
+              enabled: !_useDefaultIceForDomain,
               cursorColor: AppColors.primary,
               style: const TextStyle(color: AppColors.textMuted),
               decoration: InputDecoration(
                 hintText:
-                    '[{"urls":"stun:stun.l.google.com:19302"},{"urls":["turn:turn.example.com:3478?transport=udp"],"username":"user","credential":"pass"}]',
+                    '[{"urls":"stun:your-domain-or-ip:3478"},{"urls":["turn:turn.example.com:3478?transport=udp"],"username":"user","credential":"pass"}]',
                 hintStyle: const TextStyle(color: AppColors.textMuted),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -155,6 +218,9 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
                   vertical: 10,
                 ),
               ),
+              onChanged: (_) => setState(() {
+                _useDefaultIceForDomain = false;
+              }),
             ),
           ],
         ),

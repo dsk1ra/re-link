@@ -115,17 +115,13 @@ class WebRTCManager {
 
   Future<void> initialize() async {
     _log.info('WebRTC: Initializing...');
-    final iceServers =
-      (_iceServers?.isNotEmpty ?? false)
-      ? _iceServers
-      : [
-        {'urls': 'stun:stun.l.google.com:19302'},
-        ];
+    final iceServers = (_iceServers?.isNotEmpty ?? false)
+        ? _iceServers
+        : [
+            {'urls': 'stun:localhost:3478'},
+          ];
 
-    final config = {
-      'iceServers': iceServers,
-      'sdpSemantics': 'unified-plan',
-    };
+    final config = {'iceServers': iceServers, 'sdpSemantics': 'unified-plan'};
 
     _log.info('WebRTC: Calling createPeerConnection...');
     _peerConnection = await createPeerConnection(config);
@@ -440,8 +436,7 @@ class WebRTCManager {
 
   Future<void> _waitForFileChannelOpen() async {
     if (_fileTransferChannel == null) return;
-    if (_fileTransferChannel!.state ==
-        RTCDataChannelState.RTCDataChannelOpen) {
+    if (_fileTransferChannel!.state == RTCDataChannelState.RTCDataChannelOpen) {
       return;
     }
 
@@ -604,8 +599,7 @@ class WebRTCManager {
                 rtt;
           }
           if (report.type == 'outbound-rtp' &&
-              (values['mediaType'] == 'video' ||
-                  values['kind'] == 'video')) {
+              (values['mediaType'] == 'video' || values['kind'] == 'video')) {
             limitReason =
                 (values['qualityLimitationReason'] as String?) ?? limitReason;
           }

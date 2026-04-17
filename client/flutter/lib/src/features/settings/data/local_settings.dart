@@ -7,6 +7,7 @@ class LocalSettings {
   static const String _keyDomain = 'signaling_domain';
   static const String _keyIceServersJson = 'webrtc_ice_servers_json';
   static const String _keyWelcomeShown = 'welcome_shown';
+  static const int _defaultStunPort = 3478;
 
   final SharedPreferences _prefs;
 
@@ -32,7 +33,7 @@ class LocalSettings {
   ///
   /// Expected format:
   /// [
-  ///   {"urls": "stun:stun.l.google.com:19302"},
+  ///   {"urls": "stun:your-domain-or-ip:3478"},
   ///   {
   ///     "urls": ["turn:turn.example.com:3478?transport=udp"],
   ///     "username": "user",
@@ -50,6 +51,51 @@ class LocalSettings {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Build default STUN URL from the configured signaling domain.
+  String defaultStunUrlForSignalingDomain(String signalingDomain) {
+    final normalized = signalingDomain.trim();
+    if (normalized.isEmpty) {
+      return 'stun:localhost:$_defaultStunPort';
+    }
+
+    final withScheme =
+        normalized.startsWith('http://') || normalized.startsWith('https://')
+        ? normalized
+        : 'https://$normalized';
+
+    final uri = Uri.tryParse(withScheme);
+    final fallbackHost = normalized
+        .replaceFirst(RegExp(r'^https?://'), '')
+        .split('/')
+        .first
+        .split(':')
+        .first;
+    final host = (uri != null && uri.host.isNotEmpty) ? uri.host : fallbackHost;
+
+    return 'stun:$host:$_defaultStunPort';
+  }
+
+  /// Build default ICE JSON from signaling domain.
+  String defaultIceServersJsonForSignalingDomain(String signalingDomain) {
+    return jsonEncode([
+      {'urls': defaultStunUrlForSignalingDomain(signalingDomain)},
+    ]);
+  }
+
+  /// Return user-custom ICE config when present; otherwise return domain default.
+  List<Map<String, dynamic>> resolveIceServersForSignalingDomain(
+    String signalingDomain,
+  ) {
+    final custom = getIceServers();
+    if (custom != null && custom.isNotEmpty) {
+      return custom;
+    }
+
+    return [
+      {'urls': defaultStunUrlForSignalingDomain(signalingDomain)},
+    ];
   }
 
   /// Save ICE servers as JSON; pass empty text to clear custom config.
@@ -112,7 +158,10 @@ class LocalSettings {
       return rawUrls;
     }
     if (rawUrls is List) {
-      final urls = rawUrls.whereType<String>().where((u) => u.isNotEmpty).toList();
+      final urls = rawUrls
+          .whereType<String>()
+          .where((u) => u.isNotEmpty)
+          .toList();
       if (urls.isEmpty) {
         return null;
       }
