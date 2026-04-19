@@ -94,8 +94,9 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
 
   void _navigateToResponder() {
     if (!_serverReachable) {
-      _showSnackBar('Not connected to server');
-      return;
+      _showSnackBar(
+        'Configured server is unreachable. Paste a full invite link to use its server URL.',
+      );
     }
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -196,13 +197,14 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                   required String title,
                   required String subtitle,
                   required VoidCallback onTap,
+                  required bool enabled,
                 }) {
                   return AppCard(
                     variant: connected
                         ? AppCardVariant.normal
                         : AppCardVariant.warning,
                     child: InkWell(
-                      onTap: connected ? onTap : null,
+                      onTap: enabled ? onTap : null,
                       borderRadius: BorderRadius.circular(_cardBorderRadius),
                       child: Padding(
                         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -238,6 +240,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                               title: 'Create Connection',
                               subtitle: 'Generate a link to share',
                               onTap: _navigateToInitiator,
+                              enabled: connected,
                             ),
                           ),
                           const SizedBox(width: AppSpacing.base),
@@ -246,6 +249,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                               title: 'Join Connection',
                               subtitle: 'Use a shared link',
                               onTap: _navigateToResponder,
+                              enabled: true,
                             ),
                           ),
                         ],
@@ -256,12 +260,14 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                             title: 'Create Connection',
                             subtitle: 'Generate a link to share',
                             onTap: _navigateToInitiator,
+                            enabled: connected,
                           ),
                           const SizedBox(height: AppSpacing.base),
                           buildActionCard(
                             title: 'Join Connection',
                             subtitle: 'Use a shared link',
                             onTap: _navigateToResponder,
+                            enabled: true,
                           ),
                         ],
                       );

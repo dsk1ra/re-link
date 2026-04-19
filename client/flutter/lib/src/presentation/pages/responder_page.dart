@@ -61,6 +61,7 @@ class _ResponderPageState extends State<ResponderPage> {
   static const Duration _handshakeTimeout = Duration(seconds: 12);
 
   late ConnectionService _connectionService;
+  late String _activeSignalingBaseUrl;
   WebRTCManager? _webrtcManager;
   FileTransferService? _fileTransferService;
   StreamSubscription<FileTransferState>? _fileTransferStateSubscription;
@@ -88,8 +89,9 @@ class _ResponderPageState extends State<ResponderPage> {
   @override
   void initState() {
     super.initState();
+    _activeSignalingBaseUrl = widget.signalingBaseUrl;
     _connectionService = ConnectionService(
-      signalingBaseUrl: widget.signalingBaseUrl,
+      signalingBaseUrl: _activeSignalingBaseUrl,
     );
     _sessionControlProtocol = SessionControlProtocol(
       log: _log,
@@ -313,6 +315,7 @@ class _ResponderPageState extends State<ResponderPage> {
 
     String token = input;
     String? secret;
+    String? signalingBaseUrlFromLink;
 
     try {
       final uri = Uri.parse(input);
@@ -323,7 +326,17 @@ class _ResponderPageState extends State<ResponderPage> {
       if (uri.hasFragment && uri.fragment.isNotEmpty) {
         secret = uri.fragment;
       }
+      signalingBaseUrlFromLink = _extractSignalingBaseUrlFromJoinUri(uri);
     } catch (_) {}
+
+    if (signalingBaseUrlFromLink != null &&
+        signalingBaseUrlFromLink != _activeSignalingBaseUrl) {
+      _connectionService.dispose();
+      _activeSignalingBaseUrl = signalingBaseUrlFromLink;
+      _connectionService = ConnectionService(
+        signalingBaseUrl: _activeSignalingBaseUrl,
+      );
+    }
 
     // If we have no secret, we cannot derive keys for E2EE
     if (secret == null) {
@@ -378,6 +391,31 @@ class _ResponderPageState extends State<ResponderPage> {
         _joinError = e.toString();
       });
     }
+  }
+
+  String? _extractSignalingBaseUrlFromJoinUri(Uri uri) {
+    if (!uri.hasScheme || uri.host.isEmpty) {
+      return null;
+    }
+
+    final origin =
+        '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
+    const joinPathSuffix = '/connection/join';
+    final path = uri.path;
+
+    if (path.endsWith(joinPathSuffix)) {
+      final basePath = path.substring(0, path.length - joinPathSuffix.length);
+      if (basePath.isEmpty || basePath == '/') {
+        return origin;
+      }
+      return '$origin$basePath';
+    }
+
+    if (path.isEmpty || path == '/') {
+      return origin;
+    }
+
+    return '$origin$path';
   }
 
   void _startListeningForSignals() {
