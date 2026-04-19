@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
 
 /// Initialize a connection link (Client A)
-/// Returns a mailbox ID and generates a rendezvous token
+/// Returns the rendezvous token, shared secret, and derived pairing material
 ConnectionInitLocalResult connectionInitLocal() =>
     RustLib.instance.api.crateApiConnectionConnectionInitLocal();
 
@@ -50,29 +50,20 @@ Uint8List connectionDecrypt({
 
 class ConnectionInitLocalResult {
   final String rendezvousId;
-  final String mailboxId;
   final String secret;
   final String kSig;
-  final String kMac;
   final String sas;
 
   const ConnectionInitLocalResult({
     required this.rendezvousId,
-    required this.mailboxId,
     required this.secret,
     required this.kSig,
-    required this.kMac,
     required this.sas,
   });
 
   @override
   int get hashCode =>
-      rendezvousId.hashCode ^
-      mailboxId.hashCode ^
-      secret.hashCode ^
-      kSig.hashCode ^
-      kMac.hashCode ^
-      sas.hashCode;
+      rendezvousId.hashCode ^ secret.hashCode ^ kSig.hashCode ^ sas.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -80,9 +71,7 @@ class ConnectionInitLocalResult {
       other is ConnectionInitLocalResult &&
           runtimeType == other.runtimeType &&
           rendezvousId == other.rendezvousId &&
-          mailboxId == other.mailboxId &&
           secret == other.secret &&
           kSig == other.kSig &&
-          kMac == other.kMac &&
           sas == other.sas;
 }

@@ -9,6 +9,7 @@ import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/features/pairing/domain/signaling_message.dart';
 import 'package:application/src/features/file_transfer/file_transfer_service.dart';
+import 'package:application/src/features/pairing/domain/pairing_code.dart';
 import 'package:application/src/features/session/application/serial_task_queue.dart';
 import 'package:application/src/features/session/application/session_control_protocol.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
@@ -83,11 +84,11 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
   ConnectionInitResult? _initiatorResult;
   String? _connectionLink;
+  String? _verificationCode;
   String? _initiatorServerMailboxId;
   bool _generatingLink = false;
   bool _waitingForPeer = false;
-
-  String? _incomingRequestFrom;
+  bool _hasIncomingRequest = false;
   bool _peerAccepted = false;
   bool _isPeerDisconnected = false;
   StreamSubscription? _mailboxSubscription;
@@ -245,7 +246,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
         _webrtcState = null;
         _peerAccepted = false;
         _waitingForPeer = false;
-        _incomingRequestFrom = null;
+        _hasIncomingRequest = false;
       });
 
       if (isRecoverableRendezvousError) {
@@ -489,6 +490,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
         initResult.rendezvousId,
         initResult.secret,
       );
+      final verificationCode = formatPairingCode(initResult.sas);
 
       final initResp = await _connectionService.sendConnectionInit(
         rendezvousId: initResult.rendezvousId,
@@ -497,22 +499,23 @@ class _InitiatorPageState extends State<InitiatorPage> {
       final expiresAtEpochMs = (initResp['expires_at_epoch_ms'] as num?)
           ?.toInt();
 
-      if (serverMailboxId != null) {
-        _initiatorServerMailboxId = serverMailboxId;
-        _startListeningForPeer(serverMailboxId);
-      }
-
       setState(() {
         _initiatorResult = initResult;
         _connectionLink = link;
+        _verificationCode = verificationCode;
         _generatingLink = false;
         _waitingForPeer = serverMailboxId != null;
         _peerAccepted = false;
-        _incomingRequestFrom = null;
+        _hasIncomingRequest = false;
         _mailboxExpiresAtEpochMs = expiresAtEpochMs;
         _mailboxTimeRemaining = _remainingFromEpochMs(expiresAtEpochMs);
         _mailboxInitialTtl = _remainingFromEpochMs(expiresAtEpochMs);
       });
+
+      if (serverMailboxId != null) {
+        _initiatorServerMailboxId = serverMailboxId;
+        _startListeningForPeer(serverMailboxId);
+      }
 
       _startMailboxCountdown();
 
@@ -524,7 +527,10 @@ class _InitiatorPageState extends State<InitiatorPage> {
         } catch (_) {}
       }
     } catch (e) {
-      setState(() => _generatingLink = false);
+      setState(() {
+        _generatingLink = false;
+        _verificationCode = null;
+      });
       _showSnackBar('Error: $e');
     } finally {
       _refreshingExpiredLink = false;
@@ -576,13 +582,6 @@ class _InitiatorPageState extends State<InitiatorPage> {
     return (remainingMs / totalMs).clamp(0.0, 1.0);
   }
 
-  String _formatPeerCode(String rawId) {
-    final cleaned = rawId.trim();
-    if (cleaned.isEmpty) return 'Unknown';
-    if (cleaned.length <= 12) return cleaned;
-    return '${cleaned.substring(0, 6)}...${cleaned.substring(cleaned.length - 4)}';
-  }
-
   void _startListeningForPeer(String mailboxId) {
     _mailboxSubscription?.cancel();
     setState(() => _waitingForPeer = true);
@@ -591,10 +590,10 @@ class _InitiatorPageState extends State<InitiatorPage> {
         .subscribeMailbox(mailboxId: mailboxId)
         .listen(
           (evt) {
-            if (!_peerAccepted && _incomingRequestFrom == null) {
+            if (!_peerAccepted && !_hasIncomingRequest) {
               setState(() {
                 _waitingForPeer = false;
-                _incomingRequestFrom = evt['from_mailbox_id'] as String?;
+                _hasIncomingRequest = true;
               });
               _showIncomingDialog();
             } else if (_peerAccepted) {
@@ -608,8 +607,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
   }
 
   void _showIncomingDialog() {
-    if (_incomingRequestFrom == null) return;
-    final peerCode = _formatPeerCode(_incomingRequestFrom!);
+    if (!_hasIncomingRequest) return;
+    final verificationCode = _verificationCode;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -622,20 +621,52 @@ class _InitiatorPageState extends State<InitiatorPage> {
               SizedBox(height: _dialogSpacing),
               const Text('A peer wants to connect'),
               const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Peer code: $peerCode',
-                style: AppTypography.body(
-                  size: _dialogDetailFontSize,
-                  color: AppColors.textMuted,
+              if (verificationCode != null) ...[
+                Text(
+                  'Verification code',
+                  style: AppTypography.body(
+                    size: _dialogDetailFontSize,
+                    color: AppColors.textMuted,
+                  ),
                 ),
-              ),
+                const SizedBox(height: AppSpacing.sm),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.base,
+                    vertical: AppSpacing.md,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.outline),
+                  ),
+                  child: Text(
+                    verificationCode,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.mono(
+                      size: _dialogDetailFontSize + 6,
+                      weight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Ask the peer to confirm this code before you accept.',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.body(
+                    size: _dialogDetailFontSize,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ],
             ],
           ),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
-                setState(() => _incomingRequestFrom = null);
+                setState(() => _hasIncomingRequest = false);
               },
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.textPrimary,
@@ -649,7 +680,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
                 if (_remainingFromEpochMs(_mailboxExpiresAtEpochMs) ==
                     Duration.zero) {
                   setState(() {
-                    _incomingRequestFrom = null;
+                    _hasIncomingRequest = false;
                     _peerAccepted = false;
                   });
                   _showSnackBar('Link expired. Generating a new link...');
@@ -661,7 +692,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
                 setState(() {
                   _peerAccepted = true;
-                  _incomingRequestFrom = null;
+                  _hasIncomingRequest = false;
                 });
                 await _startWebRTCHandshake();
               },
@@ -962,6 +993,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
   // ─── Pre-acceptance pairing body ──────────────────────────────────────────
 
   Widget _buildPairingBody() {
+    final verificationCode = formatPairingCode(_initiatorResult?.sas);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       child: Center(
@@ -1002,6 +1035,36 @@ class _InitiatorPageState extends State<InitiatorPage> {
                     ],
                   ),
                 ),
+                if (verificationCode != null) ...[
+                  const SizedBox(height: AppSpacing.base),
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Verification Code',
+                          style: AppTypography.body(weight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          verificationCode,
+                          style: AppTypography.mono(
+                            size: _linkFontSize + 4,
+                            weight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'Ask your peer to read back this code before you accept the session.',
+                          style: AppTypography.body(
+                            size: _dialogDetailFontSize,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.base),
                 Row(
                   children: [

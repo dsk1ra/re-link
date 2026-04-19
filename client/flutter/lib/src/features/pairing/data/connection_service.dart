@@ -25,10 +25,8 @@ class ConnectionService {
     final result = rust_connection.connectionInitLocal();
     return ConnectionInitResult(
       rendezvousId: result.rendezvousId,
-      mailboxId: result.mailboxId,
       secret: result.secret,
       kSig: result.kSig,
-      kMac: result.kMac,
       sas: result.sas,
     );
   }
@@ -309,18 +307,14 @@ class ConnectionService {
 /// Local result from connection initialization
 class ConnectionInitResult {
   final String rendezvousId; // Share via link
-  final String mailboxId; // Keep private
   final String secret; // Shared secret (hex)
   final String kSig; // Encryption key (hex)
-  final String kMac; // MAC key (hex)
   final String sas; // Short auth string (hex)
 
   ConnectionInitResult({
     required this.rendezvousId,
-    required this.mailboxId,
     required this.secret,
     required this.kSig,
-    required this.kMac,
     required this.sas,
   });
 }

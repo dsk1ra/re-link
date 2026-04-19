@@ -2335,17 +2335,13 @@ impl SseDecode for crate::api::connection::ConnectionInitLocalResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_rendezvousId = <String>::sse_decode(deserializer);
-        let mut var_mailboxId = <String>::sse_decode(deserializer);
         let mut var_secret = <String>::sse_decode(deserializer);
         let mut var_kSig = <String>::sse_decode(deserializer);
-        let mut var_kMac = <String>::sse_decode(deserializer);
         let mut var_sas = <String>::sse_decode(deserializer);
         return crate::api::connection::ConnectionInitLocalResult {
             rendezvous_id: var_rendezvousId,
-            mailbox_id: var_mailboxId,
             secret: var_secret,
             k_sig: var_kSig,
-            k_mac: var_kMac,
             sas: var_sas,
         };
     }
@@ -3000,10 +2996,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::connection::ConnectionInitLoc
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.rendezvous_id.into_into_dart().into_dart(),
-            self.mailbox_id.into_into_dart().into_dart(),
             self.secret.into_into_dart().into_dart(),
             self.k_sig.into_into_dart().into_dart(),
-            self.k_mac.into_into_dart().into_dart(),
             self.sas.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -3397,10 +3391,8 @@ impl SseEncode for crate::api::connection::ConnectionInitLocalResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.rendezvous_id, serializer);
-        <String>::sse_encode(self.mailbox_id, serializer);
         <String>::sse_encode(self.secret, serializer);
         <String>::sse_encode(self.k_sig, serializer);
-        <String>::sse_encode(self.k_mac, serializer);
         <String>::sse_encode(self.sas, serializer);
     }
 }

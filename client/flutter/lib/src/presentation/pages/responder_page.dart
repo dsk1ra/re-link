@@ -16,6 +16,7 @@ import 'package:application/src/presentation/widgets/session_status_views.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
+import 'package:application/src/features/pairing/domain/pairing_code.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/features/pairing/domain/signaling_message.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
@@ -73,6 +74,7 @@ class _ResponderPageState extends State<ResponderPage> {
   final TextEditingController _tokenController = TextEditingController();
   String? _responderMailboxId;
   String? _kSig; // Session encryption key
+  String? _verificationCode;
   bool _joiningConnection = false;
   String? _joinError;
   bool _joined = false;
@@ -313,6 +315,12 @@ class _ResponderPageState extends State<ResponderPage> {
       return;
     }
 
+    setState(() {
+      _kSig = null;
+      _verificationCode = null;
+      _joinError = null;
+    });
+
     String token = input;
     String? secret;
     String? signalingBaseUrlFromLink;
@@ -341,20 +349,23 @@ class _ResponderPageState extends State<ResponderPage> {
     // If we have no secret, we cannot derive keys for E2EE
     if (secret == null) {
       setState(() {
+        _kSig = null;
+        _verificationCode = null;
         _joinError = 'Invalid link: Missing security key (fragment)';
       });
       return;
     }
 
-    setState(() {
-      _joiningConnection = true;
-      _joinError = null;
-    });
-
     try {
-      // Derive keys locally
       final keys = rust_connection.connectionDeriveKeys(secretHex: secret);
-      _kSig = keys.kSig;
+      setState(() {
+        _kSig = keys.kSig;
+        _verificationCode = formatPairingCode(keys.sas);
+        _joiningConnection = true;
+        _joinError = null;
+        _joined = false;
+        _responderMailboxId = null;
+      });
 
       final joinResult = await _connectionService.joinConnection(
         tokenB64: token,
@@ -810,6 +821,13 @@ class _ResponderPageState extends State<ResponderPage> {
                   ),
                 ),
               ),
+              if (_verificationCode != null) ...[
+                const SizedBox(height: AppSpacing.base),
+                _buildVerificationCodeCard(
+                  _verificationCode!,
+                  'Read this code to the host before the session is accepted.',
+                ),
+              ],
               if (_joinError != null) ...[
                 const SizedBox(height: AppSpacing.base),
                 AppCard(
@@ -837,6 +855,30 @@ class _ResponderPageState extends State<ResponderPage> {
     );
   }
 
+  Widget _buildVerificationCodeCard(String code, String message) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Verification Code',
+            style: AppTypography.body(weight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            code,
+            style: AppTypography.mono(
+              size: _formTitleFontSize,
+              weight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(message, style: AppTypography.body(color: AppColors.textMuted)),
+        ],
+      ),
+    );
+  }
+
   // ─── Connected layout ─────────────────────────────────────────────────────
 
   Widget _buildConnectedLayout() {
@@ -848,7 +890,29 @@ class _ResponderPageState extends State<ResponderPage> {
 
     if (_webrtcState !=
         RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-      return const SessionConnectingView(message: 'Establishing connection...');
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _maxFormWidth),
+            child: Column(
+              children: [
+                const SizedBox(height: AppSpacing.xl),
+                const SessionConnectingView(
+                  message: 'Establishing connection...',
+                ),
+                if (_verificationCode != null) ...[
+                  const SizedBox(height: AppSpacing.xl),
+                  _buildVerificationCodeCard(
+                    _verificationCode!,
+                    'Keep this visible until the host confirms the same code.',
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
     }
 
     return Stack(

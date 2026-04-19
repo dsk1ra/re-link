@@ -1,14 +1,11 @@
 use shared::connection;
 
 /// Initialize a connection link (Client A)
-/// Returns a mailbox ID and generates a rendezvous token
+/// Returns the rendezvous token, shared secret, and derived pairing material
 #[flutter_rust_bridge::frb(sync)]
 pub fn connection_init_local() -> ConnectionInitLocalResult {
     // Generate high-entropy rendezvous ID locally (will be shared via link)
     let rendezvous_id = connection::gen_rendezvous_id();
-
-    // Generate mailbox ID locally
-    let mailbox_id = connection::gen_mailbox_id();
 
     // Generate a secret (in real client, user would generate this)
     // This secret is kept local and NOT sent to server
@@ -22,10 +19,8 @@ pub fn connection_init_local() -> ConnectionInitLocalResult {
 
     ConnectionInitLocalResult {
         rendezvous_id,
-        mailbox_id,
         secret: hex::encode(secret),
         k_sig: hex::encode(keys.k_sig),
-        k_mac: hex::encode(keys.k_mac),
         sas: hex::encode(keys.sas),
     }
 }
@@ -43,10 +38,8 @@ pub fn connection_derive_keys(secret_hex: String) -> anyhow::Result<ConnectionIn
 
     Ok(ConnectionInitLocalResult {
         rendezvous_id: "".to_string(), // Not needed for derivation
-        mailbox_id: "".to_string(),    // Not needed for derivation
         secret: hex::encode(secret),
         k_sig: hex::encode(keys.k_sig),
-        k_mac: hex::encode(keys.k_mac),
         sas: hex::encode(keys.sas),
     })
 }
@@ -54,10 +47,8 @@ pub fn connection_derive_keys(secret_hex: String) -> anyhow::Result<ConnectionIn
 #[derive(Debug, Clone)]
 pub struct ConnectionInitLocalResult {
     pub rendezvous_id: String,
-    pub mailbox_id: String,
     pub secret: String, // Hex-encoded shared secret
     pub k_sig: String,  // Hex-encoded signaling key
-    pub k_mac: String,  // Hex-encoded MAC key
     pub sas: String,    // Hex-encoded short auth string
 }
 

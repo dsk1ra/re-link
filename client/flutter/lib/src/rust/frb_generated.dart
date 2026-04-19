@@ -2388,15 +2388,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return ConnectionInitLocalResult(
       rendezvousId: dco_decode_String(arr[0]),
-      mailboxId: dco_decode_String(arr[1]),
-      secret: dco_decode_String(arr[2]),
-      kSig: dco_decode_String(arr[3]),
-      kMac: dco_decode_String(arr[4]),
-      sas: dco_decode_String(arr[5]),
+      secret: dco_decode_String(arr[1]),
+      kSig: dco_decode_String(arr[2]),
+      sas: dco_decode_String(arr[3]),
     );
   }
 
@@ -2875,17 +2873,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_rendezvousId = sse_decode_String(deserializer);
-    var var_mailboxId = sse_decode_String(deserializer);
     var var_secret = sse_decode_String(deserializer);
     var var_kSig = sse_decode_String(deserializer);
-    var var_kMac = sse_decode_String(deserializer);
     var var_sas = sse_decode_String(deserializer);
     return ConnectionInitLocalResult(
       rendezvousId: var_rendezvousId,
-      mailboxId: var_mailboxId,
       secret: var_secret,
       kSig: var_kSig,
-      kMac: var_kMac,
       sas: var_sas,
     );
   }
@@ -3448,10 +3442,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.rendezvousId, serializer);
-    sse_encode_String(self.mailboxId, serializer);
     sse_encode_String(self.secret, serializer);
     sse_encode_String(self.kSig, serializer);
-    sse_encode_String(self.kMac, serializer);
     sse_encode_String(self.sas, serializer);
   }
 

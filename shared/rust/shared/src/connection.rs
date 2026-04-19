@@ -13,7 +13,6 @@ type HmacSha256 = Hmac<Sha256>;
 #[derive(Debug, Clone)]
 pub struct DerivedKeys {
     pub k_sig: [u8; 32], // Signaling encryption key
-    pub k_mac: [u8; 32], // Message authentication key
     pub sas: [u8; 32],   // Short authentication string for out-of-band verification
 }
 
@@ -26,19 +25,13 @@ pub fn derive_keys(secret: &[u8; 32]) -> anyhow::Result<DerivedKeys> {
     mac.update(b"sig");
     k_sig.copy_from_slice(&mac.finalize().into_bytes()[..32]);
 
-    let mut k_mac = [0u8; 32];
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(secret)
-        .map_err(|e| anyhow::anyhow!("HMAC init failed: {}", e))?;
-    mac.update(b"mac");
-    k_mac.copy_from_slice(&mac.finalize().into_bytes()[..32]);
-
     let mut sas = [0u8; 32];
     let mut mac = <HmacSha256 as Mac>::new_from_slice(secret)
         .map_err(|e| anyhow::anyhow!("HMAC init failed: {}", e))?;
     mac.update(b"sas");
     sas.copy_from_slice(&mac.finalize().into_bytes()[..32]);
 
-    Ok(DerivedKeys { k_sig, k_mac, sas })
+    Ok(DerivedKeys { k_sig, sas })
 }
 
 /// Generate a high-entropy non-guessable rendezvous ID
