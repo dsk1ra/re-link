@@ -8,7 +8,6 @@ class LocalSettings {
   static const String _keyIceServersJson = 'webrtc_ice_servers_json';
   static const String _keyWelcomeShown = 'welcome_shown';
   static const int _defaultStunPort = 3478;
-  static const String _publicFallbackStunUrl = 'stun:stun.l.google.com:19302';
 
   final SharedPreferences _prefs;
 
@@ -56,9 +55,7 @@ class LocalSettings {
 
   /// Build default STUN URL from the configured signaling domain.
   ///
-  /// For normal direct hosts we assume a colocated STUN service on port 3478.
-  /// For tunnel-only hosts such as `*.trycloudflare.com`, UDP/STUN on 3478
-  /// is not available, so we fall back to a public STUN server.
+  /// We keep STUN aligned to the signaling host and standard coturn STUN port.
   String defaultStunUrlForSignalingDomain(String signalingDomain) {
     final normalized = signalingDomain.trim();
     if (normalized.isEmpty) {
@@ -79,21 +76,7 @@ class LocalSettings {
         .first;
     final host = (uri != null && uri.host.isNotEmpty) ? uri.host : fallbackHost;
 
-    if (_shouldUsePublicStunFallback(host)) {
-      return _publicFallbackStunUrl;
-    }
-
     return 'stun:$host:$_defaultStunPort';
-  }
-
-  bool _shouldUsePublicStunFallback(String host) {
-    final normalizedHost = host.trim().toLowerCase();
-    if (normalizedHost.isEmpty) {
-      return false;
-    }
-
-    return normalizedHost == 'trycloudflare.com' ||
-        normalizedHost.endsWith('.trycloudflare.com');
   }
 
   /// Build default ICE JSON from signaling domain.

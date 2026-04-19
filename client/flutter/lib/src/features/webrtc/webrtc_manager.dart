@@ -240,7 +240,7 @@ class WebRTCManager {
     final iceServers = _iceServers;
     final servers = (iceServers == null || iceServers.isEmpty)
         ? <Map<String, dynamic>>[
-            {'urls': 'stun:stun.l.google.com:19302'},
+            {'urls': 'stun:localhost:3478'},
           ]
         : iceServers
               .map((server) => Map<String, dynamic>.from(server))
