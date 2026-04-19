@@ -11,8 +11,10 @@ class AppButton extends StatelessWidget {
   static const double _iconSize = 18;
   static const double _spinnerSize = 16;
   static const double _iconGap = AppSpacing.sm;
-  static const EdgeInsets _buttonPadding =
-      EdgeInsets.symmetric(vertical: 14, horizontal: 14);
+  static const EdgeInsets _buttonPadding = EdgeInsets.symmetric(
+    vertical: 14,
+    horizontal: 14,
+  );
   final VoidCallback? onPressed;
   final String label;
   final IconData? icon;

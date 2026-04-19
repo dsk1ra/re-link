@@ -44,7 +44,11 @@ class ServerStatusBanner extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: _maxContentWidth),
           child: Row(
             children: [
-              Container(width: _stripeWidth, height: _stripeHeight, color: stripeColor),
+              Container(
+                width: _stripeWidth,
+                height: _stripeHeight,
+                color: stripeColor,
+              ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: connecting
@@ -56,7 +60,10 @@ class ServerStatusBanner extends StatelessWidget {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                           const SizedBox(width: AppSpacing.sm),
-                          Text('Connecting to server...', style: AppTypography.body()),
+                          Text(
+                            'Connecting to server...',
+                            style: AppTypography.body(),
+                          ),
                         ],
                       )
                     : Text(

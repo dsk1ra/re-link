@@ -7,8 +7,10 @@ import 'package:application/src/presentation/ui/typography.dart';
 enum StatusBadgeTone { neutral, success, warning, error }
 
 class StatusBadge extends StatelessWidget {
-  static const EdgeInsets _padding =
-      EdgeInsets.symmetric(horizontal: 10, vertical: 6);
+  static const EdgeInsets _padding = EdgeInsets.symmetric(
+    horizontal: 10,
+    vertical: 6,
+  );
   static const double _labelFontSize = 12;
 
   final String label;
@@ -38,7 +40,10 @@ class StatusBadge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: AppTypography.body(size: _labelFontSize, weight: FontWeight.w600),
+        style: AppTypography.body(
+          size: _labelFontSize,
+          weight: FontWeight.w600,
+        ),
       ),
     );
   }

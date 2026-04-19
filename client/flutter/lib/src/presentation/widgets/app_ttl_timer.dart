@@ -39,7 +39,10 @@ class AppTtlTimer extends StatelessWidget {
           ),
           Text(
             _formatDuration(remaining),
-            style: AppTypography.mono(size: _timeFontSize, weight: FontWeight.w600),
+            style: AppTypography.mono(
+              size: _timeFontSize,
+              weight: FontWeight.w600,
+            ),
           ),
         ],
       ),
