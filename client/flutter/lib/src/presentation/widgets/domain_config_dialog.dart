@@ -85,6 +85,12 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
     return widget.settings.defaultIceServersJsonForSignalingDomain(domain);
   }
 
+  String _defaultIceDescriptionForCurrentDomain() {
+    return widget.settings.defaultIceDescriptionForSignalingDomain(
+      _controller.text,
+    );
+  }
+
   void _syncDefaultIceServersFromDomain() {
     if (!_useDefaultIceForDomain) {
       return;
@@ -99,6 +105,9 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final defaultIceJson = _defaultIceServersJsonForCurrentDomain();
+    final defaultIceDescription = _defaultIceDescriptionForCurrentDomain();
+
     return AlertDialog(
       backgroundColor: AppColors.surface,
       title: const Text(
@@ -166,13 +175,13 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
               contentPadding: EdgeInsets.zero,
               activeThumbColor: AppColors.primary,
               title: const Text(
-                'Use recommended default ICE',
+                'Use same-host STUN default',
                 style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
               ),
               subtitle: Text(
-                _defaultIceServersJsonForCurrentDomain().isEmpty
+                defaultIceJson.isEmpty
                     ? 'Enter server address to preview default STUN JSON'
-                    : _defaultIceServersJsonForCurrentDomain(),
+                    : defaultIceJson,
                 style: const TextStyle(
                   fontSize: 11,
                   color: AppColors.textMuted,
@@ -186,6 +195,10 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
                   }
                 });
               },
+            ),
+            Text(
+              defaultIceDescription,
+              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
             ),
             const SizedBox(height: 8),
             TextField(
@@ -221,6 +234,13 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
               onChanged: (_) => setState(() {
                 _useDefaultIceForDomain = false;
               }),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'If you expose signaling through Cloudflare Tunnel, keep the '
+              'server address as the tunnel URL and enter a separate public '
+              'STUN/TURN host or IP here.',
+              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
             ),
           ],
         ),

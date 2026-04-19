@@ -84,6 +84,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     return widget.settings.defaultIceServersJsonForSignalingDomain(domain);
   }
 
+  String _defaultIceDescriptionForCurrentDomain() {
+    return widget.settings.defaultIceDescriptionForSignalingDomain(
+      _domainController.text,
+    );
+  }
+
   void _syncDefaultIceServersFromDomain() {
     if (!_useDefaultIceForDomain) {
       return;
@@ -99,6 +105,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 600;
+    final defaultIceJson = _defaultIceServersJsonForCurrentDomain();
+    final defaultIceDescription = _defaultIceDescriptionForCurrentDomain();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -212,7 +220,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                             contentPadding: EdgeInsets.zero,
                             activeThumbColor: AppColors.primary,
                             title: const Text(
-                              'Use recommended default ICE',
+                              'Use same-host STUN default',
                               style: TextStyle(
                                 color: AppColors.textPrimary,
                                 fontSize: 12,
@@ -220,9 +228,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                               ),
                             ),
                             subtitle: Text(
-                              _defaultIceServersJsonForCurrentDomain().isEmpty
+                              defaultIceJson.isEmpty
                                   ? 'Enter server address to preview default STUN JSON'
-                                  : _defaultIceServersJsonForCurrentDomain(),
+                                  : defaultIceJson,
                               style: const TextStyle(
                                 color: AppColors.textMuted,
                                 fontSize: 11,
@@ -236,6 +244,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                 }
                               });
                             },
+                          ),
+                          Text(
+                            defaultIceDescription,
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 11,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           TextField(
@@ -277,6 +292,16 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                             onChanged: (_) => setState(() {
                               _useDefaultIceForDomain = false;
                             }),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'If you expose signaling through Cloudflare Tunnel, '
+                            'keep the server address as the tunnel URL and '
+                            'enter a separate public STUN/TURN host or IP here.',
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 11,
+                            ),
                           ),
                         ],
                       ),

@@ -86,6 +86,21 @@ class LocalSettings {
     ]);
   }
 
+  /// Explain the assumption behind the same-host default ICE configuration.
+  String defaultIceDescriptionForSignalingDomain(String signalingDomain) {
+    final normalized = signalingDomain.trim();
+    if (normalized.isEmpty) {
+      return 'Default ICE assumes STUN is reachable directly on the same host '
+          'at port 3478. If signaling is behind Cloudflare Tunnel or another '
+          'HTTPS-only proxy, configure a separate public STUN/TURN host or IP.';
+    }
+
+    final defaultStunUrl = defaultStunUrlForSignalingDomain(signalingDomain);
+    return 'Default ICE assumes STUN is reachable directly at $defaultStunUrl. '
+        'If signaling is behind Cloudflare Tunnel or another HTTPS-only proxy, '
+        'configure a separate public STUN/TURN host or IP instead.';
+  }
+
   /// Return user-custom ICE config when present; otherwise return domain default.
   List<Map<String, dynamic>> resolveIceServersForSignalingDomain(
     String signalingDomain,

@@ -59,11 +59,19 @@ services:
       - "${COTURN_STUN_PORT:-3478}:${COTURN_STUN_PORT:-3478}/udp"
       - "${COTURN_STUN_PORT:-3478}:${COTURN_STUN_PORT:-3478}/tcp"
       - "${COTURN_TLS_PORT:-5349}:${COTURN_TLS_PORT:-5349}/tcp"
+      - "${COTURN_RELAY_MIN_PORT:-49160}-${COTURN_RELAY_MAX_PORT:-49200}:${COTURN_RELAY_MIN_PORT:-49160}-${COTURN_RELAY_MAX_PORT:-49200}/udp"
+      - "${COTURN_RELAY_MIN_PORT:-49160}-${COTURN_RELAY_MAX_PORT:-49200}:${COTURN_RELAY_MIN_PORT:-49160}-${COTURN_RELAY_MAX_PORT:-49200}/tcp"
     environment:
       - COTURN_STUN_PORT=${COTURN_STUN_PORT:-3478}
       - COTURN_TLS_ENABLED=${COTURN_TLS_ENABLED:-false}
       - COTURN_TLS_PORT=${COTURN_TLS_PORT:-5349}
       - COTURN_REALM=${COTURN_REALM:-${DOMAIN:-localhost}}
+      - COTURN_MODE=${COTURN_MODE:-stun}
+      - COTURN_USERNAME=${COTURN_USERNAME:-}
+      - COTURN_PASSWORD=${COTURN_PASSWORD:-}
+      - COTURN_EXTERNAL_IP=${COTURN_EXTERNAL_IP:-}
+      - COTURN_RELAY_MIN_PORT=${COTURN_RELAY_MIN_PORT:-49160}
+      - COTURN_RELAY_MAX_PORT=${COTURN_RELAY_MAX_PORT:-49200}
     volumes:
       - ${COTURN_CERTS_DIR:-./certs}:/etc/coturn/certs:ro
     networks:
@@ -75,14 +83,35 @@ services:
       if [ "$$COTURN_TLS_ENABLED" = "true" ] || [ "$$COTURN_TLS_ENABLED" = "1" ] || [ "$$COTURN_TLS_ENABLED" = "yes" ]; then
         TLS_FLAGS="--tls-listening-port $$COTURN_TLS_PORT --cert /etc/coturn/certs/cert.crt --pkey /etc/coturn/certs/priv.key";
       fi;
+
+      MODE_FLAGS="--stun-only --no-auth";
+      if [ "$$COTURN_MODE" = "turn" ]; then
+        if [ -z "$$COTURN_USERNAME" ] || [ -z "$$COTURN_PASSWORD" ]; then
+          echo "COTURN_MODE=turn requires COTURN_USERNAME and COTURN_PASSWORD" >&2;
+          exit 1;
+        fi;
+        MODE_FLAGS="--fingerprint --lt-cred-mech --user $$COTURN_USERNAME:$$COTURN_PASSWORD";
+      fi;
+
+      EXTERNAL_IP_FLAG="";
+      if [ -n "$$COTURN_EXTERNAL_IP" ]; then
+        EXTERNAL_IP_FLAG="--external-ip $$COTURN_EXTERNAL_IP";
+      fi;
+
+      RELAY_PORT_FLAGS="";
+      if [ "$$COTURN_MODE" = "turn" ]; then
+        RELAY_PORT_FLAGS="--min-port $$COTURN_RELAY_MIN_PORT --max-port $$COTURN_RELAY_MAX_PORT";
+      fi;
+
       exec turnserver
       --log-file stdout
       --simple-log
-      --stun-only
-      --no-auth
       --realm $$COTURN_REALM
       --listening-ip 0.0.0.0
       --listening-port $$COTURN_STUN_PORT
+      $$MODE_FLAGS
+      $$EXTERNAL_IP_FLAG
+      $$RELAY_PORT_FLAGS
       $$TLS_FLAGS
       '
 
