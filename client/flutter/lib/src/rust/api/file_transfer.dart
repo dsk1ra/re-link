@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `compare_offer_priority`, `compute_sha256`, `finalize_received_file`, `get_manager`, `now_nonce`, `parse_file_message`, `push_state`, `sanitize_file_name`, `start_transfer_robust`, `unique_file_path`
+// These functions are ignored because they are not marked as `pub`: `compare_offer_priority`, `compute_sha256`, `create_unique_destination_file`, `finalize_received_file`, `get_manager`, `now_nonce`, `parse_file_message`, `push_state`, `sanitize_file_name`, `split_file_name`, `start_transfer_robust`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `FileTransferManager`, `FileTransferSession`, `IncomingFileMessage`, `OutMetadata`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 

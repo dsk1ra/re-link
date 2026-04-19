@@ -6,15 +6,15 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `get_provider`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
 
-void init() => RustLib.instance.api.crateApiShareInit();
+void initScreenCapture() =>
+    RustLib.instance.api.crateApiShareInitScreenCapture();
 
 List<SourceDescriptor> listShareSources() =>
     RustLib.instance.api.crateApiShareListShareSources();
 
-ShareStartResult startShare({
+Future<void> startShare({
   required String connectionId,
   required String sourceId,
   required ShareConfig config,
@@ -24,19 +24,17 @@ ShareStartResult startShare({
   config: config,
 );
 
-void stopShare({required String connectionId}) =>
+Future<void> stopShare({required String connectionId}) =>
     RustLib.instance.api.crateApiShareStopShare(connectionId: connectionId);
-
-enum BitratePreset { low, medium, high }
 
 class ShareConfig {
   final int fps;
-  final BitratePreset bitratePreset;
+  final int targetBitrateKbps;
 
-  const ShareConfig({required this.fps, required this.bitratePreset});
+  const ShareConfig({required this.fps, required this.targetBitrateKbps});
 
   @override
-  int get hashCode => fps.hashCode ^ bitratePreset.hashCode;
+  int get hashCode => fps.hashCode ^ targetBitrateKbps.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -44,34 +42,7 @@ class ShareConfig {
       other is ShareConfig &&
           runtimeType == other.runtimeType &&
           fps == other.fps &&
-          bitratePreset == other.bitratePreset;
-}
-
-class ShareStartResult {
-  final bool trackPrepared;
-  final bool renegotiationRequired;
-  final bool dataChannelAvailable;
-
-  const ShareStartResult({
-    required this.trackPrepared,
-    required this.renegotiationRequired,
-    required this.dataChannelAvailable,
-  });
-
-  @override
-  int get hashCode =>
-      trackPrepared.hashCode ^
-      renegotiationRequired.hashCode ^
-      dataChannelAvailable.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ShareStartResult &&
-          runtimeType == other.runtimeType &&
-          trackPrepared == other.trackPrepared &&
-          renegotiationRequired == other.renegotiationRequired &&
-          dataChannelAvailable == other.dataChannelAvailable;
+          targetBitrateKbps == other.targetBitrateKbps;
 }
 
 class SourceDescriptor {

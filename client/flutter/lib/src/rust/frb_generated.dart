@@ -73,7 +73,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 723726457;
+  int get rustContentHash => -1692855320;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -190,9 +190,9 @@ abstract class RustLibApi extends BaseApi {
     required String text,
   });
 
-  void crateApiShareInit();
-
   Future<void> crateApiSimpleInitApp();
+
+  void crateApiShareInitScreenCapture();
 
   void crateApiFileTransferInitTransfer({required String connectionId});
 
@@ -271,10 +271,6 @@ abstract class RustLibApi extends BaseApi {
     required SessionDescriptionDto description,
   });
 
-  Future<void> crateApiWebrtcSendScreenShareStopped({
-    required String connectionId,
-  });
-
   Future<void> crateApiWebrtcSendSessionClosed({
     required String connectionId,
     required String id,
@@ -312,19 +308,23 @@ abstract class RustLibApi extends BaseApi {
     required String filePath,
   });
 
-  ShareStartResult crateApiShareStartShare({
+  Future<void> crateApiShareStartShare({
     required String connectionId,
     required String sourceId,
     required ShareConfig config,
   });
 
-  void crateApiShareStopShare({required String connectionId});
+  Future<void> crateApiShareStopShare({required String connectionId});
 
   Future<void> crateApiFileTransferTick({required String connectionId});
 
   Future<void> crateApiTransferUpsertConnection({
     required String connectionId,
     required ArcRtcPeerConnection pc,
+  });
+
+  Future<void> crateApiWebrtcWaitForFileChannelReady({
+    required String connectionId,
   });
 
   RustArcIncrementStrongCountFnType
@@ -1149,28 +1149,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  void crateApiShareInit() {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 25)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiShareInitConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiShareInitConstMeta =>
-      const TaskConstMeta(debugName: "init", argNames: []);
-
-  @override
   Future<void> crateApiSimpleInitApp() {
     return handler.executeNormal(
       NormalTask(
@@ -1179,7 +1157,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 25,
             port: port_,
           );
         },
@@ -1196,6 +1174,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiSimpleInitAppConstMeta =>
       const TaskConstMeta(debugName: "init_app", argNames: []);
+
+  @override
+  void crateApiShareInitScreenCapture() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 26)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiShareInitScreenCaptureConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiShareInitScreenCaptureConstMeta =>
+      const TaskConstMeta(debugName: "init_screen_capture", argNames: []);
 
   @override
   void crateApiFileTransferInitTransfer({required String connectionId}) {
@@ -1816,39 +1816,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<void> crateApiWebrtcSendScreenShareStopped({
-    required String connectionId,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(connectionId, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 46,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiWebrtcSendScreenShareStoppedConstMeta,
-        argValues: [connectionId],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiWebrtcSendScreenShareStoppedConstMeta =>
-      const TaskConstMeta(
-        debugName: "send_screen_share_stopped",
-        argNames: ["connectionId"],
-      );
-
-  @override
   Future<void> crateApiWebrtcSendSessionClosed({
     required String connectionId,
     required String id,
@@ -1864,7 +1831,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 47,
+            funcId: 46,
             port: port_,
           );
         },
@@ -1899,7 +1866,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 48,
+            funcId: 47,
             port: port_,
           );
         },
@@ -1939,7 +1906,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 49,
+            funcId: 48,
             port: port_,
           );
         },
@@ -1974,7 +1941,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 50,
+            funcId: 49,
             port: port_,
           );
         },
@@ -2012,7 +1979,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 51,
+            funcId: 50,
             port: port_,
           );
         },
@@ -2044,7 +2011,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(connectionId, serializer);
           sse_encode_String(saveDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 52)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2074,7 +2041,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(connectionId, serializer);
           sse_encode_String(filePath, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 52)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2094,22 +2061,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  ShareStartResult crateApiShareStartShare({
+  Future<void> crateApiShareStartShare({
     required String connectionId,
     required String sourceId,
     required ShareConfig config,
   }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(connectionId, serializer);
           sse_encode_String(sourceId, serializer);
           sse_encode_box_autoadd_share_config(config, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 54)!;
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 53,
+            port: port_,
+          );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_share_start_result,
+          decodeSuccessData: sse_decode_unit,
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiShareStartShareConstMeta,
@@ -2125,13 +2097,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  void crateApiShareStopShare({required String connectionId}) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
+  Future<void> crateApiShareStopShare({required String connectionId}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(connectionId, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 55)!;
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 54,
+            port: port_,
+          );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2157,7 +2134,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 56,
+            funcId: 55,
             port: port_,
           );
         },
@@ -2192,7 +2169,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 57,
+            funcId: 56,
             port: port_,
           );
         },
@@ -2211,6 +2188,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "upsert_connection",
         argNames: ["connectionId", "pc"],
+      );
+
+  @override
+  Future<void> crateApiWebrtcWaitForFileChannelReady({
+    required String connectionId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(connectionId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 57,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiWebrtcWaitForFileChannelReadyConstMeta,
+        argValues: [connectionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiWebrtcWaitForFileChannelReadyConstMeta =>
+      const TaskConstMeta(
+        debugName: "wait_for_file_channel_ready",
+        argNames: ["connectionId"],
       );
 
   RustArcIncrementStrongCountFnType
@@ -2332,12 +2342,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as String;
-  }
-
-  @protected
-  BitratePreset dco_decode_bitrate_preset(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return BitratePreset.values[raw as int];
   }
 
   @protected
@@ -2558,20 +2562,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return ShareConfig(
       fps: dco_decode_u_32(arr[0]),
-      bitratePreset: dco_decode_bitrate_preset(arr[1]),
-    );
-  }
-
-  @protected
-  ShareStartResult dco_decode_share_start_result(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
-    return ShareStartResult(
-      trackPrepared: dco_decode_bool(arr[0]),
-      renegotiationRequired: dco_decode_bool(arr[1]),
-      dataChannelAvailable: dco_decode_bool(arr[2]),
+      targetBitrateKbps: dco_decode_u_32(arr[1]),
     );
   }
 
@@ -2680,13 +2671,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           candidate: dco_decode_box_autoadd_ice_candidate_dto(raw[1]),
         );
       case 6:
-        return WebRtcEvent_ScreenShareStopped();
-      case 7:
         return WebRtcEvent_FileTransferRequested();
-      case 8:
+      case 7:
         return WebRtcEvent_SessionClosed(
           id: dco_decode_opt_String(raw[1]),
           reason: dco_decode_opt_String(raw[2]),
+        );
+      case 8:
+        return WebRtcEvent_VideoFrame(
+          data: dco_decode_list_prim_u_8_strict(raw[1]),
+          width: dco_decode_u_32(raw[2]),
+          height: dco_decode_u_32(raw[3]),
         );
       case 9:
         return WebRtcEvent_SessionClosedAck(id: dco_decode_opt_String(raw[1]));
@@ -2830,13 +2825,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_list_prim_u_8_strict(deserializer);
     return utf8.decoder.convert(inner);
-  }
-
-  @protected
-  BitratePreset sse_decode_bitrate_preset(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var inner = sse_decode_i_32(deserializer);
-    return BitratePreset.values[inner];
   }
 
   @protected
@@ -3115,21 +3103,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ShareConfig sse_decode_share_config(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_fps = sse_decode_u_32(deserializer);
-    var var_bitratePreset = sse_decode_bitrate_preset(deserializer);
-    return ShareConfig(fps: var_fps, bitratePreset: var_bitratePreset);
-  }
-
-  @protected
-  ShareStartResult sse_decode_share_start_result(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_trackPrepared = sse_decode_bool(deserializer);
-    var var_renegotiationRequired = sse_decode_bool(deserializer);
-    var var_dataChannelAvailable = sse_decode_bool(deserializer);
-    return ShareStartResult(
-      trackPrepared: var_trackPrepared,
-      renegotiationRequired: var_renegotiationRequired,
-      dataChannelAvailable: var_dataChannelAvailable,
-    );
+    var var_targetBitrateKbps = sse_decode_u_32(deserializer);
+    return ShareConfig(fps: var_fps, targetBitrateKbps: var_targetBitrateKbps);
   }
 
   @protected
@@ -3250,13 +3225,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         );
         return WebRtcEvent_RenegotiationIce(candidate: var_candidate);
       case 6:
-        return WebRtcEvent_ScreenShareStopped();
-      case 7:
         return WebRtcEvent_FileTransferRequested();
-      case 8:
+      case 7:
         var var_id = sse_decode_opt_String(deserializer);
         var var_reason = sse_decode_opt_String(deserializer);
         return WebRtcEvent_SessionClosed(id: var_id, reason: var_reason);
+      case 8:
+        var var_data = sse_decode_list_prim_u_8_strict(deserializer);
+        var var_width = sse_decode_u_32(deserializer);
+        var var_height = sse_decode_u_32(deserializer);
+        return WebRtcEvent_VideoFrame(
+          data: var_data,
+          width: var_width,
+          height: var_height,
+        );
       case 9:
         var var_id = sse_decode_opt_String(deserializer);
         return WebRtcEvent_SessionClosedAck(id: var_id);
@@ -3412,12 +3394,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_String(String self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_prim_u_8_strict(utf8.encoder.convert(self), serializer);
-  }
-
-  @protected
-  void sse_encode_bitrate_preset(BitratePreset self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
@@ -3673,18 +3649,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_share_config(ShareConfig self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.fps, serializer);
-    sse_encode_bitrate_preset(self.bitratePreset, serializer);
-  }
-
-  @protected
-  void sse_encode_share_start_result(
-    ShareStartResult self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_bool(self.trackPrepared, serializer);
-    sse_encode_bool(self.renegotiationRequired, serializer);
-    sse_encode_bool(self.dataChannelAvailable, serializer);
+    sse_encode_u_32(self.targetBitrateKbps, serializer);
   }
 
   @protected
@@ -3786,14 +3751,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case WebRtcEvent_RenegotiationIce(candidate: final candidate):
         sse_encode_i_32(5, serializer);
         sse_encode_box_autoadd_ice_candidate_dto(candidate, serializer);
-      case WebRtcEvent_ScreenShareStopped():
-        sse_encode_i_32(6, serializer);
       case WebRtcEvent_FileTransferRequested():
-        sse_encode_i_32(7, serializer);
+        sse_encode_i_32(6, serializer);
       case WebRtcEvent_SessionClosed(id: final id, reason: final reason):
-        sse_encode_i_32(8, serializer);
+        sse_encode_i_32(7, serializer);
         sse_encode_opt_String(id, serializer);
         sse_encode_opt_String(reason, serializer);
+      case WebRtcEvent_VideoFrame(
+        data: final data,
+        width: final width,
+        height: final height,
+      ):
+        sse_encode_i_32(8, serializer);
+        sse_encode_list_prim_u_8_strict(data, serializer);
+        sse_encode_u_32(width, serializer);
+        sse_encode_u_32(height, serializer);
       case WebRtcEvent_SessionClosedAck(id: final id):
         sse_encode_i_32(9, serializer);
         sse_encode_opt_String(id, serializer);

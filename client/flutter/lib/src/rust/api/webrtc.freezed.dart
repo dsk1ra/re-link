@@ -28,9 +28,9 @@ mixin _$WebRtcEvent {
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -47,9 +47,9 @@ mixin _$WebRtcEvent {
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -66,9 +66,9 @@ mixin _$WebRtcEvent {
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -92,11 +92,10 @@ mixin _$WebRtcEvent {
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -118,10 +117,10 @@ mixin _$WebRtcEvent {
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -142,10 +141,10 @@ mixin _$WebRtcEvent {
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -270,9 +269,9 @@ class _$WebRtcEvent_ConnectionStateChangedImpl
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -293,9 +292,9 @@ class _$WebRtcEvent_ConnectionStateChangedImpl
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -316,9 +315,9 @@ class _$WebRtcEvent_ConnectionStateChangedImpl
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -349,11 +348,10 @@ class _$WebRtcEvent_ConnectionStateChangedImpl
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -379,10 +377,10 @@ class _$WebRtcEvent_ConnectionStateChangedImpl
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -407,10 +405,10 @@ class _$WebRtcEvent_ConnectionStateChangedImpl
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -544,9 +542,9 @@ class _$WebRtcEvent_DataChannelStateChangedImpl
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -567,9 +565,9 @@ class _$WebRtcEvent_DataChannelStateChangedImpl
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -590,9 +588,9 @@ class _$WebRtcEvent_DataChannelStateChangedImpl
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -623,11 +621,10 @@ class _$WebRtcEvent_DataChannelStateChangedImpl
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -653,10 +650,10 @@ class _$WebRtcEvent_DataChannelStateChangedImpl
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -681,10 +678,10 @@ class _$WebRtcEvent_DataChannelStateChangedImpl
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -808,9 +805,9 @@ class _$WebRtcEvent_LocalIceCandidateImpl
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -831,9 +828,9 @@ class _$WebRtcEvent_LocalIceCandidateImpl
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -854,9 +851,9 @@ class _$WebRtcEvent_LocalIceCandidateImpl
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -887,11 +884,10 @@ class _$WebRtcEvent_LocalIceCandidateImpl
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -917,10 +913,10 @@ class _$WebRtcEvent_LocalIceCandidateImpl
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -945,10 +941,10 @@ class _$WebRtcEvent_LocalIceCandidateImpl
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -1071,9 +1067,9 @@ class _$WebRtcEvent_RenegotiationOfferImpl
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -1094,9 +1090,9 @@ class _$WebRtcEvent_RenegotiationOfferImpl
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -1117,9 +1113,9 @@ class _$WebRtcEvent_RenegotiationOfferImpl
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -1150,11 +1146,10 @@ class _$WebRtcEvent_RenegotiationOfferImpl
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -1180,10 +1175,10 @@ class _$WebRtcEvent_RenegotiationOfferImpl
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -1208,10 +1203,10 @@ class _$WebRtcEvent_RenegotiationOfferImpl
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -1334,9 +1329,9 @@ class _$WebRtcEvent_RenegotiationAnswerImpl
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -1357,9 +1352,9 @@ class _$WebRtcEvent_RenegotiationAnswerImpl
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -1380,9 +1375,9 @@ class _$WebRtcEvent_RenegotiationAnswerImpl
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -1413,11 +1408,10 @@ class _$WebRtcEvent_RenegotiationAnswerImpl
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -1443,10 +1437,10 @@ class _$WebRtcEvent_RenegotiationAnswerImpl
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -1471,10 +1465,10 @@ class _$WebRtcEvent_RenegotiationAnswerImpl
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -1595,9 +1589,9 @@ class _$WebRtcEvent_RenegotiationIceImpl extends WebRtcEvent_RenegotiationIce {
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -1618,9 +1612,9 @@ class _$WebRtcEvent_RenegotiationIceImpl extends WebRtcEvent_RenegotiationIce {
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -1641,9 +1635,9 @@ class _$WebRtcEvent_RenegotiationIceImpl extends WebRtcEvent_RenegotiationIce {
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -1674,11 +1668,10 @@ class _$WebRtcEvent_RenegotiationIceImpl extends WebRtcEvent_RenegotiationIce {
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -1704,10 +1697,10 @@ class _$WebRtcEvent_RenegotiationIceImpl extends WebRtcEvent_RenegotiationIce {
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -1732,10 +1725,10 @@ class _$WebRtcEvent_RenegotiationIceImpl extends WebRtcEvent_RenegotiationIce {
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -1768,225 +1761,6 @@ abstract class WebRtcEvent_RenegotiationIce extends WebRtcEvent {
     _$WebRtcEvent_RenegotiationIceImpl
   >
   get copyWith => throw _privateConstructorUsedError;
-}
-
-/// @nodoc
-abstract class _$$WebRtcEvent_ScreenShareStoppedImplCopyWith<$Res> {
-  factory _$$WebRtcEvent_ScreenShareStoppedImplCopyWith(
-    _$WebRtcEvent_ScreenShareStoppedImpl value,
-    $Res Function(_$WebRtcEvent_ScreenShareStoppedImpl) then,
-  ) = __$$WebRtcEvent_ScreenShareStoppedImplCopyWithImpl<$Res>;
-}
-
-/// @nodoc
-class __$$WebRtcEvent_ScreenShareStoppedImplCopyWithImpl<$Res>
-    extends
-        _$WebRtcEventCopyWithImpl<$Res, _$WebRtcEvent_ScreenShareStoppedImpl>
-    implements _$$WebRtcEvent_ScreenShareStoppedImplCopyWith<$Res> {
-  __$$WebRtcEvent_ScreenShareStoppedImplCopyWithImpl(
-    _$WebRtcEvent_ScreenShareStoppedImpl _value,
-    $Res Function(_$WebRtcEvent_ScreenShareStoppedImpl) _then,
-  ) : super(_value, _then);
-
-  /// Create a copy of WebRtcEvent
-  /// with the given fields replaced by the non-null parameter values.
-}
-
-/// @nodoc
-
-class _$WebRtcEvent_ScreenShareStoppedImpl
-    extends WebRtcEvent_ScreenShareStopped {
-  const _$WebRtcEvent_ScreenShareStoppedImpl() : super._();
-
-  @override
-  String toString() {
-    return 'WebRtcEvent.screenShareStopped()';
-  }
-
-  @override
-  bool operator ==(Object other) {
-    return identical(this, other) ||
-        (other.runtimeType == runtimeType &&
-            other is _$WebRtcEvent_ScreenShareStoppedImpl);
-  }
-
-  @override
-  int get hashCode => runtimeType.hashCode;
-
-  @override
-  @optionalTypeArgs
-  TResult when<TResult extends Object?>({
-    required TResult Function(String state) connectionStateChanged,
-    required TResult Function(String label, String state)
-    dataChannelStateChanged,
-    required TResult Function(IceCandidateDto candidate) localIceCandidate,
-    required TResult Function(SessionDescriptionDto description)
-    renegotiationOffer,
-    required TResult Function(SessionDescriptionDto description)
-    renegotiationAnswer,
-    required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
-    required TResult Function() fileTransferRequested,
-    required TResult Function(String? id, String? reason) sessionClosed,
-    required TResult Function(String? id) sessionClosedAck,
-    required TResult Function(String? ts) ping,
-    required TResult Function(String? ts) pong,
-    required TResult Function(String message) controlMessage,
-    required TResult Function(String message) fileMessage,
-    required TResult Function(Uint8List bytes) fileChunk,
-    required TResult Function() fileBufferedAmountLow,
-  }) {
-    return screenShareStopped();
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult? whenOrNull<TResult extends Object?>({
-    TResult? Function(String state)? connectionStateChanged,
-    TResult? Function(String label, String state)? dataChannelStateChanged,
-    TResult? Function(IceCandidateDto candidate)? localIceCandidate,
-    TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
-    TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
-    TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
-    TResult? Function()? fileTransferRequested,
-    TResult? Function(String? id, String? reason)? sessionClosed,
-    TResult? Function(String? id)? sessionClosedAck,
-    TResult? Function(String? ts)? ping,
-    TResult? Function(String? ts)? pong,
-    TResult? Function(String message)? controlMessage,
-    TResult? Function(String message)? fileMessage,
-    TResult? Function(Uint8List bytes)? fileChunk,
-    TResult? Function()? fileBufferedAmountLow,
-  }) {
-    return screenShareStopped?.call();
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult maybeWhen<TResult extends Object?>({
-    TResult Function(String state)? connectionStateChanged,
-    TResult Function(String label, String state)? dataChannelStateChanged,
-    TResult Function(IceCandidateDto candidate)? localIceCandidate,
-    TResult Function(SessionDescriptionDto description)? renegotiationOffer,
-    TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
-    TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
-    TResult Function()? fileTransferRequested,
-    TResult Function(String? id, String? reason)? sessionClosed,
-    TResult Function(String? id)? sessionClosedAck,
-    TResult Function(String? ts)? ping,
-    TResult Function(String? ts)? pong,
-    TResult Function(String message)? controlMessage,
-    TResult Function(String message)? fileMessage,
-    TResult Function(Uint8List bytes)? fileChunk,
-    TResult Function()? fileBufferedAmountLow,
-    required TResult orElse(),
-  }) {
-    if (screenShareStopped != null) {
-      return screenShareStopped();
-    }
-    return orElse();
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult map<TResult extends Object?>({
-    required TResult Function(WebRtcEvent_ConnectionStateChanged value)
-    connectionStateChanged,
-    required TResult Function(WebRtcEvent_DataChannelStateChanged value)
-    dataChannelStateChanged,
-    required TResult Function(WebRtcEvent_LocalIceCandidate value)
-    localIceCandidate,
-    required TResult Function(WebRtcEvent_RenegotiationOffer value)
-    renegotiationOffer,
-    required TResult Function(WebRtcEvent_RenegotiationAnswer value)
-    renegotiationAnswer,
-    required TResult Function(WebRtcEvent_RenegotiationIce value)
-    renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
-    required TResult Function(WebRtcEvent_FileTransferRequested value)
-    fileTransferRequested,
-    required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
-    required TResult Function(WebRtcEvent_SessionClosedAck value)
-    sessionClosedAck,
-    required TResult Function(WebRtcEvent_Ping value) ping,
-    required TResult Function(WebRtcEvent_Pong value) pong,
-    required TResult Function(WebRtcEvent_ControlMessage value) controlMessage,
-    required TResult Function(WebRtcEvent_FileMessage value) fileMessage,
-    required TResult Function(WebRtcEvent_FileChunk value) fileChunk,
-    required TResult Function(WebRtcEvent_FileBufferedAmountLow value)
-    fileBufferedAmountLow,
-  }) {
-    return screenShareStopped(this);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult? mapOrNull<TResult extends Object?>({
-    TResult? Function(WebRtcEvent_ConnectionStateChanged value)?
-    connectionStateChanged,
-    TResult? Function(WebRtcEvent_DataChannelStateChanged value)?
-    dataChannelStateChanged,
-    TResult? Function(WebRtcEvent_LocalIceCandidate value)? localIceCandidate,
-    TResult? Function(WebRtcEvent_RenegotiationOffer value)? renegotiationOffer,
-    TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
-    renegotiationAnswer,
-    TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
-    TResult? Function(WebRtcEvent_FileTransferRequested value)?
-    fileTransferRequested,
-    TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
-    TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
-    TResult? Function(WebRtcEvent_Ping value)? ping,
-    TResult? Function(WebRtcEvent_Pong value)? pong,
-    TResult? Function(WebRtcEvent_ControlMessage value)? controlMessage,
-    TResult? Function(WebRtcEvent_FileMessage value)? fileMessage,
-    TResult? Function(WebRtcEvent_FileChunk value)? fileChunk,
-    TResult? Function(WebRtcEvent_FileBufferedAmountLow value)?
-    fileBufferedAmountLow,
-  }) {
-    return screenShareStopped?.call(this);
-  }
-
-  @override
-  @optionalTypeArgs
-  TResult maybeMap<TResult extends Object?>({
-    TResult Function(WebRtcEvent_ConnectionStateChanged value)?
-    connectionStateChanged,
-    TResult Function(WebRtcEvent_DataChannelStateChanged value)?
-    dataChannelStateChanged,
-    TResult Function(WebRtcEvent_LocalIceCandidate value)? localIceCandidate,
-    TResult Function(WebRtcEvent_RenegotiationOffer value)? renegotiationOffer,
-    TResult Function(WebRtcEvent_RenegotiationAnswer value)?
-    renegotiationAnswer,
-    TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
-    TResult Function(WebRtcEvent_FileTransferRequested value)?
-    fileTransferRequested,
-    TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
-    TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
-    TResult Function(WebRtcEvent_Ping value)? ping,
-    TResult Function(WebRtcEvent_Pong value)? pong,
-    TResult Function(WebRtcEvent_ControlMessage value)? controlMessage,
-    TResult Function(WebRtcEvent_FileMessage value)? fileMessage,
-    TResult Function(WebRtcEvent_FileChunk value)? fileChunk,
-    TResult Function(WebRtcEvent_FileBufferedAmountLow value)?
-    fileBufferedAmountLow,
-    required TResult orElse(),
-  }) {
-    if (screenShareStopped != null) {
-      return screenShareStopped(this);
-    }
-    return orElse();
-  }
-}
-
-abstract class WebRtcEvent_ScreenShareStopped extends WebRtcEvent {
-  const factory WebRtcEvent_ScreenShareStopped() =
-      _$WebRtcEvent_ScreenShareStoppedImpl;
-  const WebRtcEvent_ScreenShareStopped._() : super._();
 }
 
 /// @nodoc
@@ -2044,9 +1818,9 @@ class _$WebRtcEvent_FileTransferRequestedImpl
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -2067,9 +1841,9 @@ class _$WebRtcEvent_FileTransferRequestedImpl
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -2090,9 +1864,9 @@ class _$WebRtcEvent_FileTransferRequestedImpl
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -2123,11 +1897,10 @@ class _$WebRtcEvent_FileTransferRequestedImpl
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -2153,10 +1926,10 @@ class _$WebRtcEvent_FileTransferRequestedImpl
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -2181,10 +1954,10 @@ class _$WebRtcEvent_FileTransferRequestedImpl
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -2297,9 +2070,9 @@ class _$WebRtcEvent_SessionClosedImpl extends WebRtcEvent_SessionClosed {
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -2320,9 +2093,9 @@ class _$WebRtcEvent_SessionClosedImpl extends WebRtcEvent_SessionClosed {
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -2343,9 +2116,9 @@ class _$WebRtcEvent_SessionClosedImpl extends WebRtcEvent_SessionClosed {
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -2376,11 +2149,10 @@ class _$WebRtcEvent_SessionClosedImpl extends WebRtcEvent_SessionClosed {
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -2406,10 +2178,10 @@ class _$WebRtcEvent_SessionClosedImpl extends WebRtcEvent_SessionClosed {
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -2434,10 +2206,10 @@ class _$WebRtcEvent_SessionClosedImpl extends WebRtcEvent_SessionClosed {
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -2469,6 +2241,292 @@ abstract class WebRtcEvent_SessionClosed extends WebRtcEvent {
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
   _$$WebRtcEvent_SessionClosedImplCopyWith<_$WebRtcEvent_SessionClosedImpl>
+  get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$WebRtcEvent_VideoFrameImplCopyWith<$Res> {
+  factory _$$WebRtcEvent_VideoFrameImplCopyWith(
+    _$WebRtcEvent_VideoFrameImpl value,
+    $Res Function(_$WebRtcEvent_VideoFrameImpl) then,
+  ) = __$$WebRtcEvent_VideoFrameImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({Uint8List data, int width, int height});
+}
+
+/// @nodoc
+class __$$WebRtcEvent_VideoFrameImplCopyWithImpl<$Res>
+    extends _$WebRtcEventCopyWithImpl<$Res, _$WebRtcEvent_VideoFrameImpl>
+    implements _$$WebRtcEvent_VideoFrameImplCopyWith<$Res> {
+  __$$WebRtcEvent_VideoFrameImplCopyWithImpl(
+    _$WebRtcEvent_VideoFrameImpl _value,
+    $Res Function(_$WebRtcEvent_VideoFrameImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of WebRtcEvent
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? data = null,
+    Object? width = null,
+    Object? height = null,
+  }) {
+    return _then(
+      _$WebRtcEvent_VideoFrameImpl(
+        data: null == data
+            ? _value.data
+            : data // ignore: cast_nullable_to_non_nullable
+                  as Uint8List,
+        width: null == width
+            ? _value.width
+            : width // ignore: cast_nullable_to_non_nullable
+                  as int,
+        height: null == height
+            ? _value.height
+            : height // ignore: cast_nullable_to_non_nullable
+                  as int,
+      ),
+    );
+  }
+}
+
+/// @nodoc
+
+class _$WebRtcEvent_VideoFrameImpl extends WebRtcEvent_VideoFrame {
+  const _$WebRtcEvent_VideoFrameImpl({
+    required this.data,
+    required this.width,
+    required this.height,
+  }) : super._();
+
+  @override
+  final Uint8List data;
+  @override
+  final int width;
+  @override
+  final int height;
+
+  @override
+  String toString() {
+    return 'WebRtcEvent.videoFrame(data: $data, width: $width, height: $height)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$WebRtcEvent_VideoFrameImpl &&
+            const DeepCollectionEquality().equals(other.data, data) &&
+            (identical(other.width, width) || other.width == width) &&
+            (identical(other.height, height) || other.height == height));
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    runtimeType,
+    const DeepCollectionEquality().hash(data),
+    width,
+    height,
+  );
+
+  /// Create a copy of WebRtcEvent
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$WebRtcEvent_VideoFrameImplCopyWith<_$WebRtcEvent_VideoFrameImpl>
+  get copyWith =>
+      __$$WebRtcEvent_VideoFrameImplCopyWithImpl<_$WebRtcEvent_VideoFrameImpl>(
+        this,
+        _$identity,
+      );
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(String state) connectionStateChanged,
+    required TResult Function(String label, String state)
+    dataChannelStateChanged,
+    required TResult Function(IceCandidateDto candidate) localIceCandidate,
+    required TResult Function(SessionDescriptionDto description)
+    renegotiationOffer,
+    required TResult Function(SessionDescriptionDto description)
+    renegotiationAnswer,
+    required TResult Function(IceCandidateDto candidate) renegotiationIce,
+    required TResult Function() fileTransferRequested,
+    required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
+    required TResult Function(String? id) sessionClosedAck,
+    required TResult Function(String? ts) ping,
+    required TResult Function(String? ts) pong,
+    required TResult Function(String message) controlMessage,
+    required TResult Function(String message) fileMessage,
+    required TResult Function(Uint8List bytes) fileChunk,
+    required TResult Function() fileBufferedAmountLow,
+  }) {
+    return videoFrame(data, width, height);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(String state)? connectionStateChanged,
+    TResult? Function(String label, String state)? dataChannelStateChanged,
+    TResult? Function(IceCandidateDto candidate)? localIceCandidate,
+    TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
+    TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
+    TResult? Function(IceCandidateDto candidate)? renegotiationIce,
+    TResult? Function()? fileTransferRequested,
+    TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
+    TResult? Function(String? id)? sessionClosedAck,
+    TResult? Function(String? ts)? ping,
+    TResult? Function(String? ts)? pong,
+    TResult? Function(String message)? controlMessage,
+    TResult? Function(String message)? fileMessage,
+    TResult? Function(Uint8List bytes)? fileChunk,
+    TResult? Function()? fileBufferedAmountLow,
+  }) {
+    return videoFrame?.call(data, width, height);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(String state)? connectionStateChanged,
+    TResult Function(String label, String state)? dataChannelStateChanged,
+    TResult Function(IceCandidateDto candidate)? localIceCandidate,
+    TResult Function(SessionDescriptionDto description)? renegotiationOffer,
+    TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
+    TResult Function(IceCandidateDto candidate)? renegotiationIce,
+    TResult Function()? fileTransferRequested,
+    TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
+    TResult Function(String? id)? sessionClosedAck,
+    TResult Function(String? ts)? ping,
+    TResult Function(String? ts)? pong,
+    TResult Function(String message)? controlMessage,
+    TResult Function(String message)? fileMessage,
+    TResult Function(Uint8List bytes)? fileChunk,
+    TResult Function()? fileBufferedAmountLow,
+    required TResult orElse(),
+  }) {
+    if (videoFrame != null) {
+      return videoFrame(data, width, height);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(WebRtcEvent_ConnectionStateChanged value)
+    connectionStateChanged,
+    required TResult Function(WebRtcEvent_DataChannelStateChanged value)
+    dataChannelStateChanged,
+    required TResult Function(WebRtcEvent_LocalIceCandidate value)
+    localIceCandidate,
+    required TResult Function(WebRtcEvent_RenegotiationOffer value)
+    renegotiationOffer,
+    required TResult Function(WebRtcEvent_RenegotiationAnswer value)
+    renegotiationAnswer,
+    required TResult Function(WebRtcEvent_RenegotiationIce value)
+    renegotiationIce,
+    required TResult Function(WebRtcEvent_FileTransferRequested value)
+    fileTransferRequested,
+    required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
+    required TResult Function(WebRtcEvent_SessionClosedAck value)
+    sessionClosedAck,
+    required TResult Function(WebRtcEvent_Ping value) ping,
+    required TResult Function(WebRtcEvent_Pong value) pong,
+    required TResult Function(WebRtcEvent_ControlMessage value) controlMessage,
+    required TResult Function(WebRtcEvent_FileMessage value) fileMessage,
+    required TResult Function(WebRtcEvent_FileChunk value) fileChunk,
+    required TResult Function(WebRtcEvent_FileBufferedAmountLow value)
+    fileBufferedAmountLow,
+  }) {
+    return videoFrame(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(WebRtcEvent_ConnectionStateChanged value)?
+    connectionStateChanged,
+    TResult? Function(WebRtcEvent_DataChannelStateChanged value)?
+    dataChannelStateChanged,
+    TResult? Function(WebRtcEvent_LocalIceCandidate value)? localIceCandidate,
+    TResult? Function(WebRtcEvent_RenegotiationOffer value)? renegotiationOffer,
+    TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
+    renegotiationAnswer,
+    TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
+    TResult? Function(WebRtcEvent_FileTransferRequested value)?
+    fileTransferRequested,
+    TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
+    TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
+    TResult? Function(WebRtcEvent_Ping value)? ping,
+    TResult? Function(WebRtcEvent_Pong value)? pong,
+    TResult? Function(WebRtcEvent_ControlMessage value)? controlMessage,
+    TResult? Function(WebRtcEvent_FileMessage value)? fileMessage,
+    TResult? Function(WebRtcEvent_FileChunk value)? fileChunk,
+    TResult? Function(WebRtcEvent_FileBufferedAmountLow value)?
+    fileBufferedAmountLow,
+  }) {
+    return videoFrame?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(WebRtcEvent_ConnectionStateChanged value)?
+    connectionStateChanged,
+    TResult Function(WebRtcEvent_DataChannelStateChanged value)?
+    dataChannelStateChanged,
+    TResult Function(WebRtcEvent_LocalIceCandidate value)? localIceCandidate,
+    TResult Function(WebRtcEvent_RenegotiationOffer value)? renegotiationOffer,
+    TResult Function(WebRtcEvent_RenegotiationAnswer value)?
+    renegotiationAnswer,
+    TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
+    TResult Function(WebRtcEvent_FileTransferRequested value)?
+    fileTransferRequested,
+    TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
+    TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
+    TResult Function(WebRtcEvent_Ping value)? ping,
+    TResult Function(WebRtcEvent_Pong value)? pong,
+    TResult Function(WebRtcEvent_ControlMessage value)? controlMessage,
+    TResult Function(WebRtcEvent_FileMessage value)? fileMessage,
+    TResult Function(WebRtcEvent_FileChunk value)? fileChunk,
+    TResult Function(WebRtcEvent_FileBufferedAmountLow value)?
+    fileBufferedAmountLow,
+    required TResult orElse(),
+  }) {
+    if (videoFrame != null) {
+      return videoFrame(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class WebRtcEvent_VideoFrame extends WebRtcEvent {
+  const factory WebRtcEvent_VideoFrame({
+    required final Uint8List data,
+    required final int width,
+    required final int height,
+  }) = _$WebRtcEvent_VideoFrameImpl;
+  const WebRtcEvent_VideoFrame._() : super._();
+
+  Uint8List get data;
+  int get width;
+  int get height;
+
+  /// Create a copy of WebRtcEvent
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$WebRtcEvent_VideoFrameImplCopyWith<_$WebRtcEvent_VideoFrameImpl>
   get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -2556,9 +2614,9 @@ class _$WebRtcEvent_SessionClosedAckImpl extends WebRtcEvent_SessionClosedAck {
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -2579,9 +2637,9 @@ class _$WebRtcEvent_SessionClosedAckImpl extends WebRtcEvent_SessionClosedAck {
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -2602,9 +2660,9 @@ class _$WebRtcEvent_SessionClosedAckImpl extends WebRtcEvent_SessionClosedAck {
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -2635,11 +2693,10 @@ class _$WebRtcEvent_SessionClosedAckImpl extends WebRtcEvent_SessionClosedAck {
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -2665,10 +2722,10 @@ class _$WebRtcEvent_SessionClosedAckImpl extends WebRtcEvent_SessionClosedAck {
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -2693,10 +2750,10 @@ class _$WebRtcEvent_SessionClosedAckImpl extends WebRtcEvent_SessionClosedAck {
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -2812,9 +2869,9 @@ class _$WebRtcEvent_PingImpl extends WebRtcEvent_Ping {
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -2835,9 +2892,9 @@ class _$WebRtcEvent_PingImpl extends WebRtcEvent_Ping {
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -2858,9 +2915,9 @@ class _$WebRtcEvent_PingImpl extends WebRtcEvent_Ping {
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -2891,11 +2948,10 @@ class _$WebRtcEvent_PingImpl extends WebRtcEvent_Ping {
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -2921,10 +2977,10 @@ class _$WebRtcEvent_PingImpl extends WebRtcEvent_Ping {
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -2949,10 +3005,10 @@ class _$WebRtcEvent_PingImpl extends WebRtcEvent_Ping {
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -3065,9 +3121,9 @@ class _$WebRtcEvent_PongImpl extends WebRtcEvent_Pong {
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -3088,9 +3144,9 @@ class _$WebRtcEvent_PongImpl extends WebRtcEvent_Pong {
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -3111,9 +3167,9 @@ class _$WebRtcEvent_PongImpl extends WebRtcEvent_Pong {
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -3144,11 +3200,10 @@ class _$WebRtcEvent_PongImpl extends WebRtcEvent_Pong {
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -3174,10 +3229,10 @@ class _$WebRtcEvent_PongImpl extends WebRtcEvent_Pong {
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -3202,10 +3257,10 @@ class _$WebRtcEvent_PongImpl extends WebRtcEvent_Pong {
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -3318,9 +3373,9 @@ class _$WebRtcEvent_ControlMessageImpl extends WebRtcEvent_ControlMessage {
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -3341,9 +3396,9 @@ class _$WebRtcEvent_ControlMessageImpl extends WebRtcEvent_ControlMessage {
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -3364,9 +3419,9 @@ class _$WebRtcEvent_ControlMessageImpl extends WebRtcEvent_ControlMessage {
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -3397,11 +3452,10 @@ class _$WebRtcEvent_ControlMessageImpl extends WebRtcEvent_ControlMessage {
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -3427,10 +3481,10 @@ class _$WebRtcEvent_ControlMessageImpl extends WebRtcEvent_ControlMessage {
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -3455,10 +3509,10 @@ class _$WebRtcEvent_ControlMessageImpl extends WebRtcEvent_ControlMessage {
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -3572,9 +3626,9 @@ class _$WebRtcEvent_FileMessageImpl extends WebRtcEvent_FileMessage {
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -3595,9 +3649,9 @@ class _$WebRtcEvent_FileMessageImpl extends WebRtcEvent_FileMessage {
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -3618,9 +3672,9 @@ class _$WebRtcEvent_FileMessageImpl extends WebRtcEvent_FileMessage {
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -3651,11 +3705,10 @@ class _$WebRtcEvent_FileMessageImpl extends WebRtcEvent_FileMessage {
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -3681,10 +3734,10 @@ class _$WebRtcEvent_FileMessageImpl extends WebRtcEvent_FileMessage {
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -3709,10 +3762,10 @@ class _$WebRtcEvent_FileMessageImpl extends WebRtcEvent_FileMessage {
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -3828,9 +3881,9 @@ class _$WebRtcEvent_FileChunkImpl extends WebRtcEvent_FileChunk {
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -3851,9 +3904,9 @@ class _$WebRtcEvent_FileChunkImpl extends WebRtcEvent_FileChunk {
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -3874,9 +3927,9 @@ class _$WebRtcEvent_FileChunkImpl extends WebRtcEvent_FileChunk {
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -3907,11 +3960,10 @@ class _$WebRtcEvent_FileChunkImpl extends WebRtcEvent_FileChunk {
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -3937,10 +3989,10 @@ class _$WebRtcEvent_FileChunkImpl extends WebRtcEvent_FileChunk {
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -3965,10 +4017,10 @@ class _$WebRtcEvent_FileChunkImpl extends WebRtcEvent_FileChunk {
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,
@@ -4055,9 +4107,9 @@ class _$WebRtcEvent_FileBufferedAmountLowImpl
     required TResult Function(SessionDescriptionDto description)
     renegotiationAnswer,
     required TResult Function(IceCandidateDto candidate) renegotiationIce,
-    required TResult Function() screenShareStopped,
     required TResult Function() fileTransferRequested,
     required TResult Function(String? id, String? reason) sessionClosed,
+    required TResult Function(Uint8List data, int width, int height) videoFrame,
     required TResult Function(String? id) sessionClosedAck,
     required TResult Function(String? ts) ping,
     required TResult Function(String? ts) pong,
@@ -4078,9 +4130,9 @@ class _$WebRtcEvent_FileBufferedAmountLowImpl
     TResult? Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult? Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult? Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult? Function()? screenShareStopped,
     TResult? Function()? fileTransferRequested,
     TResult? Function(String? id, String? reason)? sessionClosed,
+    TResult? Function(Uint8List data, int width, int height)? videoFrame,
     TResult? Function(String? id)? sessionClosedAck,
     TResult? Function(String? ts)? ping,
     TResult? Function(String? ts)? pong,
@@ -4101,9 +4153,9 @@ class _$WebRtcEvent_FileBufferedAmountLowImpl
     TResult Function(SessionDescriptionDto description)? renegotiationOffer,
     TResult Function(SessionDescriptionDto description)? renegotiationAnswer,
     TResult Function(IceCandidateDto candidate)? renegotiationIce,
-    TResult Function()? screenShareStopped,
     TResult Function()? fileTransferRequested,
     TResult Function(String? id, String? reason)? sessionClosed,
+    TResult Function(Uint8List data, int width, int height)? videoFrame,
     TResult Function(String? id)? sessionClosedAck,
     TResult Function(String? ts)? ping,
     TResult Function(String? ts)? pong,
@@ -4134,11 +4186,10 @@ class _$WebRtcEvent_FileBufferedAmountLowImpl
     renegotiationAnswer,
     required TResult Function(WebRtcEvent_RenegotiationIce value)
     renegotiationIce,
-    required TResult Function(WebRtcEvent_ScreenShareStopped value)
-    screenShareStopped,
     required TResult Function(WebRtcEvent_FileTransferRequested value)
     fileTransferRequested,
     required TResult Function(WebRtcEvent_SessionClosed value) sessionClosed,
+    required TResult Function(WebRtcEvent_VideoFrame value) videoFrame,
     required TResult Function(WebRtcEvent_SessionClosedAck value)
     sessionClosedAck,
     required TResult Function(WebRtcEvent_Ping value) ping,
@@ -4164,10 +4215,10 @@ class _$WebRtcEvent_FileBufferedAmountLowImpl
     TResult? Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult? Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult? Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult? Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult? Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult? Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult? Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult? Function(WebRtcEvent_Ping value)? ping,
     TResult? Function(WebRtcEvent_Pong value)? pong,
@@ -4192,10 +4243,10 @@ class _$WebRtcEvent_FileBufferedAmountLowImpl
     TResult Function(WebRtcEvent_RenegotiationAnswer value)?
     renegotiationAnswer,
     TResult Function(WebRtcEvent_RenegotiationIce value)? renegotiationIce,
-    TResult Function(WebRtcEvent_ScreenShareStopped value)? screenShareStopped,
     TResult Function(WebRtcEvent_FileTransferRequested value)?
     fileTransferRequested,
     TResult Function(WebRtcEvent_SessionClosed value)? sessionClosed,
+    TResult Function(WebRtcEvent_VideoFrame value)? videoFrame,
     TResult Function(WebRtcEvent_SessionClosedAck value)? sessionClosedAck,
     TResult Function(WebRtcEvent_Ping value)? ping,
     TResult Function(WebRtcEvent_Pong value)? pong,

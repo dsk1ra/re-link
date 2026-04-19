@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 723726457;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1692855320;
 
 // Section: executor
 
@@ -985,37 +985,6 @@ fn wire__crate__api__file_transfer__handle_file_message_impl(
         },
     )
 }
-fn wire__crate__api__share__init_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "init",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            deserializer.end();
-            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                (move || {
-                    let output_ok = crate::api::share::init()?;
-                    Ok(output_ok)
-                })(),
-            )
-        },
-    )
-}
 fn wire__crate__api__simple__init_app_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1047,6 +1016,37 @@ fn wire__crate__api__simple__init_app_impl(
                     Ok(output_ok)
                 })())
             }
+        },
+    )
+}
+fn wire__crate__api__share__init_screen_capture_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "init_screen_capture",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::share::init_screen_capture()?;
+                    Ok(output_ok)
+                })(),
+            )
         },
     )
 }
@@ -1753,44 +1753,6 @@ fn wire__crate__api__webrtc__send_renegotiation_offer_impl(
         },
     )
 }
-fn wire__crate__api__webrtc__send_screen_share_stopped_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "send_screen_share_stopped",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_connection_id = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok =
-                            crate::api::webrtc::send_screen_share_stopped(api_connection_id)
-                                .await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
 fn wire__crate__api__webrtc__send_session_closed_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2070,15 +2032,16 @@ fn wire__crate__api__transfer__start_file_transfer_impl(
     )
 }
 fn wire__crate__api__share__start_share_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "start_share",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -2094,29 +2057,34 @@ fn wire__crate__api__share__start_share_impl(
             let api_source_id = <String>::sse_decode(&mut deserializer);
             let api_config = <crate::api::share::ShareConfig>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                (move || {
-                    let output_ok = crate::api::share::start_share(
-                        api_connection_id,
-                        api_source_id,
-                        api_config,
-                    )?;
-                    Ok(output_ok)
-                })(),
-            )
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::share::start_share(
+                            api_connection_id,
+                            api_source_id,
+                            api_config,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
 fn wire__crate__api__share__stop_share_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "stop_share",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -2128,14 +2096,17 @@ fn wire__crate__api__share__stop_share_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api__connection_id = <String>::sse_decode(&mut deserializer);
+            let api_connection_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                (move || {
-                    let output_ok = crate::api::share::stop_share(api__connection_id)?;
-                    Ok(output_ok)
-                })(),
-            )
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::share::stop_share(api_connection_id).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
@@ -2205,6 +2176,44 @@ fn wire__crate__api__transfer__upsert_connection_impl(
                     (move || async move {
                         let output_ok =
                             crate::api::transfer::upsert_connection(api_connection_id, api_pc)
+                                .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__webrtc__wait_for_file_channel_ready_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "wait_for_file_channel_ready",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_connection_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::webrtc::wait_for_file_channel_ready(api_connection_id)
                                 .await?;
                         Ok(output_ok)
                     })()
@@ -2312,19 +2321,6 @@ impl SseDecode for String {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <Vec<u8>>::sse_decode(deserializer);
         return String::from_utf8(inner).unwrap();
-    }
-}
-
-impl SseDecode for crate::api::share::BitratePreset {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::share::BitratePreset::Low,
-            1 => crate::api::share::BitratePreset::Medium,
-            2 => crate::api::share::BitratePreset::High,
-            _ => unreachable!("Invalid variant for BitratePreset: {}", inner),
-        };
     }
 }
 
@@ -2555,24 +2551,10 @@ impl SseDecode for crate::api::share::ShareConfig {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_fps = <u32>::sse_decode(deserializer);
-        let mut var_bitratePreset = <crate::api::share::BitratePreset>::sse_decode(deserializer);
+        let mut var_targetBitrateKbps = <u32>::sse_decode(deserializer);
         return crate::api::share::ShareConfig {
             fps: var_fps,
-            bitrate_preset: var_bitratePreset,
-        };
-    }
-}
-
-impl SseDecode for crate::api::share::ShareStartResult {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_trackPrepared = <bool>::sse_decode(deserializer);
-        let mut var_renegotiationRequired = <bool>::sse_decode(deserializer);
-        let mut var_dataChannelAvailable = <bool>::sse_decode(deserializer);
-        return crate::api::share::ShareStartResult {
-            track_prepared: var_trackPrepared,
-            renegotiation_required: var_renegotiationRequired,
-            data_channel_available: var_dataChannelAvailable,
+            target_bitrate_kbps: var_targetBitrateKbps,
         };
     }
 }
@@ -2724,17 +2706,24 @@ impl SseDecode for crate::api::webrtc::WebRtcEvent {
                 };
             }
             6 => {
-                return crate::api::webrtc::WebRtcEvent::ScreenShareStopped;
-            }
-            7 => {
                 return crate::api::webrtc::WebRtcEvent::FileTransferRequested;
             }
-            8 => {
+            7 => {
                 let mut var_id = <Option<String>>::sse_decode(deserializer);
                 let mut var_reason = <Option<String>>::sse_decode(deserializer);
                 return crate::api::webrtc::WebRtcEvent::SessionClosed {
                     id: var_id,
                     reason: var_reason,
+                };
+            }
+            8 => {
+                let mut var_data = <Vec<u8>>::sse_decode(deserializer);
+                let mut var_width = <u32>::sse_decode(deserializer);
+                let mut var_height = <u32>::sse_decode(deserializer);
+                return crate::api::webrtc::WebRtcEvent::VideoFrame {
+                    data: var_data,
+                    width: var_width,
+                    height: var_height,
                 };
             }
             9 => {
@@ -2819,7 +2808,7 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        26 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
         28 => wire__crate__api__file_transfer__is_file_transfer_control_message_impl(
             port,
             ptr,
@@ -2860,29 +2849,31 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        46 => wire__crate__api__webrtc__send_screen_share_stopped_impl(
+        46 => wire__crate__api__webrtc__send_session_closed_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__webrtc__send_session_closed_ack_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        47 => wire__crate__api__webrtc__send_session_closed_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__webrtc__send_session_closed_ack_impl(
+        48 => wire__crate__api__transfer__set_data_channel_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__webrtc__set_file_buffered_amount_low_threshold_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        49 => wire__crate__api__transfer__set_data_channel_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__webrtc__set_file_buffered_amount_low_threshold_impl(
+        50 => wire__crate__api__webrtc__set_remote_answer_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__share__start_share_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__share__stop_share_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__file_transfer__tick_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__transfer__upsert_connection_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__webrtc__wait_for_file_channel_ready_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => wire__crate__api__webrtc__set_remote_answer_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__file_transfer__tick_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__transfer__upsert_connection_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2926,7 +2917,7 @@ fn pde_ffi_dispatcher_sync_impl(
             wire__crate__api__connection__generate_connection_link_impl(ptr, rust_vec_len, data_len)
         }
         22 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__share__init_impl(ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__share__init_screen_capture_impl(ptr, rust_vec_len, data_len),
         27 => wire__crate__api__file_transfer__init_transfer_impl(ptr, rust_vec_len, data_len),
         29 => wire__crate__api__share__list_share_sources_impl(ptr, rust_vec_len, data_len),
         30 => {
@@ -2940,10 +2931,8 @@ fn pde_ffi_dispatcher_sync_impl(
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__api__transfer__start_file_receive_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__transfer__start_file_transfer_impl(ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__share__start_share_impl(ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__share__stop_share_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__transfer__start_file_receive_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__transfer__start_file_transfer_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3006,28 +2995,6 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<PeerConnectionHandle>> for Pee
     }
 }
 
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::share::BitratePreset {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::Low => 0.into_dart(),
-            Self::Medium => 1.into_dart(),
-            Self::High => 2.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::share::BitratePreset
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::share::BitratePreset>
-    for crate::api::share::BitratePreset
-{
-    fn into_into_dart(self) -> crate::api::share::BitratePreset {
-        self
-    }
-}
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::connection::ConnectionInitLocalResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -3147,7 +3114,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::share::ShareConfig {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.fps.into_into_dart().into_dart(),
-            self.bitrate_preset.into_into_dart().into_dart(),
+            self.target_bitrate_kbps.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3160,28 +3127,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::share::ShareConfig>
     for crate::api::share::ShareConfig
 {
     fn into_into_dart(self) -> crate::api::share::ShareConfig {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::share::ShareStartResult {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.track_prepared.into_into_dart().into_dart(),
-            self.renegotiation_required.into_into_dart().into_dart(),
-            self.data_channel_available.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::share::ShareStartResult
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::share::ShareStartResult>
-    for crate::api::share::ShareStartResult
-{
-    fn into_into_dart(self) -> crate::api::share::ShareStartResult {
         self
     }
 }
@@ -3299,12 +3244,22 @@ impl flutter_rust_bridge::IntoDart for crate::api::webrtc::WebRtcEvent {
             crate::api::webrtc::WebRtcEvent::RenegotiationIce { candidate } => {
                 [5.into_dart(), candidate.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::webrtc::WebRtcEvent::ScreenShareStopped => [6.into_dart()].into_dart(),
-            crate::api::webrtc::WebRtcEvent::FileTransferRequested => [7.into_dart()].into_dart(),
+            crate::api::webrtc::WebRtcEvent::FileTransferRequested => [6.into_dart()].into_dart(),
             crate::api::webrtc::WebRtcEvent::SessionClosed { id, reason } => [
-                8.into_dart(),
+                7.into_dart(),
                 id.into_into_dart().into_dart(),
                 reason.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::webrtc::WebRtcEvent::VideoFrame {
+                data,
+                width,
+                height,
+            } => [
+                8.into_dart(),
+                data.into_into_dart().into_dart(),
+                width.into_into_dart().into_dart(),
+                height.into_into_dart().into_dart(),
             ]
             .into_dart(),
             crate::api::webrtc::WebRtcEvent::SessionClosedAck { id } => {
@@ -3428,23 +3383,6 @@ impl SseEncode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<u8>>::sse_encode(self.into_bytes(), serializer);
-    }
-}
-
-impl SseEncode for crate::api::share::BitratePreset {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::share::BitratePreset::Low => 0,
-                crate::api::share::BitratePreset::Medium => 1,
-                crate::api::share::BitratePreset::High => 2,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
     }
 }
 
@@ -3623,16 +3561,7 @@ impl SseEncode for crate::api::share::ShareConfig {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.fps, serializer);
-        <crate::api::share::BitratePreset>::sse_encode(self.bitrate_preset, serializer);
-    }
-}
-
-impl SseEncode for crate::api::share::ShareStartResult {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.track_prepared, serializer);
-        <bool>::sse_encode(self.renegotiation_required, serializer);
-        <bool>::sse_encode(self.data_channel_available, serializer);
+        <u32>::sse_encode(self.target_bitrate_kbps, serializer);
     }
 }
 
@@ -3764,16 +3693,23 @@ impl SseEncode for crate::api::webrtc::WebRtcEvent {
                 <i32>::sse_encode(5, serializer);
                 <crate::api::webrtc::IceCandidateDto>::sse_encode(candidate, serializer);
             }
-            crate::api::webrtc::WebRtcEvent::ScreenShareStopped => {
+            crate::api::webrtc::WebRtcEvent::FileTransferRequested => {
                 <i32>::sse_encode(6, serializer);
             }
-            crate::api::webrtc::WebRtcEvent::FileTransferRequested => {
-                <i32>::sse_encode(7, serializer);
-            }
             crate::api::webrtc::WebRtcEvent::SessionClosed { id, reason } => {
-                <i32>::sse_encode(8, serializer);
+                <i32>::sse_encode(7, serializer);
                 <Option<String>>::sse_encode(id, serializer);
                 <Option<String>>::sse_encode(reason, serializer);
+            }
+            crate::api::webrtc::WebRtcEvent::VideoFrame {
+                data,
+                width,
+                height,
+            } => {
+                <i32>::sse_encode(8, serializer);
+                <Vec<u8>>::sse_encode(data, serializer);
+                <u32>::sse_encode(width, serializer);
+                <u32>::sse_encode(height, serializer);
             }
             crate::api::webrtc::WebRtcEvent::SessionClosedAck { id } => {
                 <i32>::sse_encode(9, serializer);

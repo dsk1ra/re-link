@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'webrtc.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `attach_data_channel`, `get_api`, `get_session`, `normalize_sdp_kind`, `parse_control_message`, `push_event`, `state_label`, `to_sdp_dto`, `to_webrtc_ice_server`, `wait_for_data_channel_open`
+// These functions are ignored because they are not marked as `pub`: `attach_data_channel`, `clear_screen_share_track`, `ensure_data_channel`, `ensure_default_data_channels`, `get_api`, `get_session`, `normalize_sdp_kind`, `parse_control_message`, `prepare_screen_share_track`, `push_event`, `state_label`, `to_sdp_dto`, `to_webrtc_ice_server`, `wait_for_data_channel_open`, `wait_for_named_data_channel`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ParsedControlMessage`, `WebRtcSession`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -79,11 +79,6 @@ Future<void> sendRenegotiationIce({
   candidate: candidate,
 );
 
-Future<void> sendScreenShareStopped({required String connectionId}) => RustLib
-    .instance
-    .api
-    .crateApiWebrtcSendScreenShareStopped(connectionId: connectionId);
-
 Future<void> sendFileTransferPrompt({required String connectionId}) => RustLib
     .instance
     .api
@@ -146,6 +141,11 @@ Future<void> setFileBufferedAmountLowThreshold({
   connectionId: connectionId,
   threshold: threshold,
 );
+
+Future<void> waitForFileChannelReady({required String connectionId}) => RustLib
+    .instance
+    .api
+    .crateApiWebrtcWaitForFileChannelReady(connectionId: connectionId);
 
 Future<List<WebRtcEvent>> drainEvents({required String connectionId}) =>
     RustLib.instance.api.crateApiWebrtcDrainEvents(connectionId: connectionId);
@@ -238,12 +238,15 @@ sealed class WebRtcEvent with _$WebRtcEvent {
   const factory WebRtcEvent.renegotiationIce({
     required IceCandidateDto candidate,
   }) = WebRtcEvent_RenegotiationIce;
-  const factory WebRtcEvent.screenShareStopped() =
-      WebRtcEvent_ScreenShareStopped;
   const factory WebRtcEvent.fileTransferRequested() =
       WebRtcEvent_FileTransferRequested;
   const factory WebRtcEvent.sessionClosed({String? id, String? reason}) =
       WebRtcEvent_SessionClosed;
+  const factory WebRtcEvent.videoFrame({
+    required Uint8List data,
+    required int width,
+    required int height,
+  }) = WebRtcEvent_VideoFrame;
   const factory WebRtcEvent.sessionClosedAck({String? id}) =
       WebRtcEvent_SessionClosedAck;
   const factory WebRtcEvent.ping({String? ts}) = WebRtcEvent_Ping;

@@ -98,9 +98,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
-  BitratePreset dco_decode_bitrate_preset(dynamic raw);
-
-  @protected
   bool dco_decode_bool(dynamic raw);
 
   @protected
@@ -186,9 +183,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ShareConfig dco_decode_share_config(dynamic raw);
-
-  @protected
-  ShareStartResult dco_decode_share_start_result(dynamic raw);
 
   @protected
   SignalingClientConfigDto dco_decode_signaling_client_config_dto(dynamic raw);
@@ -282,9 +276,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
-
-  @protected
-  BitratePreset sse_decode_bitrate_preset(SseDeserializer deserializer);
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
@@ -382,9 +373,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ShareConfig sse_decode_share_config(SseDeserializer deserializer);
-
-  @protected
-  ShareStartResult sse_decode_share_start_result(SseDeserializer deserializer);
 
   @protected
   SignalingClientConfigDto sse_decode_signaling_client_config_dto(
@@ -494,9 +482,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_bitrate_preset(BitratePreset self, SseSerializer serializer);
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
@@ -619,12 +604,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_share_config(ShareConfig self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_share_start_result(
-    ShareStartResult self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_signaling_client_config_dto(
