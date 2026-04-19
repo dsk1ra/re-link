@@ -139,3 +139,5 @@ client/flutter/ios/Runner/GeneratedPluginRegistrant.m
 # Misc caches
 .cache/
 .idea/workspace.xml
+
+CLAUDE.md
