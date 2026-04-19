@@ -2,14 +2,15 @@ use crate::api::webrtc;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::{sleep, Duration, Instant};
 
 const MSG_METADATA: &str = "metadata";
@@ -21,6 +22,10 @@ const MSG_EOF: &str = "eof";
 const MAX_FILE_SIZE_BYTES: u64 = 512 * 1024 * 1024;
 const ACCEPT_TIMEOUT: Duration = Duration::from_secs(30);
 const INACTIVITY_TIMEOUT: Duration = Duration::from_secs(30);
+const INTERNAL_TICK_INTERVAL: Duration = Duration::from_secs(1);
+const COMMAND_CHANNEL_CAPACITY: usize = 32;
+const STATE_HISTORY_CAPACITY: usize = 64;
+const PROGRESS_UPDATE_BYTES: u64 = 64 * 1024;
 // Attached RTCDataChannel reads are not robust for large binary messages in this stack.
 // Keep chunks comfortably below the observed read-loop ceiling to avoid stream resets.
 const CHUNK_SIZE: usize = 16 * 1024;
@@ -47,12 +52,18 @@ pub struct FileTransferStateDto {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SessionRole {
+    Sender,
+    Receiver,
+}
+
 #[derive(Debug)]
 struct FileTransferSession {
     id: String,
     file_name: String,
     file_size: u64,
-    is_sender: bool,
+    role: SessionRole,
     expected_sha256: Option<String>,
     sender_nonce: Option<String>,
     source_file_path: Option<PathBuf>,
@@ -63,15 +74,16 @@ struct FileTransferSession {
     hasher: Option<Sha256>,
     accept_deadline: Option<Instant>,
     inactivity_deadline: Option<Instant>,
+    cancel_flag: Option<Arc<AtomicBool>>,
+    worker_started: bool,
 }
 
-#[derive(Debug)]
-struct FileTransferManager {
+struct FileTransferActor {
     connection_id: String,
     instance_nonce: String,
     current_state: FileTransferStateDto,
     current_session: Option<FileTransferSession>,
-    pending_states: Vec<FileTransferStateDto>,
+    pending_states: VecDeque<FileTransferStateDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,8 +107,73 @@ enum IncomingFileMessage {
     Eof { id: String },
 }
 
-static MANAGERS: Lazy<Mutex<HashMap<String, Arc<Mutex<FileTransferManager>>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+#[derive(Serialize)]
+struct OutMetadata<'a> {
+    r#type: &'a str,
+    id: &'a str,
+    name: &'a str,
+    size: u64,
+    sha256: &'a str,
+    sender_nonce: &'a str,
+}
+
+type ResponseSender<T> = oneshot::Sender<anyhow::Result<T>>;
+
+enum ActorCommand {
+    SendOffer {
+        file_path: String,
+        reply: ResponseSender<()>,
+    },
+    AcceptOffer {
+        save_dir: String,
+        reply: ResponseSender<()>,
+    },
+    RejectOffer {
+        reason: Option<String>,
+        reply: ResponseSender<()>,
+    },
+    CancelTransfer {
+        reason: Option<String>,
+        reply: ResponseSender<()>,
+    },
+    IncomingControl {
+        text: String,
+        reply: ResponseSender<()>,
+    },
+    IncomingChunk {
+        bytes: Vec<u8>,
+        reply: ResponseSender<()>,
+    },
+    Tick {
+        reply: Option<ResponseSender<()>>,
+    },
+    DrainStates {
+        reply: ResponseSender<Vec<FileTransferStateDto>>,
+    },
+    SenderProgress {
+        id: String,
+        bytes_transferred: u64,
+    },
+    SenderFinished {
+        id: String,
+        total_bytes: u64,
+    },
+    SenderFailed {
+        id: String,
+        error: String,
+    },
+    Shutdown {
+        reply: oneshot::Sender<()>,
+    },
+}
+
+#[derive(Clone)]
+struct ActorHandle {
+    id: String,
+    tx: mpsc::Sender<ActorCommand>,
+}
+
+static ACTORS: Lazy<Mutex<HashMap<String, ActorHandle>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 // FRB sync entrypoints may run on threads without an active Tokio reactor.
 // Keep a fallback runtime for lightweight background initialization tasks.
@@ -115,33 +192,6 @@ fn now_nonce() -> String {
         .map(|d| d.as_micros())
         .unwrap_or(0);
     format!("{}-{}", micros, rand::random::<u32>())
-}
-
-async fn get_manager(connection_id: &str) -> Arc<Mutex<FileTransferManager>> {
-    let mut guard = MANAGERS.lock().await;
-    guard
-        .entry(connection_id.to_string())
-        .or_insert_with(|| {
-            Arc::new(Mutex::new(FileTransferManager {
-                connection_id: connection_id.to_string(),
-                instance_nonce: now_nonce(),
-                current_state: FileTransferStateDto {
-                    status: TransferStatusDto::Idle,
-                    file_name: None,
-                    total_bytes: 0,
-                    bytes_transferred: 0,
-                    error: None,
-                },
-                current_session: None,
-                pending_states: Vec::new(),
-            }))
-        })
-        .clone()
-}
-
-fn push_state(manager: &mut FileTransferManager, state: FileTransferStateDto) {
-    manager.current_state = state.clone();
-    manager.pending_states.push(state);
 }
 
 fn parse_file_message(text: &str) -> anyhow::Result<IncomingFileMessage> {
@@ -270,64 +320,94 @@ fn compare_offer_priority(
     }
 }
 
-#[derive(Serialize)]
-struct OutMetadata<'a> {
-    r#type: &'a str,
-    id: &'a str,
-    name: &'a str,
-    size: u64,
-    sha256: &'a str,
-    sender_nonce: &'a str,
-}
-
-#[flutter_rust_bridge::frb(sync)]
-pub fn init_transfer(connection_id: String) {
-    let task = async move {
-        let _ = get_manager(&connection_id).await;
-    };
-
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn(task);
-    } else {
-        FALLBACK_RUNTIME.spawn(task);
-    }
-}
-
-pub async fn send_offer(connection_id: String, file_path: String) -> anyhow::Result<()> {
-    let manager_arc = get_manager(&connection_id).await;
-
-    let path = PathBuf::from(file_path);
-    let meta = tokio::fs::metadata(&path).await?;
-    let size = meta.len();
-    if size > MAX_FILE_SIZE_BYTES {
-        anyhow::bail!("File exceeds max size");
+impl FileTransferActor {
+    fn new(connection_id: String) -> Self {
+        Self {
+            connection_id,
+            instance_nonce: now_nonce(),
+            current_state: FileTransferStateDto {
+                status: TransferStatusDto::Idle,
+                file_name: None,
+                total_bytes: 0,
+                bytes_transferred: 0,
+                error: None,
+            },
+            current_session: None,
+            pending_states: VecDeque::new(),
+        }
     }
 
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-    let sha256 = compute_sha256(&path).await?;
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let id = millis.to_string();
+    fn push_state(&mut self, state: FileTransferStateDto) {
+        self.current_state = state.clone();
 
-    {
-        let mut manager = manager_arc.lock().await;
-        if manager.current_session.is_some() {
+        if let Some(last) = self.pending_states.back_mut() {
+            if should_coalesce_progress_state(last, &state) {
+                *last = state;
+                return;
+            }
+        }
+
+        if self.pending_states.len() >= STATE_HISTORY_CAPACITY {
+            self.pending_states.pop_front();
+        }
+        self.pending_states.push_back(state);
+    }
+
+    fn drain_states(&mut self) -> Vec<FileTransferStateDto> {
+        if self.pending_states.is_empty() {
+            vec![self.current_state.clone()]
+        } else {
+            self.pending_states.drain(..).collect()
+        }
+    }
+
+    async fn clear_current_session(&mut self) {
+        if let Some(session) = self.current_session.take() {
+            cleanup_session_resources(session).await;
+        }
+    }
+
+    async fn fail_current_session(&mut self, message: impl Into<String>) {
+        let (file_name, total_bytes, bytes_transferred) =
+            state_snapshot_for_session(self.current_session.as_ref(), &self.current_state);
+        self.push_state(FileTransferStateDto {
+            status: TransferStatusDto::Error,
+            file_name,
+            total_bytes,
+            bytes_transferred,
+            error: Some(message.into()),
+        });
+        self.clear_current_session().await;
+    }
+
+    async fn handle_send_offer(&mut self, file_path: String) -> anyhow::Result<()> {
+        if self.current_session.is_some() {
             anyhow::bail!("Transfer already in progress");
         }
 
-        manager.current_session = Some(FileTransferSession {
+        let path = PathBuf::from(file_path);
+        let meta = tokio::fs::metadata(&path).await?;
+        let size = meta.len();
+        if size > MAX_FILE_SIZE_BYTES {
+            anyhow::bail!("File exceeds max size");
+        }
+
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let sha256 = compute_sha256(&path).await?;
+        let id = now_nonce();
+        let sender_nonce = self.instance_nonce.clone();
+
+        self.current_session = Some(FileTransferSession {
             id: id.clone(),
             file_name: name.clone(),
             file_size: size,
-            is_sender: true,
+            role: SessionRole::Sender,
             expected_sha256: Some(sha256.clone()),
-            sender_nonce: Some(manager.instance_nonce.clone()),
+            sender_nonce: Some(sender_nonce.clone()),
             source_file_path: Some(path.clone()),
             destination_dir: None,
             temp_path: None,
@@ -336,296 +416,171 @@ pub async fn send_offer(connection_id: String, file_path: String) -> anyhow::Res
             hasher: None,
             accept_deadline: Some(Instant::now() + ACCEPT_TIMEOUT),
             inactivity_deadline: None,
+            cancel_flag: Some(Arc::new(AtomicBool::new(false))),
+            worker_started: false,
+        });
+        self.push_state(FileTransferStateDto {
+            status: TransferStatusDto::Offering,
+            file_name: Some(name.clone()),
+            total_bytes: size,
+            bytes_transferred: 0,
+            error: None,
         });
 
-        push_state(
-            &mut manager,
-            FileTransferStateDto {
-                status: TransferStatusDto::Offering,
-                file_name: Some(name.clone()),
-                total_bytes: size,
-                bytes_transferred: 0,
-                error: None,
-            },
-        );
-    }
+        let metadata = serde_json::to_string(&OutMetadata {
+            r#type: MSG_METADATA,
+            id: &id,
+            name: &name,
+            size,
+            sha256: &sha256,
+            sender_nonce: &sender_nonce,
+        })?;
 
-    let sender_nonce = {
-        let manager = manager_arc.lock().await;
-        manager.instance_nonce.clone()
-    };
-
-    let msg = serde_json::to_string(&OutMetadata {
-        r#type: MSG_METADATA,
-        id: &id,
-        name: &name,
-        size,
-        sha256: &sha256,
-        sender_nonce: &sender_nonce,
-    })?;
-
-    if let Err(e) = webrtc::send_control_message(connection_id.clone(), msg).await {
-        let mut manager = manager_arc.lock().await;
-        push_state(
-            &mut manager,
-            FileTransferStateDto {
+        if let Err(error) = webrtc::send_control_message(self.connection_id.clone(), metadata).await
+        {
+            self.push_state(FileTransferStateDto {
                 status: TransferStatusDto::Error,
                 file_name: Some(name),
                 total_bytes: size,
                 bytes_transferred: 0,
-                error: Some(format!("send offer failed: {e}")),
-            },
-        );
-        manager.current_session = None;
-    } else if webrtc::send_file_transfer_prompt(connection_id)
-        .await
-        .is_err()
-    {
-        tracing::warn!("file transfer prompt failed");
+                error: Some(format!("send offer failed: {error}")),
+            });
+            self.clear_current_session().await;
+            return Err(error);
+        }
+
+        if webrtc::send_file_transfer_prompt(self.connection_id.clone())
+            .await
+            .is_err()
+        {
+            tracing::warn!("file transfer prompt failed");
+        }
+
+        Ok(())
     }
 
-    Ok(())
-}
+    async fn handle_accept_offer(&mut self, save_dir: String) -> anyhow::Result<()> {
+        let dest_dir = PathBuf::from(&save_dir);
+        tokio::fs::create_dir_all(&dest_dir).await?;
+        webrtc::wait_for_file_channel_ready(self.connection_id.clone())
+            .await
+            .map_err(|e| anyhow::anyhow!("file transfer channel is not ready yet: {e}"))?;
 
-async fn start_transfer_robust(
-    connection_id: String,
-    manager_arc: Arc<Mutex<FileTransferManager>>,
-) -> anyhow::Result<()> {
-    let (transfer_id, path, file_size) = {
-        let mut manager = manager_arc.lock().await;
-        let (id, path, size, file_name) = {
-            let session = manager
+        let (transfer_id, file_name) = {
+            let session = self
                 .current_session
                 .as_mut()
-                .ok_or_else(|| anyhow::anyhow!("no active transfer session"))?;
+                .ok_or_else(|| anyhow::anyhow!("no incoming offer"))?;
+            if session.role != SessionRole::Receiver {
+                anyhow::bail!("active session is sender side");
+            }
 
+            let temp_path = std::env::temp_dir().join(format!("relink-recv-{}.tmp", session.id));
+            session.destination_dir = Some(dest_dir.clone());
+            session.temp_path = Some(temp_path.clone());
+            session.writer = Some(File::create(&temp_path).await?);
+            session.hasher = Some(Sha256::new());
             session.inactivity_deadline = Some(Instant::now() + INACTIVITY_TIMEOUT);
 
-            (
-                session.id.clone(),
-                session
-                    .source_file_path
-                    .clone()
-                    .ok_or_else(|| anyhow::anyhow!("missing source file path"))?,
-                session.file_size,
-                session.file_name.clone(),
-            )
-        };
+            let transfer_id = session.id.clone();
+            let file_name = session.file_name.clone();
+            let file_size = session.file_size;
 
-        push_state(
-            &mut manager,
-            FileTransferStateDto {
-                status: TransferStatusDto::Transferring,
-                file_name: Some(file_name.clone()),
-                total_bytes: size,
-                bytes_transferred: 0,
-                error: None,
-            },
-        );
-
-        (id, path, size)
-    };
-
-    webrtc::set_file_buffered_amount_low_threshold(connection_id.clone(), LOW_WATER_MARK).await?;
-
-    let mut raf = File::open(&path).await?;
-    let mut offset = 0u64;
-
-    while offset < file_size {
-        {
-            let manager = manager_arc.lock().await;
-            if let Some(session) = manager.current_session.as_ref() {
-                if !session.is_sender || session.id != transfer_id {
-                    anyhow::bail!("transfer no longer active");
-                }
-            } else {
-                anyhow::bail!("transfer ended");
-            }
-        }
-
-        loop {
-            let buffered = webrtc::get_file_buffered_amount(connection_id.clone()).await?;
-            if buffered <= HIGH_WATER_MARK {
-                break;
-            }
-            sleep(Duration::from_millis(15)).await;
-        }
-
-        let to_read = std::cmp::min(CHUNK_SIZE as u64, file_size - offset) as usize;
-        let mut chunk = vec![0u8; to_read];
-        let n = raf.read(&mut chunk).await?;
-        if n == 0 {
-            break;
-        }
-        chunk.truncate(n);
-
-        webrtc::send_file_chunk(connection_id.clone(), chunk).await?;
-        offset += n as u64;
-
-        let mut manager = manager_arc.lock().await;
-        if let Some(session) = manager.current_session.as_mut() {
-            session.inactivity_deadline = Some(Instant::now() + INACTIVITY_TIMEOUT);
-            let session_file_name = session.file_name.clone();
-            push_state(
-                &mut manager,
-                FileTransferStateDto {
-                    status: TransferStatusDto::Transferring,
-                    file_name: Some(session_file_name),
-                    total_bytes: file_size,
-                    bytes_transferred: offset,
-                    error: None,
-                },
-            );
-        }
-    }
-
-    let eof = serde_json::json!({"type": MSG_EOF, "id": transfer_id}).to_string();
-    webrtc::send_file_message(connection_id.clone(), eof).await?;
-
-    let mut manager = manager_arc.lock().await;
-    let completed_file_name = manager
-        .current_session
-        .as_ref()
-        .map(|s| s.file_name.clone());
-    push_state(
-        &mut manager,
-        FileTransferStateDto {
-            status: TransferStatusDto::Completed,
-            file_name: completed_file_name,
-            total_bytes: file_size,
-            bytes_transferred: file_size,
-            error: None,
-        },
-    );
-    manager.current_session = None;
-
-    Ok(())
-}
-
-pub async fn accept_offer(connection_id: String, save_dir: String) -> anyhow::Result<()> {
-    let manager_arc = get_manager(&connection_id).await;
-    let dest_dir = PathBuf::from(&save_dir);
-    tokio::fs::create_dir_all(&dest_dir).await?;
-
-    let (transfer_id, file_name) = {
-        let mut manager = manager_arc.lock().await;
-        let session = manager
-            .current_session
-            .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("no incoming offer"))?;
-        if session.is_sender {
-            anyhow::bail!("active session is sender side");
-        }
-
-        let temp_path = std::env::temp_dir().join(format!("relink-recv-{}.tmp", session.id));
-        session.destination_dir = Some(dest_dir.clone());
-        session.temp_path = Some(temp_path.clone());
-        session.writer = Some(File::create(&temp_path).await?);
-        session.hasher = Some(Sha256::new());
-        session.inactivity_deadline = Some(Instant::now() + INACTIVITY_TIMEOUT);
-
-        let transfer_id = session.id.clone();
-        let file_name = session.file_name.clone();
-        let file_size = session.file_size;
-
-        push_state(
-            &mut manager,
-            FileTransferStateDto {
+            self.push_state(FileTransferStateDto {
                 status: TransferStatusDto::Receiving,
                 file_name: Some(file_name.clone()),
                 total_bytes: file_size,
                 bytes_transferred: 0,
                 error: None,
-            },
-        );
+            });
 
-        (transfer_id, file_name)
-    };
+            (transfer_id, file_name)
+        };
 
-    webrtc::wait_for_file_channel_ready(connection_id.clone())
-        .await
-        .map_err(|e| anyhow::anyhow!("file transfer channel is not ready yet: {e}"))?;
-
-    let msg = serde_json::json!({"type": MSG_ACCEPT, "id": transfer_id}).to_string();
-    let _ = file_name;
-    webrtc::send_control_message(connection_id, msg).await
-}
-
-pub async fn reject_offer(connection_id: String, reason: Option<String>) -> anyhow::Result<()> {
-    let manager_arc = get_manager(&connection_id).await;
-
-    let transfer_id = {
-        let mut manager = manager_arc.lock().await;
-        let id = manager.current_session.as_ref().map(|s| s.id.clone());
-        manager.current_session = None;
-        push_state(
-            &mut manager,
-            FileTransferStateDto {
-                status: TransferStatusDto::Idle,
-                file_name: None,
-                total_bytes: 0,
-                bytes_transferred: 0,
-                error: None,
-            },
-        );
-        id
-    };
-
-    if let Some(id) = transfer_id {
-        let msg = serde_json::json!({"type": MSG_REJECT, "id": id, "reason": reason}).to_string();
-        webrtc::send_control_message(connection_id, msg).await?;
-    }
-
-    Ok(())
-}
-
-pub async fn cancel_transfer(connection_id: String, reason: Option<String>) -> anyhow::Result<()> {
-    let manager_arc = get_manager(&connection_id).await;
-
-    let transfer_id = {
-        let mut manager = manager_arc.lock().await;
-        let id = manager.current_session.as_ref().map(|s| s.id.clone());
-        manager.current_session = None;
-        push_state(
-            &mut manager,
-            FileTransferStateDto {
+        let msg = serde_json::json!({"type": MSG_ACCEPT, "id": transfer_id}).to_string();
+        if let Err(error) = webrtc::send_control_message(self.connection_id.clone(), msg).await {
+            self.push_state(FileTransferStateDto {
                 status: TransferStatusDto::Error,
-                file_name: None,
-                total_bytes: 0,
+                file_name: Some(file_name),
+                total_bytes: self.current_state.total_bytes,
                 bytes_transferred: 0,
-                error: Some("Cancelled".to_string()),
-            },
-        );
-        id
-    };
+                error: Some(format!("accept failed: {error}")),
+            });
+            self.clear_current_session().await;
+            return Err(error);
+        }
 
-    if let Some(id) = transfer_id {
-        let msg = serde_json::json!({"type": MSG_CANCEL, "id": id, "reason": reason}).to_string();
-        let _ = webrtc::send_control_message(connection_id, msg).await;
+        Ok(())
     }
 
-    Ok(())
-}
+    async fn handle_reject_offer(&mut self, reason: Option<String>) -> anyhow::Result<()> {
+        let transfer_id = self
+            .current_session
+            .as_ref()
+            .map(|session| session.id.clone());
+        self.clear_current_session().await;
+        self.push_state(FileTransferStateDto {
+            status: TransferStatusDto::Idle,
+            file_name: None,
+            total_bytes: 0,
+            bytes_transferred: 0,
+            error: None,
+        });
 
-pub async fn handle_file_message(connection_id: String, text: String) -> anyhow::Result<()> {
-    let manager_arc = get_manager(&connection_id).await;
-    let parsed = parse_file_message(&text)?;
+        if let Some(id) = transfer_id {
+            let msg =
+                serde_json::json!({"type": MSG_REJECT, "id": id, "reason": reason}).to_string();
+            webrtc::send_control_message(self.connection_id.clone(), msg).await?;
+        }
 
-    match parsed {
-        IncomingFileMessage::Metadata {
-            id,
-            name,
-            size,
-            sha256,
-            sender_nonce,
-        } => {
-            let mut auto_reject: Option<String> = None;
-            {
-                let mut manager = manager_arc.lock().await;
+        Ok(())
+    }
 
-                if let Some(existing) = manager.current_session.as_ref() {
-                    if existing.is_sender
-                        && matches!(manager.current_state.status, TransferStatusDto::Offering)
+    async fn handle_cancel_transfer(&mut self, reason: Option<String>) -> anyhow::Result<()> {
+        let transfer_id = self
+            .current_session
+            .as_ref()
+            .map(|session| session.id.clone());
+        let cancel_message = reason.clone().unwrap_or_else(|| "Cancelled".to_string());
+        let (file_name, total_bytes, bytes_transferred) =
+            state_snapshot_for_session(self.current_session.as_ref(), &self.current_state);
+
+        self.push_state(FileTransferStateDto {
+            status: TransferStatusDto::Error,
+            file_name,
+            total_bytes,
+            bytes_transferred,
+            error: Some(cancel_message),
+        });
+        self.clear_current_session().await;
+
+        if let Some(id) = transfer_id {
+            let msg =
+                serde_json::json!({"type": MSG_CANCEL, "id": id, "reason": reason}).to_string();
+            let _ = webrtc::send_control_message(self.connection_id.clone(), msg).await;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_incoming_message(
+        &mut self,
+        tx: &mpsc::Sender<ActorCommand>,
+        parsed: IncomingFileMessage,
+    ) -> anyhow::Result<()> {
+        match parsed {
+            IncomingFileMessage::Metadata {
+                id,
+                name,
+                size,
+                sha256,
+                sender_nonce,
+            } => {
+                let mut auto_reject: Option<String> = None;
+
+                if let Some(existing) = self.current_session.as_ref() {
+                    if existing.role == SessionRole::Sender
+                        && matches!(self.current_state.status, TransferStatusDto::Offering)
                     {
                         if let (Some(local_nonce), Some(remote_nonce)) =
                             (existing.sender_nonce.as_ref(), sender_nonce.as_ref())
@@ -636,13 +591,18 @@ pub async fn handle_file_message(connection_id: String, text: String) -> anyhow:
                                 auto_reject = Some("collision_local_offer_won".to_string());
                             } else {
                                 let local_id = existing.id.clone();
-                                manager.current_session = None;
-                                let cancel =
-                                    serde_json::json!({"type": MSG_CANCEL, "id": local_id, "reason": "collision_remote_offer_won"}).to_string();
-                                let conn = manager.connection_id.clone();
-                                tokio::spawn(async move {
-                                    let _ = webrtc::send_control_message(conn, cancel).await;
-                                });
+                                self.clear_current_session().await;
+                                let cancel = serde_json::json!({
+                                    "type": MSG_CANCEL,
+                                    "id": local_id,
+                                    "reason": "collision_remote_offer_won",
+                                })
+                                .to_string();
+                                let _ = webrtc::send_control_message(
+                                    self.connection_id.clone(),
+                                    cancel,
+                                )
+                                .await;
                             }
                         }
                     } else {
@@ -650,15 +610,15 @@ pub async fn handle_file_message(connection_id: String, text: String) -> anyhow:
                     }
                 }
 
-                if manager.current_session.is_none() && auto_reject.is_none() {
+                if self.current_session.is_none() && auto_reject.is_none() {
                     if size > MAX_FILE_SIZE_BYTES {
                         auto_reject = Some("size_limit".to_string());
                     } else {
-                        manager.current_session = Some(FileTransferSession {
+                        self.current_session = Some(FileTransferSession {
                             id: id.clone(),
                             file_name: name.clone(),
                             file_size: size,
-                            is_sender: false,
+                            role: SessionRole::Receiver,
                             expected_sha256: Some(sha256),
                             sender_nonce,
                             source_file_path: None,
@@ -669,348 +629,725 @@ pub async fn handle_file_message(connection_id: String, text: String) -> anyhow:
                             hasher: None,
                             accept_deadline: None,
                             inactivity_deadline: None,
+                            cancel_flag: None,
+                            worker_started: false,
                         });
-
-                        push_state(
-                            &mut manager,
-                            FileTransferStateDto {
-                                status: TransferStatusDto::Offered,
-                                file_name: Some(name),
-                                total_bytes: size,
-                                bytes_transferred: 0,
-                                error: None,
-                            },
-                        );
+                        self.push_state(FileTransferStateDto {
+                            status: TransferStatusDto::Offered,
+                            file_name: Some(name),
+                            total_bytes: size,
+                            bytes_transferred: 0,
+                            error: None,
+                        });
                     }
                 }
-            }
 
-            if let Some(reason) = auto_reject {
-                let msg =
-                    serde_json::json!({"type": MSG_REJECT, "id": id, "reason": reason}).to_string();
-                webrtc::send_control_message(connection_id, msg).await?;
+                if let Some(reason) = auto_reject {
+                    let reject =
+                        serde_json::json!({"type": MSG_REJECT, "id": id, "reason": reason})
+                            .to_string();
+                    webrtc::send_control_message(self.connection_id.clone(), reject).await?;
+                }
+            }
+            IncomingFileMessage::Accept { id } => {
+                let (path, file_size, cancel_flag, should_start) = {
+                    let session = match self.current_session.as_mut() {
+                        Some(session)
+                            if session.role == SessionRole::Sender
+                                && session.id == id
+                                && !session.worker_started =>
+                        {
+                            session
+                        }
+                        _ => return Ok(()),
+                    };
+
+                    session.accept_deadline = None;
+                    session.inactivity_deadline = Some(Instant::now() + INACTIVITY_TIMEOUT);
+                    session.worker_started = true;
+
+                    (
+                        session
+                            .source_file_path
+                            .clone()
+                            .ok_or_else(|| anyhow::anyhow!("missing source file path"))?,
+                        session.file_size,
+                        session
+                            .cancel_flag
+                            .as_ref()
+                            .cloned()
+                            .ok_or_else(|| anyhow::anyhow!("missing sender cancel flag"))?,
+                        true,
+                    )
+                };
+
+                if should_start {
+                    spawn_sender_pipeline(
+                        self.connection_id.clone(),
+                        id,
+                        path,
+                        file_size,
+                        cancel_flag,
+                        tx.clone(),
+                    );
+                }
+            }
+            IncomingFileMessage::Reject { id, .. } => {
+                if self
+                    .current_session
+                    .as_ref()
+                    .map(|session| session.id == id)
+                    .unwrap_or(false)
+                {
+                    self.fail_current_session("Rejected by peer").await;
+                }
+            }
+            IncomingFileMessage::Cancel { id, .. } => {
+                if self
+                    .current_session
+                    .as_ref()
+                    .map(|session| session.id == id)
+                    .unwrap_or(false)
+                {
+                    self.fail_current_session("Cancelled by peer").await;
+                }
+            }
+            IncomingFileMessage::Eof { id } => {
+                self.handle_incoming_eof(id).await?;
             }
         }
-        IncomingFileMessage::Accept { id } => {
-            let can_start = {
-                let mut manager = manager_arc.lock().await;
-                if let Some(session) = manager.current_session.as_mut() {
-                    if session.is_sender && session.id == id {
-                        session.accept_deadline = None;
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
+
+        Ok(())
+    }
+
+    async fn handle_incoming_chunk(&mut self, bytes: Vec<u8>) -> anyhow::Result<()> {
+        let mut should_error = false;
+        let mut error_state: Option<FileTransferStateDto> = None;
+        let mut should_emit_progress = None;
+
+        if let Some(session) = self.current_session.as_mut() {
+            if session.role == SessionRole::Receiver {
+                if let Some(writer) = session.writer.as_mut() {
+                    writer.write_all(&bytes).await?;
                 }
+                if let Some(hasher) = session.hasher.as_mut() {
+                    hasher.update(&bytes);
+                }
+                session.bytes_received += bytes.len() as u64;
+                session.inactivity_deadline = Some(Instant::now() + INACTIVITY_TIMEOUT);
+
+                if session.bytes_received > session.file_size {
+                    should_error = true;
+                    error_state = Some(FileTransferStateDto {
+                        status: TransferStatusDto::Error,
+                        file_name: Some(session.file_name.clone()),
+                        total_bytes: session.file_size,
+                        bytes_transferred: session.bytes_received,
+                        error: Some("Size mismatch".to_string()),
+                    });
+                } else {
+                    let should_report = session.bytes_received == session.file_size
+                        || session
+                            .bytes_received
+                            .saturating_sub(self.current_state.bytes_transferred)
+                            >= PROGRESS_UPDATE_BYTES;
+                    if should_report {
+                        should_emit_progress = Some(FileTransferStateDto {
+                            status: TransferStatusDto::Receiving,
+                            file_name: Some(session.file_name.clone()),
+                            total_bytes: session.file_size,
+                            bytes_transferred: session.bytes_received,
+                            error: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        if let Some(progress) = should_emit_progress {
+            self.push_state(progress);
+        }
+
+        if should_error {
+            if let Some(state) = error_state {
+                self.push_state(state);
+            }
+            self.clear_current_session().await;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_incoming_eof(&mut self, id: String) -> anyhow::Result<()> {
+        let Some(mut session) = self.current_session.take() else {
+            return Ok(());
+        };
+
+        if session.role != SessionRole::Receiver || session.id != id {
+            self.current_session = Some(session);
+            return Ok(());
+        }
+
+        if let Some(mut writer) = session.writer.take() {
+            writer.flush().await?;
+        }
+
+        let expected_size = session.file_size;
+        let received = session.bytes_received;
+        if expected_size != received {
+            self.push_state(FileTransferStateDto {
+                status: TransferStatusDto::Error,
+                file_name: Some(session.file_name.clone()),
+                total_bytes: expected_size,
+                bytes_transferred: received,
+                error: Some("Size mismatch".to_string()),
+            });
+            cleanup_session_resources(session).await;
+            return Ok(());
+        }
+
+        let computed_sha = if let Some(hasher) = session.hasher.take() {
+            hex::encode(hasher.finalize())
+        } else {
+            String::new()
+        };
+        if session
+            .expected_sha256
+            .as_ref()
+            .map(|expected| expected != &computed_sha)
+            .unwrap_or(false)
+        {
+            self.push_state(FileTransferStateDto {
+                status: TransferStatusDto::Error,
+                file_name: Some(session.file_name.clone()),
+                total_bytes: expected_size,
+                bytes_transferred: received,
+                error: Some("SHA-256 mismatch".to_string()),
+            });
+            cleanup_session_resources(session).await;
+            return Ok(());
+        }
+
+        let temp_path = session
+            .temp_path
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Missing temporary file"))?;
+        let target_dir = session
+            .destination_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("."));
+        let safe_name = sanitize_file_name(&session.file_name);
+        let final_path = finalize_received_file(&temp_path, &target_dir, &safe_name).await?;
+        let saved_name = final_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(&safe_name)
+            .to_string();
+
+        self.push_state(FileTransferStateDto {
+            status: TransferStatusDto::Completed,
+            file_name: Some(saved_name),
+            total_bytes: expected_size,
+            bytes_transferred: expected_size,
+            error: None,
+        });
+
+        Ok(())
+    }
+
+    async fn handle_tick(&mut self) -> anyhow::Result<()> {
+        let timeout = {
+            let session = match self.current_session.as_ref() {
+                Some(session) => session,
+                None => return Ok(()),
             };
 
-            if can_start {
-                let conn = connection_id.clone();
-                let manager_for_task = Arc::clone(&manager_arc);
-                tokio::spawn(async move {
-                    if let Err(e) =
-                        start_transfer_robust(conn.clone(), manager_for_task.clone()).await
-                    {
-                        let mut manager = manager_for_task.lock().await;
-                        let error_file_name = manager
-                            .current_session
-                            .as_ref()
-                            .map(|s| s.file_name.clone());
-                        let error_total_bytes = manager
-                            .current_session
-                            .as_ref()
-                            .map(|s| s.file_size)
-                            .unwrap_or(0);
-                        push_state(
-                            &mut manager,
-                            FileTransferStateDto {
-                                status: TransferStatusDto::Error,
-                                file_name: error_file_name,
-                                total_bytes: error_total_bytes,
-                                bytes_transferred: 0,
-                                error: Some(format!("send error: {e}")),
-                            },
-                        );
-                        manager.current_session = None;
-                    }
-                });
-            }
-        }
-        IncomingFileMessage::Reject { id, .. } => {
-            let mut manager = manager_arc.lock().await;
-            if manager
-                .current_session
-                .as_ref()
-                .map(|s| s.id == id)
-                .unwrap_or(false)
-            {
-                let error_file_name = manager
-                    .current_session
-                    .as_ref()
-                    .map(|s| s.file_name.clone());
-                let error_total_bytes = manager
-                    .current_session
-                    .as_ref()
-                    .map(|s| s.file_size)
-                    .unwrap_or(0);
-                push_state(
-                    &mut manager,
-                    FileTransferStateDto {
-                        status: TransferStatusDto::Error,
-                        file_name: error_file_name,
-                        total_bytes: error_total_bytes,
-                        bytes_transferred: 0,
-                        error: Some("Rejected by peer".to_string()),
-                    },
-                );
-                manager.current_session = None;
-            }
-        }
-        IncomingFileMessage::Cancel { id, .. } => {
-            let mut manager = manager_arc.lock().await;
-            if manager
-                .current_session
-                .as_ref()
-                .map(|s| s.id == id)
-                .unwrap_or(false)
-            {
-                let error_file_name = manager
-                    .current_session
-                    .as_ref()
-                    .map(|s| s.file_name.clone());
-                let error_total_bytes = manager
-                    .current_session
-                    .as_ref()
-                    .map(|s| s.file_size)
-                    .unwrap_or(0);
-                push_state(
-                    &mut manager,
-                    FileTransferStateDto {
-                        status: TransferStatusDto::Error,
-                        file_name: error_file_name,
-                        total_bytes: error_total_bytes,
-                        bytes_transferred: 0,
-                        error: Some("Cancelled by peer".to_string()),
-                    },
-                );
-                manager.current_session = None;
-            }
-        }
-        IncomingFileMessage::Eof { id } => {
-            let mut manager = manager_arc.lock().await;
-            let mut finalization: Option<(PathBuf, PathBuf, String, u64)> = None;
-            let mut terminal_state: Option<FileTransferStateDto> = None;
-            if let Some(session) = manager.current_session.as_mut() {
-                if !session.is_sender && session.id == id {
-                    if let Some(mut writer) = session.writer.take() {
-                        writer.flush().await?;
-                    }
-
-                    let expected_size = session.file_size;
-                    let received = session.bytes_received;
-                    if expected_size != received {
-                        terminal_state = Some(FileTransferStateDto {
-                            status: TransferStatusDto::Error,
-                            file_name: Some(session.file_name.clone()),
-                            total_bytes: expected_size,
-                            bytes_transferred: received,
-                            error: Some("Size mismatch".to_string()),
-                        });
-                    }
-
-                    if terminal_state.is_none() {
-                        let computed_sha = if let Some(hasher) = session.hasher.take() {
-                            hex::encode(hasher.finalize())
-                        } else {
-                            String::new()
-                        };
-
-                        if session
-                            .expected_sha256
-                            .as_ref()
-                            .map(|s| s != &computed_sha)
-                            .unwrap_or(false)
-                        {
-                            terminal_state = Some(FileTransferStateDto {
-                                status: TransferStatusDto::Error,
-                                file_name: Some(session.file_name.clone()),
-                                total_bytes: expected_size,
-                                bytes_transferred: received,
-                                error: Some("SHA-256 mismatch".to_string()),
-                            });
-                        }
-                    }
-
-                    if terminal_state.is_none() {
-                        if let Some(temp_path) = session.temp_path.clone() {
-                            let target_dir = session
-                                .destination_dir
-                                .clone()
-                                .unwrap_or_else(|| PathBuf::from("."));
-                            let safe_name = sanitize_file_name(&session.file_name);
-                            finalization = Some((temp_path, target_dir, safe_name, expected_size));
-                        } else {
-                            terminal_state = Some(FileTransferStateDto {
-                                status: TransferStatusDto::Error,
-                                file_name: Some(session.file_name.clone()),
-                                total_bytes: expected_size,
-                                bytes_transferred: received,
-                                error: Some("Missing temporary file".to_string()),
-                            });
-                        }
-                    }
-                }
-            }
-
-            if let Some(state) = terminal_state {
-                push_state(&mut manager, state);
-                manager.current_session = None;
-                return Ok(());
-            }
-
-            if let Some((temp, target_dir, safe_name, total)) = finalization {
-                let final_path = finalize_received_file(&temp, &target_dir, &safe_name).await?;
-                let saved_name = final_path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or(&safe_name)
-                    .to_string();
-                push_state(
-                    &mut manager,
-                    FileTransferStateDto {
-                        status: TransferStatusDto::Completed,
-                        file_name: Some(saved_name),
-                        total_bytes: total,
-                        bytes_transferred: total,
-                        error: None,
-                    },
-                );
-                manager.current_session = None;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-pub async fn handle_file_chunk(connection_id: String, bytes: Vec<u8>) -> anyhow::Result<()> {
-    let manager_arc = get_manager(&connection_id).await;
-    let mut manager = manager_arc.lock().await;
-
-    if let Some(session) = manager.current_session.as_mut() {
-        if !session.is_sender {
-            if let Some(writer) = session.writer.as_mut() {
-                writer.write_all(&bytes).await?;
-            }
-            if let Some(hasher) = session.hasher.as_mut() {
-                hasher.update(&bytes);
-            }
-            session.bytes_received += bytes.len() as u64;
-            session.inactivity_deadline = Some(Instant::now() + INACTIVITY_TIMEOUT);
-            let session_file_name = session.file_name.clone();
-            let session_file_size = session.file_size;
-            let session_bytes_received = session.bytes_received;
-
-            if session_bytes_received > session_file_size {
-                push_state(
-                    &mut manager,
-                    FileTransferStateDto {
-                        status: TransferStatusDto::Error,
-                        file_name: Some(session_file_name),
-                        total_bytes: session_file_size,
-                        bytes_transferred: session_bytes_received,
-                        error: Some("Size mismatch".to_string()),
-                    },
-                );
-                manager.current_session = None;
-            } else {
-                push_state(
-                    &mut manager,
-                    FileTransferStateDto {
-                        status: TransferStatusDto::Receiving,
-                        file_name: Some(session_file_name),
-                        total_bytes: session_file_size,
-                        bytes_transferred: session_bytes_received,
-                        error: None,
-                    },
-                );
-            }
-        }
-    }
-
-    Ok(())
-}
-
-pub async fn tick(connection_id: String) -> anyhow::Result<()> {
-    let manager_arc = get_manager(&connection_id).await;
-    let mut timed_out = None;
-
-    {
-        let mut manager = manager_arc.lock().await;
-        if let Some(session) = manager.current_session.as_ref() {
             let now = Instant::now();
             if session
                 .accept_deadline
                 .map(|deadline| now > deadline)
                 .unwrap_or(false)
             {
-                timed_out = Some((session.id.clone(), "accept_timeout".to_string()));
+                Some((session.id.clone(), "accept_timeout".to_string()))
             } else if session
                 .inactivity_deadline
                 .map(|deadline| now > deadline)
                 .unwrap_or(false)
             {
-                timed_out = Some((session.id.clone(), "inactivity_timeout".to_string()));
+                Some((session.id.clone(), "inactivity_timeout".to_string()))
+            } else {
+                None
+            }
+        };
+
+        if let Some((id, reason)) = timeout {
+            self.fail_current_session(reason.clone()).await;
+            let cancel =
+                serde_json::json!({"type": MSG_CANCEL, "id": id, "reason": reason}).to_string();
+            let _ = webrtc::send_control_message(self.connection_id.clone(), cancel).await;
+        }
+
+        Ok(())
+    }
+
+    fn handle_sender_progress(&mut self, id: String, bytes_transferred: u64) {
+        let Some(session) = self.current_session.as_mut() else {
+            return;
+        };
+        if session.role != SessionRole::Sender || session.id != id {
+            return;
+        }
+
+        session.inactivity_deadline = Some(Instant::now() + INACTIVITY_TIMEOUT);
+        let file_name = session.file_name.clone();
+        let file_size = session.file_size;
+        self.push_state(FileTransferStateDto {
+            status: TransferStatusDto::Transferring,
+            file_name: Some(file_name),
+            total_bytes: file_size,
+            bytes_transferred: bytes_transferred.min(file_size),
+            error: None,
+        });
+    }
+
+    async fn handle_sender_finished(&mut self, id: String, total_bytes: u64) {
+        let matches = self
+            .current_session
+            .as_ref()
+            .map(|session| session.role == SessionRole::Sender && session.id == id)
+            .unwrap_or(false);
+        if !matches {
+            return;
+        }
+
+        let (file_name, file_size) = {
+            let session = self
+                .current_session
+                .as_ref()
+                .expect("session checked above");
+            (session.file_name.clone(), session.file_size)
+        };
+        self.push_state(FileTransferStateDto {
+            status: TransferStatusDto::Completed,
+            file_name: Some(file_name),
+            total_bytes: file_size,
+            bytes_transferred: total_bytes.min(file_size),
+            error: None,
+        });
+        self.clear_current_session().await;
+    }
+
+    async fn handle_sender_failed(&mut self, id: String, error: String) {
+        let matches = self
+            .current_session
+            .as_ref()
+            .map(|session| session.role == SessionRole::Sender && session.id == id)
+            .unwrap_or(false);
+        if !matches {
+            return;
+        }
+
+        let bytes_transferred = self.current_state.bytes_transferred;
+        let (file_name, total_bytes, _) =
+            state_snapshot_for_session(self.current_session.as_ref(), &self.current_state);
+        self.push_state(FileTransferStateDto {
+            status: TransferStatusDto::Error,
+            file_name,
+            total_bytes,
+            bytes_transferred,
+            error: Some(format!("send error: {error}")),
+        });
+        self.clear_current_session().await;
+    }
+}
+
+fn should_coalesce_progress_state(
+    current: &FileTransferStateDto,
+    next: &FileTransferStateDto,
+) -> bool {
+    matches!(
+        current.status,
+        TransferStatusDto::Transferring | TransferStatusDto::Receiving
+    ) && matches!(
+        next.status,
+        TransferStatusDto::Transferring | TransferStatusDto::Receiving
+    ) && std::mem::discriminant(&current.status) == std::mem::discriminant(&next.status)
+        && current.file_name == next.file_name
+        && current.total_bytes == next.total_bytes
+        && current.error == next.error
+}
+
+fn state_snapshot_for_session(
+    session: Option<&FileTransferSession>,
+    current_state: &FileTransferStateDto,
+) -> (Option<String>, u64, u64) {
+    if let Some(session) = session {
+        (
+            Some(session.file_name.clone()),
+            session.file_size,
+            current_state.bytes_transferred.min(session.file_size),
+        )
+    } else {
+        (
+            current_state.file_name.clone(),
+            current_state.total_bytes,
+            current_state.bytes_transferred,
+        )
+    }
+}
+
+async fn cleanup_session_resources(mut session: FileTransferSession) {
+    if let Some(cancel_flag) = session.cancel_flag.take() {
+        cancel_flag.store(true, Ordering::SeqCst);
+    }
+
+    if let Some(mut writer) = session.writer.take() {
+        let _ = writer.flush().await;
+    }
+
+    if let Some(temp_path) = session.temp_path.take() {
+        let _ = tokio::fs::remove_file(temp_path).await;
+    }
+}
+
+async fn run_actor(
+    connection_id: String,
+    tx: mpsc::Sender<ActorCommand>,
+    mut rx: mpsc::Receiver<ActorCommand>,
+) {
+    let mut actor = FileTransferActor::new(connection_id.clone());
+    let tick_tx = tx.clone();
+    tokio::spawn(async move {
+        loop {
+            sleep(INTERNAL_TICK_INTERVAL).await;
+            if tick_tx
+                .send(ActorCommand::Tick { reply: None })
+                .await
+                .is_err()
+            {
+                break;
             }
         }
+    });
 
-        if let Some((_, ref reason)) = timed_out {
-            let error_file_name = manager
-                .current_session
-                .as_ref()
-                .map(|s| s.file_name.clone());
-            let error_total_bytes = manager
-                .current_session
-                .as_ref()
-                .map(|s| s.file_size)
-                .unwrap_or(0);
-            push_state(
-                &mut manager,
-                FileTransferStateDto {
-                    status: TransferStatusDto::Error,
-                    file_name: error_file_name,
-                    total_bytes: error_total_bytes,
-                    bytes_transferred: 0,
-                    error: Some(reason.clone()),
-                },
-            );
-            manager.current_session = None;
+    while let Some(command) = rx.recv().await {
+        match command {
+            ActorCommand::SendOffer { file_path, reply } => {
+                let _ = reply.send(actor.handle_send_offer(file_path).await);
+            }
+            ActorCommand::AcceptOffer { save_dir, reply } => {
+                let _ = reply.send(actor.handle_accept_offer(save_dir).await);
+            }
+            ActorCommand::RejectOffer { reason, reply } => {
+                let _ = reply.send(actor.handle_reject_offer(reason).await);
+            }
+            ActorCommand::CancelTransfer { reason, reply } => {
+                let _ = reply.send(actor.handle_cancel_transfer(reason).await);
+            }
+            ActorCommand::IncomingControl { text, reply } => {
+                let result = match parse_file_message(&text) {
+                    Ok(parsed) => actor.handle_incoming_message(&tx, parsed).await,
+                    Err(error) => Err(error),
+                };
+                let _ = reply.send(result);
+            }
+            ActorCommand::IncomingChunk { bytes, reply } => {
+                let _ = reply.send(actor.handle_incoming_chunk(bytes).await);
+            }
+            ActorCommand::Tick { reply } => {
+                let result = actor.handle_tick().await;
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
+                }
+            }
+            ActorCommand::DrainStates { reply } => {
+                let _ = reply.send(Ok(actor.drain_states()));
+            }
+            ActorCommand::SenderProgress {
+                id,
+                bytes_transferred,
+            } => {
+                actor.handle_sender_progress(id, bytes_transferred);
+            }
+            ActorCommand::SenderFinished { id, total_bytes } => {
+                actor.handle_sender_finished(id, total_bytes).await;
+            }
+            ActorCommand::SenderFailed { id, error } => {
+                actor.handle_sender_failed(id, error).await;
+            }
+            ActorCommand::Shutdown { reply } => {
+                actor.clear_current_session().await;
+                let _ = reply.send(());
+                break;
+            }
         }
     }
 
-    if let Some((id, reason)) = timed_out {
-        let msg = serde_json::json!({"type": MSG_CANCEL, "id": id, "reason": reason}).to_string();
-        let _ = webrtc::send_control_message(connection_id, msg).await;
+    actor.clear_current_session().await;
+}
+
+fn spawn_sender_pipeline(
+    connection_id: String,
+    transfer_id: String,
+    file_path: PathBuf,
+    file_size: u64,
+    cancel_flag: Arc<AtomicBool>,
+    actor_tx: mpsc::Sender<ActorCommand>,
+) {
+    tokio::spawn(async move {
+        let result = async {
+            webrtc::set_file_buffered_amount_low_threshold(connection_id.clone(), LOW_WATER_MARK)
+                .await?;
+
+            let (chunk_tx, mut chunk_rx) = mpsc::channel::<Vec<u8>>(1);
+            let reader_cancel = cancel_flag.clone();
+            let writer_cancel = cancel_flag.clone();
+            let reader_path = file_path.clone();
+
+            let reader = tokio::spawn(async move {
+                let mut file = File::open(&reader_path).await?;
+                loop {
+                    if reader_cancel.load(Ordering::SeqCst) {
+                        anyhow::bail!("transfer cancelled");
+                    }
+
+                    let mut buffer = vec![0u8; CHUNK_SIZE];
+                    let n = file.read(&mut buffer).await?;
+                    if n == 0 {
+                        break;
+                    }
+                    buffer.truncate(n);
+
+                    if chunk_tx.send(buffer).await.is_err() {
+                        anyhow::bail!("writer channel closed");
+                    }
+                }
+
+                Ok::<(), anyhow::Error>(())
+            });
+
+            let writer_connection_id = connection_id.clone();
+            let writer_transfer_id = transfer_id.clone();
+            let writer_actor_tx = actor_tx.clone();
+            let writer = tokio::spawn(async move {
+                let mut offset = 0u64;
+                let mut last_reported = 0u64;
+
+                while let Some(chunk) = chunk_rx.recv().await {
+                    if writer_cancel.load(Ordering::SeqCst) {
+                        anyhow::bail!("transfer cancelled");
+                    }
+
+                    loop {
+                        let buffered =
+                            webrtc::get_file_buffered_amount(writer_connection_id.clone()).await?;
+                        if buffered <= HIGH_WATER_MARK {
+                            break;
+                        }
+                        if writer_cancel.load(Ordering::SeqCst) {
+                            anyhow::bail!("transfer cancelled");
+                        }
+                        sleep(Duration::from_millis(15)).await;
+                    }
+
+                    let chunk_len = chunk.len() as u64;
+                    webrtc::send_file_chunk(writer_connection_id.clone(), chunk).await?;
+                    offset += chunk_len;
+
+                    if offset == file_size
+                        || offset.saturating_sub(last_reported) >= PROGRESS_UPDATE_BYTES
+                    {
+                        last_reported = offset;
+                        let _ = writer_actor_tx
+                            .send(ActorCommand::SenderProgress {
+                                id: writer_transfer_id.clone(),
+                                bytes_transferred: offset,
+                            })
+                            .await;
+                    }
+                }
+
+                let eof =
+                    serde_json::json!({"type": MSG_EOF, "id": writer_transfer_id}).to_string();
+                webrtc::send_file_message(writer_connection_id, eof).await?;
+                Ok::<u64, anyhow::Error>(offset)
+            });
+
+            reader.await??;
+            let total_bytes = writer.await??;
+            Ok::<u64, anyhow::Error>(total_bytes)
+        }
+        .await;
+
+        match result {
+            Ok(total_bytes) => {
+                let _ = actor_tx
+                    .send(ActorCommand::SenderFinished {
+                        id: transfer_id,
+                        total_bytes,
+                    })
+                    .await;
+            }
+            Err(error) => {
+                let _ = actor_tx
+                    .send(ActorCommand::SenderFailed {
+                        id: transfer_id,
+                        error: error.to_string(),
+                    })
+                    .await;
+            }
+        }
+    });
+}
+
+fn spawn_background_task<F>(task: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(task);
+    } else {
+        FALLBACK_RUNTIME.spawn(task);
+    }
+}
+
+async fn get_or_spawn_actor(connection_id: &str) -> ActorHandle {
+    let mut actors = ACTORS.lock().await;
+    if let Some(existing) = actors.get(connection_id) {
+        if !existing.tx.is_closed() {
+            return existing.clone();
+        }
     }
 
-    Ok(())
+    let actor_id = now_nonce();
+    let (tx, rx) = mpsc::channel(COMMAND_CHANNEL_CAPACITY);
+    let handle = ActorHandle {
+        id: actor_id.clone(),
+        tx: tx.clone(),
+    };
+    actors.insert(connection_id.to_string(), handle.clone());
+
+    let cleanup_connection_id = connection_id.to_string();
+    spawn_background_task(async move {
+        run_actor(cleanup_connection_id.clone(), tx, rx).await;
+        let mut actors = ACTORS.lock().await;
+        if actors
+            .get(&cleanup_connection_id)
+            .map(|current| current.id.as_str())
+            == Some(actor_id.as_str())
+        {
+            actors.remove(&cleanup_connection_id);
+        }
+    });
+
+    handle
+}
+
+async fn request_actor<T, F>(connection_id: &str, build: F) -> anyhow::Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(ResponseSender<T>) -> ActorCommand,
+{
+    let handle = get_or_spawn_actor(connection_id).await;
+    let (reply_tx, reply_rx) = oneshot::channel();
+    handle
+        .tx
+        .send(build(reply_tx))
+        .await
+        .map_err(|_| anyhow::anyhow!("file transfer actor command failed"))?;
+    reply_rx
+        .await
+        .map_err(|_| anyhow::anyhow!("file transfer actor response dropped"))?
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn init_transfer(connection_id: String) {
+    spawn_background_task(async move {
+        let _ = get_or_spawn_actor(&connection_id).await;
+    });
+}
+
+pub async fn send_offer(connection_id: String, file_path: String) -> anyhow::Result<()> {
+    request_actor(&connection_id, move |reply| ActorCommand::SendOffer {
+        file_path,
+        reply,
+    })
+    .await
+}
+
+pub async fn accept_offer(connection_id: String, save_dir: String) -> anyhow::Result<()> {
+    request_actor(&connection_id, move |reply| ActorCommand::AcceptOffer {
+        save_dir,
+        reply,
+    })
+    .await
+}
+
+pub async fn reject_offer(connection_id: String, reason: Option<String>) -> anyhow::Result<()> {
+    request_actor(&connection_id, move |reply| ActorCommand::RejectOffer {
+        reason,
+        reply,
+    })
+    .await
+}
+
+pub async fn cancel_transfer(connection_id: String, reason: Option<String>) -> anyhow::Result<()> {
+    request_actor(&connection_id, move |reply| ActorCommand::CancelTransfer {
+        reason,
+        reply,
+    })
+    .await
+}
+
+pub async fn handle_file_message(connection_id: String, text: String) -> anyhow::Result<()> {
+    request_actor(&connection_id, move |reply| ActorCommand::IncomingControl {
+        text,
+        reply,
+    })
+    .await
+}
+
+pub async fn handle_file_chunk(connection_id: String, bytes: Vec<u8>) -> anyhow::Result<()> {
+    request_actor(&connection_id, move |reply| ActorCommand::IncomingChunk {
+        bytes,
+        reply,
+    })
+    .await
+}
+
+pub async fn tick(connection_id: String) -> anyhow::Result<()> {
+    request_actor(&connection_id, move |reply| ActorCommand::Tick {
+        reply: Some(reply),
+    })
+    .await
 }
 
 pub async fn drain_states(connection_id: String) -> anyhow::Result<Vec<FileTransferStateDto>> {
-    let manager_arc = get_manager(&connection_id).await;
-    let mut manager = manager_arc.lock().await;
-    if manager.pending_states.is_empty() {
-        Ok(vec![manager.current_state.clone()])
-    } else {
-        Ok(std::mem::take(&mut manager.pending_states))
-    }
+    request_actor(&connection_id, move |reply| ActorCommand::DrainStates {
+        reply,
+    })
+    .await
 }
 
 pub async fn dispose_transfer(connection_id: String) {
-    let mut guard = MANAGERS.lock().await;
-    guard.remove(&connection_id);
+    let handle = {
+        let mut actors = ACTORS.lock().await;
+        actors.remove(&connection_id)
+    };
+
+    let Some(handle) = handle else {
+        return;
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    if handle
+        .tx
+        .send(ActorCommand::Shutdown { reply: reply_tx })
+        .await
+        .is_ok()
+    {
+        let _ = reply_rx.await;
+    }
 }
 
 #[cfg(test)]
@@ -1072,5 +1409,28 @@ mod tests {
 
         tokio::fs::remove_dir_all(&dir).await?;
         Ok(())
+    }
+
+    #[test]
+    fn progress_states_are_coalesced() {
+        let mut actor = FileTransferActor::new("conn".to_string());
+        actor.push_state(FileTransferStateDto {
+            status: TransferStatusDto::Transferring,
+            file_name: Some("demo.bin".to_string()),
+            total_bytes: 100,
+            bytes_transferred: 10,
+            error: None,
+        });
+        actor.push_state(FileTransferStateDto {
+            status: TransferStatusDto::Transferring,
+            file_name: Some("demo.bin".to_string()),
+            total_bytes: 100,
+            bytes_transferred: 20,
+            error: None,
+        });
+
+        let drained = actor.drain_states();
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0].bytes_transferred, 20);
     }
 }
