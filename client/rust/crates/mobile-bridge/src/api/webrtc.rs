@@ -1,12 +1,15 @@
 use crate::api::transfer::{remove_connection, set_data_channel, upsert_connection};
 use anyhow::Context;
+use ice::network_type::NetworkType;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
+use webrtc::api::setting_engine::SettingEngine;
 use webrtc::api::APIBuilder;
 use webrtc::api::API;
 use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
@@ -61,11 +64,15 @@ pub enum WebRtcEvent {
     RenegotiationIce {
         candidate: IceCandidateDto,
     },
-    ScreenShareStopped,
     FileTransferRequested,
     SessionClosed {
         id: Option<String>,
         reason: Option<String>,
+    },
+    VideoFrame {
+        data: Vec<u8>,
+        width: u32,
+        height: u32,
     },
     SessionClosedAck {
         id: Option<String>,
@@ -105,9 +112,12 @@ static WEBRTC_API: Lazy<Result<Arc<API>, String>> = Lazy::new(|| {
     let mut registry = Registry::new();
     registry =
         register_default_interceptors(registry, &mut media_engine).map_err(|e| e.to_string())?;
+    let mut setting_engine = SettingEngine::default();
+    configure_ice_setting_engine(&mut setting_engine);
 
     Ok(Arc::new(
         APIBuilder::new()
+            .with_setting_engine(setting_engine)
             .with_media_engine(media_engine)
             .with_interceptor_registry(registry)
             .build(),
@@ -242,6 +252,33 @@ fn state_label(state: RTCPeerConnectionState) -> String {
     state.to_string()
 }
 
+fn configure_ice_setting_engine(setting_engine: &mut SettingEngine) {
+    if cfg!(windows) {
+        // Windows commonly exposes unusable IPv6/link-local adapters that
+        // produce noisy gather failures and never yield viable candidate pairs.
+        setting_engine.set_network_types(vec![NetworkType::Udp4]);
+    }
+
+    setting_engine.set_ip_filter(Box::new(should_gather_ice_ip));
+}
+
+fn should_gather_ice_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ipv4) => {
+            !ipv4.is_loopback()
+                && !ipv4.is_link_local()
+                && !ipv4.is_multicast()
+                && !ipv4.is_unspecified()
+        }
+        IpAddr::V6(ipv6) => {
+            !ipv6.is_loopback()
+                && !ipv6.is_multicast()
+                && !ipv6.is_unspecified()
+                && !ipv6.is_unicast_link_local()
+        }
+    }
+}
+
 async fn push_event(events: &Arc<Mutex<Vec<WebRtcEvent>>>, event: WebRtcEvent) {
     let mut guard = events.lock().await;
     guard.push(event);
@@ -251,7 +288,6 @@ enum ParsedControlMessage {
     RenegotiationOffer(SessionDescriptionDto),
     RenegotiationAnswer(SessionDescriptionDto),
     RenegotiationIce(IceCandidateDto),
-    ScreenShareStopped,
     FileTransferRequested,
     SessionClosed {
         id: Option<String>,
@@ -305,7 +341,6 @@ fn parse_control_message(text: &str) -> Option<ParsedControlMessage> {
                     .map(|value| value as u16),
             }))
         }
-        "screen_share_stopped" => Some(ParsedControlMessage::ScreenShareStopped),
         "file_transfer_offer" => Some(ParsedControlMessage::FileTransferRequested),
         "session_closed" => Some(ParsedControlMessage::SessionClosed {
             id: value
@@ -407,9 +442,6 @@ async fn attach_data_channel(session: &Arc<WebRtcSession>, dc: Arc<RTCDataChanne
                                 }
                                 ParsedControlMessage::RenegotiationIce(candidate) => {
                                     WebRtcEvent::RenegotiationIce { candidate }
-                                }
-                                ParsedControlMessage::ScreenShareStopped => {
-                                    WebRtcEvent::ScreenShareStopped
                                 }
                                 ParsedControlMessage::FileTransferRequested => {
                                     WebRtcEvent::FileTransferRequested
@@ -739,14 +771,6 @@ pub async fn send_renegotiation_ice(
     })
     .to_string();
     send_control_message(connection_id, message).await
-}
-
-pub async fn send_screen_share_stopped(connection_id: String) -> anyhow::Result<()> {
-    send_control_message(
-        connection_id,
-        serde_json::json!({"type": "screen_share_stopped"}).to_string(),
-    )
-    .await
 }
 
 pub async fn send_file_transfer_prompt(connection_id: String) -> anyhow::Result<()> {
