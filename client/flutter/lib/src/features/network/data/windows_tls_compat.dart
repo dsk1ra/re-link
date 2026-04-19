@@ -11,9 +11,19 @@ bool _isLoopbackHost(String host) {
       normalized == '::1';
 }
 
+bool _isTryCloudflareHost(String host) {
+  final normalized = host.toLowerCase();
+  return normalized == 'trycloudflare.com' ||
+      normalized.endsWith('.trycloudflare.com');
+}
+
 bool _shouldUseWindowsTlsCompatibility(Uri uri) {
   if (!Platform.isWindows) return false;
   if ((uri.scheme != 'https' && uri.scheme != 'wss') || uri.host.isEmpty) {
+    return false;
+  }
+  // Cloudflare-managed cert chains are trusted on Windows; keep strict TLS.
+  if (_isTryCloudflareHost(uri.host)) {
     return false;
   }
   return !_isLoopbackHost(uri.host);

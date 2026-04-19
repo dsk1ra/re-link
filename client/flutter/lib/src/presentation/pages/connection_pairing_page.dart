@@ -70,7 +70,15 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
         _serverReachable = false;
         _connecting = false;
       });
-      _showSnackBar('Connection failed: $e');
+      final details = e.toString();
+      if (details.contains('Operation not permitted') ||
+          details.contains('errno = 1')) {
+        _showSnackBar(
+          'Connection blocked by OS/network policy. Check firewall, VPN/proxy, or endpoint security and retry.',
+        );
+      } else {
+        _showSnackBar('Connection failed: $e');
+      }
     } finally {
       client.close();
     }

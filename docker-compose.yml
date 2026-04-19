@@ -7,7 +7,7 @@ services:
     environment:
       - SIGNALING_ADDR=${SIGNALING_ADDR:-0.0.0.0}
       - SIGNALING_PORT=${SIGNALING_PORT:-8080}
-      - SIGNALING_PUBLIC_URL=${PUBLIC_BASE_URL:-https://localhost}
+      - SIGNALING_PUBLIC_URL=${PUBLIC_BASE_URL:-${CLOUDFLARE_TUNNEL_URL:-https://localhost}}
       - SIGNALING_REDIS_URL=${SIGNALING_REDIS_URL:-redis://redis:6379/0}
       - SIGNALING_REDIS_REQUIRE_TLS=${SIGNALING_REDIS_REQUIRE_TLS:-false}
       - SIGNALING_REDIS_KEY_PREFIX=${SIGNALING_REDIS_KEY_PREFIX:-sig}
@@ -55,7 +55,10 @@ services:
   coturn:
     image: coturn/coturn:latest
     container_name: ${PROJECT_NAME:-relink}_coturn
-    network_mode: "host"
+    ports:
+      - "${COTURN_STUN_PORT:-3478}:${COTURN_STUN_PORT:-3478}/udp"
+      - "${COTURN_STUN_PORT:-3478}:${COTURN_STUN_PORT:-3478}/tcp"
+      - "${COTURN_TLS_PORT:-5349}:${COTURN_TLS_PORT:-5349}/tcp"
     environment:
       - COTURN_STUN_PORT=${COTURN_STUN_PORT:-3478}
       - COTURN_TLS_ENABLED=${COTURN_TLS_ENABLED:-false}
@@ -63,6 +66,8 @@ services:
       - COTURN_REALM=${COTURN_REALM:-${DOMAIN:-localhost}}
     volumes:
       - ${COTURN_CERTS_DIR:-./certs}:/etc/coturn/certs:ro
+    networks:
+      - external
     restart: unless-stopped
     command: >
       sh -c '
@@ -71,6 +76,8 @@ services:
         TLS_FLAGS="--tls-listening-port $$COTURN_TLS_PORT --cert /etc/coturn/certs/cert.crt --pkey /etc/coturn/certs/priv.key";
       fi;
       exec turnserver
+      --log-file stdout
+      --simple-log
       --stun-only
       --no-auth
       --realm $$COTURN_REALM
