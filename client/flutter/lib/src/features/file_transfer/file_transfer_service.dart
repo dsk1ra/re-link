@@ -175,7 +175,6 @@ class FileTransferService {
 
     _syncInFlight = true;
     try {
-      await rust_file_transfer.tick(connectionId: _webrtcManager.connectionId);
       final states = await rust_file_transfer.drainStates(
         connectionId: _webrtcManager.connectionId,
       );

@@ -83,13 +83,16 @@ class ConnectionService {
   Future<void> sendSignal({
     required String mailboxId,
     required String ciphertextB64,
-    int retries = 3,
+    int retries = 8,
   }) async {
     int attempt = 0;
+    Object? lastError;
     while (attempt < retries) {
       attempt++;
+      late final http.Response response;
+
       try {
-        final response = await httpClient.post(
+        response = await httpClient.post(
           Uri.parse('$signalingBaseUrl/connection/send'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
@@ -97,28 +100,55 @@ class ConnectionService {
             'ciphertext_b64': ciphertextB64,
           }),
         );
+      } catch (error) {
+        lastError = error;
+        if (attempt >= retries) break;
 
-        if (response.statusCode == 202) return; // Success
-
-        if (response.statusCode == 429 && attempt < retries) {
-          await Future.delayed(
-            Duration(milliseconds: 1000 * attempt),
-          ); // Longer backoff
-          continue;
-        }
-
-        if (response.statusCode == 500 && attempt < retries) {
-          await Future.delayed(Duration(milliseconds: 500 * attempt));
-          continue;
-        }
-
-        throw Exception('Failed to send signal: ${response.statusCode}');
-      } catch (_) {
-        if (attempt >= retries) rethrow;
-        _log.warning('Send signal failed; retrying');
-        await Future.delayed(Duration(milliseconds: 500 * attempt));
+        final backoffMs = (250 * (1 << (attempt - 1))).clamp(250, 3000);
+        _log.warning(
+          'Send signal request failed on attempt $attempt/$retries '
+          '(mailbox=$mailboxId): $error; retrying in ${backoffMs}ms',
+        );
+        await Future.delayed(Duration(milliseconds: backoffMs));
+        continue;
       }
+
+      if (response.statusCode == 202) return; // Success
+
+      if (response.statusCode == 404) {
+        throw MailboxNotFoundException(mailboxId);
+      }
+
+      final responseBody = response.body;
+      final preview = responseBody.length > 160
+          ? '${responseBody.substring(0, 160)}...'
+          : responseBody;
+      final shouldRetryStatus =
+          response.statusCode == 429 ||
+          response.statusCode == 408 ||
+          response.statusCode >= 500;
+
+      _log.warning(
+        'Send signal attempt $attempt/$retries failed '
+        'with status ${response.statusCode} '
+        '(mailbox=$mailboxId, body="$preview")',
+      );
+
+      if (shouldRetryStatus && attempt < retries) {
+        final backoffMs = (250 * (1 << (attempt - 1))).clamp(250, 3000);
+        await Future.delayed(Duration(milliseconds: backoffMs));
+        continue;
+      }
+
+      throw Exception(
+        'Failed to send signal: ${response.statusCode} (mailbox=$mailboxId)',
+      );
     }
+
+    throw Exception(
+      'Failed to send signal after $retries attempts '
+      '(mailbox=$mailboxId, lastError=$lastError)',
+    );
   }
 
   /// Fetch messages from mailbox
@@ -293,4 +323,13 @@ class ConnectionInitResult {
     required this.kMac,
     required this.sas,
   });
+}
+
+class MailboxNotFoundException implements Exception {
+  MailboxNotFoundException(this.mailboxId);
+
+  final String mailboxId;
+
+  @override
+  String toString() => 'Mailbox not found: $mailboxId';
 }

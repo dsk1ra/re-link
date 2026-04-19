@@ -14,7 +14,9 @@ class SignalingMessage {
     final decoded = jsonDecode(raw) as Map<String, dynamic>;
     return SignalingMessage(
       type: decoded['type'] as String,
-      data: (decoded['data'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{},
+      data:
+          (decoded['data'] as Map?)?.cast<String, dynamic>() ??
+          <String, dynamic>{},
     );
   }
 }

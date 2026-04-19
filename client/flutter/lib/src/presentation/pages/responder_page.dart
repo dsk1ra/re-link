@@ -20,8 +20,7 @@ import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/features/pairing/domain/signaling_message.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
 import 'package:application/src/rust/api/connection.dart' as rust_connection;
-import 'package:flutter_webrtc/flutter_webrtc.dart'
-    show RTCVideoRenderer, RTCVideoView, RTCVideoViewObjectFit;
+import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 
 /// Responder screen - joins using connection link
 class ResponderPage extends StatefulWidget {
@@ -65,7 +64,8 @@ class _ResponderPageState extends State<ResponderPage> {
   WebRTCManager? _webrtcManager;
   FileTransferService? _fileTransferService;
   StreamSubscription<FileTransferState>? _fileTransferStateSubscription;
-  final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
+  final rtc.RTCVideoRenderer _remoteRenderer = rtc.RTCVideoRenderer();
+  StreamSubscription<rtc.MediaStream>? _remoteStreamSubscription;
 
   RTCPeerConnectionState? _webrtcState;
 
@@ -105,8 +105,19 @@ class _ResponderPageState extends State<ResponderPage> {
       processor: (candidate) async {
         await _sendIceCandidate(candidate);
       },
-      onError: (_, _) {
-        _log.warning('Queued ICE candidate send failed');
+      onError: (error, _) {
+        final connected =
+            _webrtcState ==
+            RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+        if (error is MailboxNotFoundException &&
+            (_signalingClosed || connected)) {
+          _log.fine(
+            'Ignoring stale mailbox ICE send after signaling closed: '
+            '${error.mailboxId}',
+          );
+          return;
+        }
+        _log.warning('Queued ICE candidate send failed: $error');
       },
     );
     _signalQueue = SerialTaskQueue<Map<String, dynamic>>(
@@ -121,6 +132,13 @@ class _ResponderPageState extends State<ResponderPage> {
 
   Future<void> _initRemoteRenderer() async {
     await _remoteRenderer.initialize();
+  }
+
+  Future<void> _attachRemoteStream(rtc.MediaStream stream) async {
+    _remoteRenderer.srcObject = stream;
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _detachRemoteStream() {
@@ -141,6 +159,18 @@ class _ResponderPageState extends State<ResponderPage> {
       );
       await _webrtcManager!.initialize();
       _attachFileTransferService(_webrtcManager!);
+
+      _remoteStreamSubscription?.cancel();
+      _remoteStreamSubscription = _webrtcManager!.onRemoteStream.listen((
+        stream,
+      ) {
+        unawaited(_attachRemoteStream(stream));
+      });
+
+      final existingStream = _webrtcManager!.remoteStream;
+      if (existingStream != null) {
+        await _attachRemoteStream(existingStream);
+      }
 
       _webrtcManager!.onStateChange.listen((state) {
         setState(() => _webrtcState = state);
@@ -263,6 +293,7 @@ class _ResponderPageState extends State<ResponderPage> {
     _connectionService.dispose();
     _tokenController.dispose();
     _mailboxSubscription?.cancel();
+    _remoteStreamSubscription?.cancel();
     _sessionControlProtocol.dispose();
     _iceCandidateQueue.dispose();
     _signalQueue.dispose();
@@ -431,10 +462,24 @@ class _ResponderPageState extends State<ResponderPage> {
       keyHex: _kSig!,
       plaintext: utf8.encode(iceMsg.toJsonString()),
     );
-    await _connectionService.sendSignal(
-      mailboxId: _responderMailboxId!,
-      ciphertextB64: iceB64,
-    );
+    try {
+      await _connectionService.sendSignal(
+        mailboxId: _responderMailboxId!,
+        ciphertextB64: iceB64,
+      );
+    } on MailboxNotFoundException {
+      final connected =
+          _webrtcState ==
+          RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+      if (_signalingClosed || connected) {
+        _signalingClosed = true;
+        _iceCandidateQueue.clear();
+        await _mailboxSubscription?.cancel();
+        _mailboxSubscription = null;
+        return;
+      }
+      rethrow;
+    }
   }
 
   void _showSnackBar(String message) {
@@ -774,9 +819,10 @@ class _ResponderPageState extends State<ResponderPage> {
         Container(
           color: AppColors.background,
           child: _remoteRenderer.srcObject != null
-              ? RTCVideoView(
+              ? rtc.RTCVideoView(
                   _remoteRenderer,
-                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                  objectFit:
+                      rtc.RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
                 )
               : Center(
                   child: Text(

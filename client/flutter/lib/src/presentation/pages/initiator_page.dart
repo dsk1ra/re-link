@@ -98,7 +98,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
   // 0 = Auto (adaptive), 1–5 = fixed kbps from _bitrateSteps
   int _bitrateSliderIndex = 0;
   static const List<int?> _bitrateSteps = [null, 500, 1000, 2000, 4000, 8000];
-  StreamSubscription? _qualitySubscription;
+  StreamSubscription<ScreenShareQualityStatus>? _qualitySubscription;
   bool _loadingShareSources = false;
   bool _startingShare = false;
   bool _stoppingShare = false;
@@ -136,8 +136,19 @@ class _InitiatorPageState extends State<InitiatorPage> {
       processor: (candidate) async {
         await _sendIceCandidate(candidate);
       },
-      onError: (_, _) {
-        _log.warning('Queued ICE candidate send failed');
+      onError: (error, _) {
+        final connected =
+            _webrtcState ==
+            RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+        if (error is MailboxNotFoundException &&
+            (_signalingClosed || connected)) {
+          _log.fine(
+            'Ignoring stale mailbox ICE send after signaling closed: '
+            '${error.mailboxId}',
+          );
+          return;
+        }
+        _log.warning('Queued ICE candidate send failed: $error');
       },
     );
     _signalQueue = SerialTaskQueue<Map<String, dynamic>>(
@@ -288,9 +299,9 @@ class _InitiatorPageState extends State<InitiatorPage> {
       return;
     }
 
-    final connectionId = _initiatorServerMailboxId;
-    if (connectionId == null || connectionId.isEmpty) {
-      _showSnackBar('Connection ID unavailable for share startup');
+    final webrtcManager = _webrtcManager;
+    if (webrtcManager == null) {
+      _showSnackBar('WebRTC session unavailable for share startup');
       return;
     }
 
@@ -326,37 +337,31 @@ class _InitiatorPageState extends State<InitiatorPage> {
       }
 
       final bitrateKbps = _bitrateSteps[_bitrateSliderIndex];
-      await _webrtcManager?.startScreenCapture(
+      await _qualitySubscription?.cancel();
+      _qualitySubscription = webrtcManager.onScreenShareStatus.listen((status) {
+        if (!mounted) return;
+        setState(() {
+          _shareStatus = _buildShareStatus(status);
+        });
+      });
+
+      await webrtcManager.startScreenCapture(
         sourceId: _selectedSourceId!,
         fps: _autoShareFps,
         bitrateKbps: bitrateKbps,
       );
 
-      // Subscribe to adaptive quality tier changes
-      _qualitySubscription?.cancel();
-      _qualitySubscription = _webrtcManager?.onQualityChange.listen((msg) {
-        if (!mounted) return;
-        final parsed = _parseAdaptiveQualityStatus(msg);
-        if (parsed == null) return;
-        setState(() {
-          _shareStatus = _buildShareStatus(
-            resolution: parsed.$1,
-            fps: parsed.$2,
-          );
-        });
-      });
+      final currentShareStatus = webrtcManager.currentScreenShareStatus;
 
       setState(() {
         _isScreenSharing = true;
-        _shareStatus = _buildShareStatus(
-          resolution: '1080p',
-          fps: _autoShareFps,
-        );
+        _shareStatus = currentShareStatus == null
+            ? 'Sharing screen...'
+            : _buildShareStatus(currentShareStatus);
       });
-
-      final offer = await _webrtcManager!.createRenegotiationOffer();
-      await _webrtcManager?.sendRenegotiationOffer(offer);
     } catch (e) {
+      _qualitySubscription?.cancel();
+      _qualitySubscription = null;
       setState(() {
         _shareStatus = 'Failed to start share: $e';
         _isScreenSharing = false;
@@ -376,9 +381,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
     try {
       await _webrtcManager?.stopScreenCapture();
       await _webrtcManager?.sendScreenShareStopped();
-
-      final offer = await _webrtcManager!.createRenegotiationOffer();
-      await _webrtcManager?.sendRenegotiationOffer(offer);
+      await _qualitySubscription?.cancel();
+      _qualitySubscription = null;
 
       setState(() {
         _isScreenSharing = false;
@@ -410,17 +414,12 @@ class _InitiatorPageState extends State<InitiatorPage> {
     return kbps == null ? 'Auto' : '$kbps kbps';
   }
 
-  String _buildShareStatus({required String resolution, required int fps}) {
-    return 'Sharing @ $resolution, ${fps}fps';
-  }
-
-  (String, int)? _parseAdaptiveQualityStatus(String status) {
-    final match = RegExp(r'(\d{3,4}p).*?(\d{1,2})fps').firstMatch(status);
-    if (match == null) return null;
-    final resolution = match.group(1);
-    final fps = int.tryParse(match.group(2) ?? '');
-    if (resolution == null || fps == null) return null;
-    return (resolution, fps);
+  String _buildShareStatus(ScreenShareQualityStatus status) {
+    final qualityMode = status.autoQuality
+        ? 'Auto ${status.qualityLabel}'
+        : 'Fixed ${status.qualityLabel}';
+    return 'Sharing @ ${status.resolutionLabel}, ${status.fps}fps '
+        '($qualityMode)';
   }
 
   Future<void> _sendIceCandidate(RTCIceCandidate candidate) async {
@@ -437,10 +436,24 @@ class _InitiatorPageState extends State<InitiatorPage> {
       keyHex: _initiatorResult!.kSig,
       plaintext: utf8.encode(iceMsg.toJsonString()),
     );
-    await _connectionService.sendSignal(
-      mailboxId: _initiatorServerMailboxId!,
-      ciphertextB64: iceB64,
-    );
+    try {
+      await _connectionService.sendSignal(
+        mailboxId: _initiatorServerMailboxId!,
+        ciphertextB64: iceB64,
+      );
+    } on MailboxNotFoundException {
+      final connected =
+          _webrtcState ==
+          RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+      if (_signalingClosed || connected) {
+        _signalingClosed = true;
+        _iceCandidateQueue.clear();
+        await _mailboxSubscription?.cancel();
+        _mailboxSubscription = null;
+        return;
+      }
+      rethrow;
+    }
   }
 
   @override
