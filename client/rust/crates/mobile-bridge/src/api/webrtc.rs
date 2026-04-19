@@ -254,9 +254,10 @@ fn state_label(state: RTCPeerConnectionState) -> String {
 
 fn configure_ice_setting_engine(setting_engine: &mut SettingEngine) {
     if cfg!(windows) {
-        // Windows commonly exposes unusable IPv6/link-local adapters that
-        // produce noisy gather failures and never yield viable candidate pairs.
-        setting_engine.set_network_types(vec![NetworkType::Udp4]);
+        // Keep UDP enabled for both IPv4 and IPv6 on Windows.
+        // The IP filter below already strips loopback/link-local candidates,
+        // so disabling IPv6 here unnecessarily breaks some mobile networks.
+        setting_engine.set_network_types(vec![NetworkType::Udp4, NetworkType::Udp6]);
     }
 
     setting_engine.set_ip_filter(Box::new(should_gather_ice_ip));
