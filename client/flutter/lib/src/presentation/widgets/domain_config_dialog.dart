@@ -164,9 +164,9 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
             SwitchListTile.adaptive(
               value: _useDefaultIceForDomain,
               contentPadding: EdgeInsets.zero,
-              activeColor: AppColors.primary,
+              activeThumbColor: AppColors.primary,
               title: const Text(
-                'Use default STUN from server domain',
+                'Use recommended default ICE',
                 style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
               ),
               subtitle: Text(

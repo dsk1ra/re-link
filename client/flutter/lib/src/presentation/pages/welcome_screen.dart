@@ -210,9 +210,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           SwitchListTile.adaptive(
                             value: _useDefaultIceForDomain,
                             contentPadding: EdgeInsets.zero,
-                            activeColor: AppColors.primary,
+                            activeThumbColor: AppColors.primary,
                             title: const Text(
-                              'Use default STUN from server domain',
+                              'Use recommended default ICE',
                               style: TextStyle(
                                 color: AppColors.textPrimary,
                                 fontSize: 12,
