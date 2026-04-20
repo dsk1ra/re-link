@@ -19,6 +19,7 @@ class WelcomeScreen extends StatefulWidget {
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
   late TextEditingController _domainController;
+  late TextEditingController _iceHostController;
   late TextEditingController _iceServersController;
   late bool _useDefaultIceForDomain;
 
@@ -26,15 +27,20 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   void initState() {
     super.initState();
     final savedDomain = widget.settings.getDomain() ?? '';
+    final savedIceHost = widget.settings.getIceHost() ?? '';
     final savedIceServersJson = widget.settings.getIceServersJson();
 
     _useDefaultIceForDomain =
         savedIceServersJson == null || savedIceServersJson.trim().isEmpty;
 
     _domainController = TextEditingController(text: savedDomain);
+    _iceHostController = TextEditingController(text: savedIceHost);
     _iceServersController = TextEditingController(
-      text: _useDefaultIceForDomain && savedDomain.isNotEmpty
-          ? widget.settings.defaultIceServersJsonForSignalingDomain(savedDomain)
+      text: _useDefaultIceForDomain
+          ? widget.settings.defaultIceServersJsonForSignalingDomain(
+              savedDomain,
+              iceHost: savedIceHost,
+            )
           : (savedIceServersJson ?? ''),
     );
   }
@@ -42,6 +48,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   @override
   void dispose() {
     _domainController.dispose();
+    _iceHostController.dispose();
     _iceServersController.dispose();
     super.dispose();
   }
@@ -55,6 +62,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
     try {
       await widget.settings.setDomain(domain);
+      await widget.settings.setIceHost(_iceHostController.text);
       if (_useDefaultIceForDomain) {
         await widget.settings.setIceServersJson('');
       } else {
@@ -76,17 +84,16 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 
   String _defaultIceServersJsonForCurrentDomain() {
-    final domain = _domainController.text.trim();
-    if (domain.isEmpty) {
-      return '';
-    }
-
-    return widget.settings.defaultIceServersJsonForSignalingDomain(domain);
+    return widget.settings.defaultIceServersJsonForSignalingDomain(
+      _domainController.text.trim(),
+      iceHost: _iceHostController.text.trim(),
+    );
   }
 
   String _defaultIceDescriptionForCurrentDomain() {
     return widget.settings.defaultIceDescriptionForSignalingDomain(
       _domainController.text,
+      iceHost: _iceHostController.text,
     );
   }
 
@@ -207,6 +214,63 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           ),
                           const SizedBox(height: 16),
                           Text(
+                            'Public ICE Host (optional)',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _iceHostController,
+                            cursorColor: AppColors.primary,
+                            style: const TextStyle(color: AppColors.textMuted),
+                            decoration: InputDecoration(
+                              hintText:
+                                  '203.0.113.10, stun.example.com, or host:3478',
+                              hintStyle: const TextStyle(
+                                color: AppColors.textMuted,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: AppColors.outline,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: AppColors.outline,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: AppColors.primary,
+                                  width: 1.5,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                            ),
+                            onChanged: (_) {
+                              setState(_syncDefaultIceServersFromDomain);
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Optional. Set this when signaling and STUN/TURN '
+                            'are exposed on different public endpoints.',
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 11,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
                             'ICE Servers (STUN/TURN JSON)',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
@@ -220,7 +284,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                             contentPadding: EdgeInsets.zero,
                             activeThumbColor: AppColors.primary,
                             title: const Text(
-                              'Use same-host STUN default',
+                              'Use generated STUN config',
                               style: TextStyle(
                                 color: AppColors.textPrimary,
                                 fontSize: 12,

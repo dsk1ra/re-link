@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Local settings storage for domain and onboarding state
 class LocalSettings {
   static const String _keyDomain = 'signaling_domain';
+  static const String _keyIceHost = 'webrtc_ice_host';
   static const String _keyIceServersJson = 'webrtc_ice_servers_json';
   static const String _keyWelcomeShown = 'welcome_shown';
   static const int _defaultStunPort = 3478;
@@ -27,6 +28,15 @@ class LocalSettings {
   /// Returns raw ICE servers JSON configured by the user (if any).
   String? getIceServersJson() {
     return _prefs.getString(_keyIceServersJson);
+  }
+
+  /// Returns an optional host or host:port dedicated to ICE/STUN.
+  ///
+  /// This lets the app use a different public endpoint for ICE than for
+  /// signaling, which is required when signaling is exposed through an
+  /// HTTPS-only proxy such as Cloudflare Tunnel.
+  String? getIceHost() {
+    return _prefs.getString(_keyIceHost);
   }
 
   /// Parse and sanitize ICE server configuration for flutter_webrtc.
@@ -53,52 +63,65 @@ class LocalSettings {
     }
   }
 
-  /// Build default STUN URL from the configured signaling domain.
+  /// Build a STUN URL from an explicit ICE host or endpoint.
+  String defaultStunUrlForIceHost(String iceHost) {
+    final endpoint = _endpointWithDefaultPort(iceHost);
+    return 'stun:$endpoint';
+  }
+
+  /// Build a fallback STUN URL from the signaling domain.
   ///
-  /// We keep STUN aligned to the signaling host and standard coturn STUN port.
+  /// This is only used when no dedicated ICE host is configured.
   String defaultStunUrlForSignalingDomain(String signalingDomain) {
-    final normalized = signalingDomain.trim();
-    if (normalized.isEmpty) {
-      return 'stun:localhost:$_defaultStunPort';
-    }
-
-    final withScheme =
-        normalized.startsWith('http://') || normalized.startsWith('https://')
-        ? normalized
-        : 'https://$normalized';
-
-    final uri = Uri.tryParse(withScheme);
-    final fallbackHost = normalized
-        .replaceFirst(RegExp(r'^https?://'), '')
-        .split('/')
-        .first
-        .split(':')
-        .first;
-    final host = (uri != null && uri.host.isNotEmpty) ? uri.host : fallbackHost;
-
-    return 'stun:$host:$_defaultStunPort';
+    return defaultStunUrlForIceHost(signalingDomain);
   }
 
   /// Build default ICE JSON from signaling domain.
-  String defaultIceServersJsonForSignalingDomain(String signalingDomain) {
+  ///
+  /// A saved or explicitly provided ICE host takes precedence over the
+  /// signaling host so the app can keep signaling and ICE on separate
+  /// endpoints.
+  String defaultIceServersJsonForSignalingDomain(
+    String signalingDomain, {
+    String? iceHost,
+  }) {
     return jsonEncode([
-      {'urls': defaultStunUrlForSignalingDomain(signalingDomain)},
+      {
+        'urls': defaultStunUrlForIceHost(
+          _effectiveIceHost(signalingDomain, overrideIceHost: iceHost),
+        ),
+      },
     ]);
   }
 
   /// Explain the assumption behind the same-host default ICE configuration.
-  String defaultIceDescriptionForSignalingDomain(String signalingDomain) {
+  String defaultIceDescriptionForSignalingDomain(
+    String signalingDomain, {
+    String? iceHost,
+  }) {
+    final effectiveIceHost = _effectiveIceHost(
+      signalingDomain,
+      overrideIceHost: iceHost,
+    );
+    final defaultStunUrl = defaultStunUrlForIceHost(effectiveIceHost);
     final normalized = signalingDomain.trim();
-    if (normalized.isEmpty) {
-      return 'Default ICE assumes STUN is reachable directly on the same host '
-          'at port 3478. If signaling is behind Cloudflare Tunnel or another '
-          'HTTPS-only proxy, configure a separate public STUN/TURN host or IP.';
+    final explicitIceHost = (iceHost ?? getIceHost())?.trim();
+
+    if (normalized.isEmpty &&
+        (explicitIceHost == null || explicitIceHost.isEmpty)) {
+      return 'Generated ICE uses STUN at $defaultStunUrl. '
+          'Enter a signaling server and, when needed, a separate public ICE host.';
     }
 
-    final defaultStunUrl = defaultStunUrlForSignalingDomain(signalingDomain);
-    return 'Default ICE assumes STUN is reachable directly at $defaultStunUrl. '
-        'If signaling is behind Cloudflare Tunnel or another HTTPS-only proxy, '
-        'configure a separate public STUN/TURN host or IP instead.';
+    if (explicitIceHost != null && explicitIceHost.isNotEmpty) {
+      return 'Generated ICE uses the dedicated public ICE host at $defaultStunUrl. '
+          'Use this when signaling and STUN/TURN are exposed on different endpoints.';
+    }
+
+    return 'Generated ICE falls back to the signaling host and assumes STUN is '
+        'reachable directly at $defaultStunUrl. If signaling is behind '
+        'Cloudflare Tunnel or another HTTPS-only proxy, set a separate public '
+        'ICE host instead.';
   }
 
   /// Return user-custom ICE config when present; otherwise return domain default.
@@ -111,7 +134,7 @@ class LocalSettings {
     }
 
     return [
-      {'urls': defaultStunUrlForSignalingDomain(signalingDomain)},
+      {'urls': defaultStunUrlForIceHost(_effectiveIceHost(signalingDomain))},
     ];
   }
 
@@ -132,6 +155,17 @@ class LocalSettings {
     }
 
     await _prefs.setString(_keyIceServersJson, jsonEncode(sanitized));
+  }
+
+  /// Save a dedicated ICE host or endpoint. Pass empty text to clear it.
+  Future<void> setIceHost(String iceHost) async {
+    final normalized = _normalizeIceHost(iceHost);
+    if (normalized == null) {
+      await _prefs.remove(_keyIceHost);
+      return;
+    }
+
+    await _prefs.setString(_keyIceHost, normalized);
   }
 
   List<Map<String, dynamic>>? _sanitizeIceServers(dynamic raw) {
@@ -187,6 +221,77 @@ class LocalSettings {
     return null;
   }
 
+  String _effectiveIceHost(String signalingDomain, {String? overrideIceHost}) {
+    final explicitIceHost = _normalizeIceHost(overrideIceHost ?? getIceHost());
+    if (explicitIceHost != null) {
+      return explicitIceHost;
+    }
+
+    final normalizedSignalingHost = _normalizeIceHost(signalingDomain);
+    return normalizedSignalingHost ?? 'localhost';
+  }
+
+  String _endpointWithDefaultPort(String rawHost) {
+    final normalized = _normalizeIceHost(rawHost);
+    if (normalized == null) {
+      return 'localhost:$_defaultStunPort';
+    }
+
+    if (_hasExplicitPort(normalized)) {
+      return normalized;
+    }
+
+    if (_looksLikeBareIpv6(normalized)) {
+      return '[$normalized]:$_defaultStunPort';
+    }
+
+    return '$normalized:$_defaultStunPort';
+  }
+
+  String? _normalizeIceHost(String? rawHost) {
+    if (rawHost == null) {
+      return null;
+    }
+
+    var normalized = rawHost.trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+
+    normalized = normalized.replaceFirst(RegExp(r'^(stun|turn|turns):'), '');
+    if (normalized.startsWith('//')) {
+      normalized = normalized.substring(2);
+    }
+
+    final withScheme =
+        normalized.startsWith('http://') || normalized.startsWith('https://')
+        ? normalized
+        : 'https://$normalized';
+
+    final uri = Uri.tryParse(withScheme);
+    if (uri != null && uri.host.isNotEmpty) {
+      final host = _looksLikeBareIpv6(uri.host) ? '[${uri.host}]' : uri.host;
+      return uri.hasPort ? '$host:${uri.port}' : host;
+    }
+
+    normalized = normalized.split('/').first.split('?').first.split('#').first;
+    return normalized.isEmpty ? null : normalized;
+  }
+
+  bool _hasExplicitPort(String hostOrEndpoint) {
+    if (hostOrEndpoint.startsWith('[')) {
+      return hostOrEndpoint.contains(']:');
+    }
+
+    return ':'.allMatches(hostOrEndpoint).length == 1;
+  }
+
+  bool _looksLikeBareIpv6(String hostOrEndpoint) {
+    return hostOrEndpoint.contains(':') &&
+        !hostOrEndpoint.startsWith('[') &&
+        ':'.allMatches(hostOrEndpoint).length > 1;
+  }
+
   /// Save the signaling domain
   Future<void> setDomain(String domain) async {
     // Normalize the domain (default to HTTPS when scheme is omitted)
@@ -218,6 +323,7 @@ class LocalSettings {
   /// Reset all settings (for testing or app reset)
   Future<void> reset() async {
     await _prefs.remove(_keyDomain);
+    await _prefs.remove(_keyIceHost);
     await _prefs.remove(_keyIceServersJson);
     await _prefs.remove(_keyWelcomeShown);
   }

@@ -473,10 +473,11 @@ class _ResponderPageState extends State<ResponderPage> {
           ciphertextB64: answerB64,
         );
       } else if (signalingMsg.type == 'ice') {
+        final sdpMLineIndexValue = signalingMsg.data['sdpMLineIndex'];
         final candidate = RTCIceCandidate(
           signalingMsg.data['candidate'] as String,
-          signalingMsg.data['sdpMid'] as String,
-          signalingMsg.data['sdpMLineIndex'] as int,
+          signalingMsg.data['sdpMid'] as String?,
+          sdpMLineIndexValue is num ? sdpMLineIndexValue.toInt() : null,
         );
         await _webrtcManager!.addIceCandidate(candidate);
       } else if (signalingMsg.type == 'disconnect') {

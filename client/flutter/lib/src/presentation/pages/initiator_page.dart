@@ -728,10 +728,11 @@ class _InitiatorPageState extends State<InitiatorPage> {
         );
         await _webrtcManager!.setRemoteAnswer(answer);
       } else if (signalingMsg.type == 'ice') {
+        final sdpMLineIndexValue = signalingMsg.data['sdpMLineIndex'];
         final candidate = RTCIceCandidate(
           signalingMsg.data['candidate'] as String,
-          signalingMsg.data['sdpMid'] as String,
-          signalingMsg.data['sdpMLineIndex'] as int,
+          signalingMsg.data['sdpMid'] as String?,
+          sdpMLineIndexValue is num ? sdpMLineIndexValue.toInt() : null,
         );
         await _webrtcManager!.addIceCandidate(candidate);
       } else if (signalingMsg.type == 'disconnect') {
