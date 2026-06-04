@@ -16,14 +16,13 @@ class SerialTaskQueue<T> {
   final List<T> _items = <T>[];
 
   bool _isProcessing = false;
+  bool _isScheduled = false;
   bool _isDisposed = false;
 
   void enqueue(T item) {
     if (_isDisposed) return;
     _items.add(item);
-    if (!_isProcessing) {
-      unawaited(_process());
-    }
+    _scheduleProcessing();
   }
 
   void clear() {
@@ -35,8 +34,18 @@ class SerialTaskQueue<T> {
     _items.clear();
   }
 
+  void _scheduleProcessing() {
+    if (_isDisposed || _isProcessing || _isScheduled) return;
+
+    _isScheduled = true;
+    scheduleMicrotask(() {
+      _isScheduled = false;
+      unawaited(_process());
+    });
+  }
+
   Future<void> _process() async {
-    if (_isDisposed || _isProcessing) return;
+    if (_isDisposed || _isProcessing || _items.isEmpty) return;
 
     _isProcessing = true;
     try {
@@ -50,9 +59,7 @@ class SerialTaskQueue<T> {
       }
     } finally {
       _isProcessing = false;
-      if (_items.isNotEmpty && !_isDisposed) {
-        unawaited(_process());
-      }
+      _scheduleProcessing();
     }
   }
 }

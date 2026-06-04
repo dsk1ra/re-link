@@ -168,7 +168,7 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'ReLink',
+          'Re:Link',
           style: AppTypography.title(size: AppUiMetrics.appBarTitleFontSize),
         ),
         centerTitle: true,
@@ -292,13 +292,13 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            'Peer-to-Peer Connection',
+                            'Start your session',
                             style: AppTypography.title(size: _titleFontSize),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: AppSpacing.base),
                           Text(
-                            'Secure, direct connection with minimal server involvement',
+                            'Direct connection via rendezvous server',
                             style: AppTypography.body(
                               color: AppColors.textMuted,
                             ),

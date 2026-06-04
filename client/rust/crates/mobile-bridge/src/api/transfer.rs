@@ -1,7 +1,6 @@
-use client_core::file_transfer::FileTransferService;
+use crate::api::file_transfer;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 pub use webrtc::data_channel::RTCDataChannel;
@@ -51,25 +50,11 @@ pub async fn remove_connection(connection_id: &str) {
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn start_file_transfer(connection_id: String, file_path: String) -> anyhow::Result<()> {
-    // This is a sync wrapper that spawns the async task
     let runtime = tokio::runtime::Handle::current();
 
     runtime.spawn(async move {
-        let connections = CONNECTIONS.lock().await;
-        if let Some(handle) = connections.get(&connection_id) {
-            if let Some(dc) = handle.data_channels.get("file_transfer") {
-                let dc_clone = Arc::clone(dc);
-                if FileTransferService::send_file(dc_clone, PathBuf::from(file_path))
-                    .await
-                    .is_err()
-                {
-                    tracing::warn!("file transfer send failed");
-                }
-            } else {
-                tracing::warn!("file transfer channel unavailable");
-            }
-        } else {
-            tracing::warn!("file transfer connection unavailable");
+        if let Err(error) = file_transfer::send_offer(connection_id.clone(), file_path).await {
+            tracing::warn!(connection_id = %connection_id, error = %error, "file transfer send failed");
         }
     });
 
@@ -85,22 +70,8 @@ pub async fn register_connection(
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn start_file_receive(connection_id: String, save_dir: String) -> anyhow::Result<()> {
-    let runtime = tokio::runtime::Handle::current();
-
-    runtime.spawn(async move {
-        let connections = CONNECTIONS.lock().await;
-        if let Some(handle) = connections.get(&connection_id) {
-            if let Some(dc) = handle.data_channels.get("file_transfer") {
-                let dc_clone = Arc::clone(dc);
-                if FileTransferService::receive_file(dc_clone, PathBuf::from(save_dir))
-                    .await
-                    .is_err()
-                {
-                    tracing::warn!("file transfer receive failed");
-                }
-            }
-        }
-    });
+    let _ = save_dir;
+    file_transfer::init_transfer(connection_id);
 
     Ok(())
 }

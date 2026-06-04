@@ -466,28 +466,26 @@ async fn attach_data_channel(session: &Arc<WebRtcSession>, dc: Arc<RTCDataChanne
                             )
                             .await;
                         }
-                    } else if msg_label == "file_transfer" {
-                        if crate::api::file_transfer::handle_file_message(
+                    } else if msg_label == "file_transfer"
+                        && crate::api::file_transfer::handle_file_message(
                             msg_connection_id.clone(),
                             text.to_string(),
                         )
                         .await
                         .is_err()
-                        {
-                            tracing::warn!("file transfer control message handling failed");
-                        }
+                    {
+                        tracing::warn!("file transfer control message handling failed");
                     }
                 }
-            } else if msg_label == "file_transfer" {
-                if crate::api::file_transfer::handle_file_chunk(
+            } else if msg_label == "file_transfer"
+                && crate::api::file_transfer::handle_file_chunk(
                     msg_connection_id.clone(),
                     msg.data.to_vec(),
                 )
                 .await
                 .is_err()
-                {
-                    tracing::warn!("file transfer chunk handling failed");
-                }
+            {
+                tracing::warn!("file transfer chunk handling failed");
             }
         })
     }));

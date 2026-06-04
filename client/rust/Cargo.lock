@@ -366,23 +366,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "client-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "hex",
- "once_cell",
- "serde",
- "serde_json",
- "sha2",
- "shared",
- "tokio",
- "tracing",
- "uuid",
- "webrtc",
-]
-
-[[package]]
 name = "console_error_panic_hook"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1686,7 +1669,6 @@ name = "rust_lib_application"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "client-core",
  "flutter_rust_bridge",
  "hex",
  "once_cell",

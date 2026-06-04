@@ -130,7 +130,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   // Welcome header
                   const SizedBox(height: 24),
                   Text(
-                    'Welcome to ReLink',
+                    'Welcome to Re:Link',
                     style: const TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 24,
@@ -140,7 +140,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'A privacy-first P2P remote access application',
+                    'A privacy-first remote access system. To get started, please enter the address of your Re:Link server.',
                     style: const TextStyle(
                       color: AppColors.textMuted,
                       fontSize: 14,

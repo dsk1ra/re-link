@@ -65,7 +65,7 @@ jobs:
       - name: Build installer
         run: |
           "C:\Program Files (x86)\Inno Setup 6\iscc.exe" installer.iss `
-            /DAppVersion="${{ steps.version.outputs.version }}" /DOutputFilename="relinkSetup-${{ steps.version.outputs.version }}.exe"
+            /DAppVersion="${{ steps.version.outputs.version }}" /DOutputBaseFilename="relinkSetup-${{ steps.version.outputs.version }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -73,9 +73,9 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            relinkSetup.exe
+            relinkSetup-${{ steps.version.outputs.version }}.exe
           body: |
             ## Windows Client Release v${{ steps.version.outputs.version }}
             
-            Download `relinkSetup.exe` to install on your Windows machine.
+            Download `relinkSetup-${{ steps.version.outputs.version }}.exe` to install on your Windows machine.
 

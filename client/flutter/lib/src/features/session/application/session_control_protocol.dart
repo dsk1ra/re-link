@@ -6,6 +6,7 @@ typedef SessionPingSender = Future<void> Function(String ts);
 typedef SessionClosedSender =
     Future<void> Function({required String id, String? reason});
 typedef SessionAsyncCallback = Future<void> Function();
+typedef SessionNowProvider = DateTime Function();
 
 class SessionControlProtocol {
   SessionControlProtocol({
@@ -13,15 +14,18 @@ class SessionControlProtocol {
     required SessionPingSender sendPing,
     required SessionClosedSender sendSessionClosed,
     required SessionAsyncCallback onHeartbeatTimeout,
+    SessionNowProvider? nowProvider,
   }) : _log = log,
        _sendPing = sendPing,
        _sendSessionClosed = sendSessionClosed,
-       _onHeartbeatTimeout = onHeartbeatTimeout;
+       _onHeartbeatTimeout = onHeartbeatTimeout,
+       _nowProvider = nowProvider ?? DateTime.now;
 
   final Logger _log;
   final SessionPingSender _sendPing;
   final SessionClosedSender _sendSessionClosed;
   final SessionAsyncCallback _onHeartbeatTimeout;
+  final SessionNowProvider _nowProvider;
 
   Timer? _heartbeatTimer;
   Timer? _sessionClosedAckTimer;
@@ -31,16 +35,16 @@ class SessionControlProtocol {
 
   void startHeartbeat() {
     stopHeartbeat();
-    _lastPongAt = DateTime.now();
+    _lastPongAt = _nowProvider();
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       final last = _lastPongAt;
       if (last != null &&
-          DateTime.now().difference(last) > const Duration(seconds: 15)) {
+          _nowProvider().difference(last) > const Duration(seconds: 15)) {
         _handleHeartbeatTimeout();
         return;
       }
 
-      unawaited(_sendPing(DateTime.now().millisecondsSinceEpoch.toString()));
+      unawaited(_sendPing(_nowProvider().millisecondsSinceEpoch.toString()));
     });
   }
 
@@ -56,7 +60,7 @@ class SessionControlProtocol {
   }
 
   void handlePong() {
-    _lastPongAt = DateTime.now();
+    _lastPongAt = _nowProvider();
   }
 
   void handleSessionClosedAck(String? id) {
@@ -67,7 +71,7 @@ class SessionControlProtocol {
 
   Future<void> sendSessionClosedMessage() async {
     try {
-      _sessionClosedId = DateTime.now().millisecondsSinceEpoch.toString();
+      _sessionClosedId = _nowProvider().millisecondsSinceEpoch.toString();
       _sessionClosedAcked = false;
       _startSessionClosedAckTimer();
       await _sendSessionClosed(

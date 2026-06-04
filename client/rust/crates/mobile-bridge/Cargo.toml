@@ -8,7 +8,6 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 shared = { path = "../../../../shared/rust/shared" }
-client-core = { path = "../client-core" }
 anyhow = { workspace = true }
 flutter_rust_bridge = "=2.11.1"
 tokio = { workspace = true, features = ["full"] }

@@ -91,11 +91,11 @@
   <!-- ============================================================ -->
   <path class="aSlateD" d="M 500 110 C 900 60, 1500 60, 1900 110"/>
   <circle class="bSlate" cx="508" cy="110" r="12"/><text class="num" x="508" y="114" text-anchor="middle">7</text>
-  <text class="arrLbl"   x="1200" y="72"  text-anchor="middle" fill="#475569">Out-of-band channel  —  Step 7: share deep link  relink://join?token=&lt;rendezvous_id&gt;#&lt;secret&gt;</text>
+  <text class="arrLbl"   x="1200" y="72"  text-anchor="middle" fill="#475569">Out-of-band channel  —  Step 7: share deep link  https://&lt;base_url&gt;/connection/join?token=&lt;rendezvous_id&gt;#&lt;secret&gt;</text>
 
   <path class="aSlateD" d="M 560 150 C 1000 130, 1400 130, 1840 150"/>
   <circle class="bSlate" cx="568" cy="150" r="12"/><text class="num" x="568" y="154" text-anchor="middle">14</text>
-  <text class="arrLblSub" x="1200" y="127" text-anchor="middle">Step 14: users compare the 4-digit SAS verification code (voice / physical presence) to defeat MitM on the rendezvous channel</text>
+  <text class="arrLblSub" x="1200" y="127" text-anchor="middle">Step 14: users compare the 9-digit SAS verification code (voice / physical presence) to defeat MitM on the rendezvous channel</text>
 
   <!-- ============================================================ -->
   <!-- CLIENT A  (x = 20 .. 600)                                    -->
@@ -125,7 +125,7 @@
     <rect class="pillPurp" x="320" y="398" width="252" height="136" rx="10"/>
     <text class="pillHead" x="446" y="420" text-anchor="middle">WebSocket client</text>
     <text class="code"     x="446" y="442" text-anchor="middle">WSS /ws/:mailboxA</text>
-    <text class="pillBody" x="446" y="462" text-anchor="middle">subscribe · heartbeat</text>
+    <text class="pillBody" x="446" y="462" text-anchor="middle">subscribe · WS push</text>
     <text class="pillBody" x="446" y="480" text-anchor="middle">receive encrypted</text>
     <text class="pillBody" x="446" y="498" text-anchor="middle">join marker · answer</text>
     <text class="pillBody" x="446" y="516" text-anchor="middle">ICE · disconnect</text>
@@ -140,13 +140,13 @@
     <text class="pillBody" x="142" y="676" text-anchor="middle">token → public</text>
     <text class="pillBody" x="142" y="692" text-anchor="middle">secret → never sent</text>
     <rect class="pillOran" x="234" y="622" width="168" height="84" rx="10"/>
-    <text class="pillHead" x="318" y="642" text-anchor="middle">HKDF-SHA256</text>
+    <text class="pillHead" x="318" y="642" text-anchor="middle">HMAC-SHA256 KDF</text>
     <text class="pillBody" x="318" y="660" text-anchor="middle">kSig  (AES-GCM)</text>
-    <text class="pillBody" x="318" y="676" text-anchor="middle">kMac  (HMAC)</text>
+    <text class="pillBody" x="318" y="676" text-anchor="middle">sas  (verification)</text>
     <text class="pillBody" x="318" y="692" text-anchor="middle">encrypt/decrypt</text>
     <rect class="pillOran" x="410" y="622" width="162" height="84" rx="10"/>
     <text class="pillHead" x="491" y="642" text-anchor="middle">SAS</text>
-    <text class="pillBody" x="491" y="660" text-anchor="middle">4-digit code</text>
+    <text class="pillBody" x="491" y="660" text-anchor="middle">9-digit code</text>
     <text class="pillBody" x="491" y="676" text-anchor="middle">shown in UI</text>
     <text class="pillBody" x="491" y="692" text-anchor="middle">out-of-band verify</text>
 
@@ -169,7 +169,7 @@
     <text class="pillBody" x="318" y="832" text-anchor="middle">gatherCandidates</text>
     <text class="pillBody" x="318" y="852" text-anchor="middle">host candidate</text>
     <text class="pillBody" x="318" y="870" text-anchor="middle">srflx (via STUN)</text>
-    <text class="pillBody" x="318" y="888" text-anchor="middle">relay (via TURN)</text>
+    <text class="pillBody" x="318" y="888" text-anchor="middle">relay (via TURN, if enabled)</text>
     <text class="pillBody" x="318" y="920" text-anchor="middle">trickle ICE</text>
     <text class="pillBody" x="318" y="938" text-anchor="middle">sent encrypted over</text>
     <text class="pillBody" x="318" y="956" text-anchor="middle">the mailbox relay</text>
@@ -202,7 +202,7 @@
     <!-- Caddy edge -->
     <rect class="caddy" x="650" y="238" width="1100" height="82" rx="12" ry="12"/>
     <text class="cardHead" x="1200" y="266" text-anchor="middle">Caddy  ·  Edge</text>
-    <text class="cardBody" x="1200" y="288" text-anchor="middle">TLS termination (ACME)  ·  HTTPS + WSS reverse proxy  ·  static landing page</text>
+    <text class="cardBody" x="1200" y="288" text-anchor="middle">TLS termination (ACME)  ·  HTTPS + WSS reverse proxy</text>
     <text class="cardBody" x="1200" y="306" text-anchor="middle">all client traffic to /connection/* and /ws/:mailbox_id passes here first</text>
 
     <!-- Signaling Server container -->
@@ -229,7 +229,7 @@
     <text class="cardBody" x="688" y="604">• join_connection() → pair mailboxA↔mailboxB</text>
     <text class="cardBody" x="688" y="624">• send_message() → append ciphertext to peer</text>
     <text class="cardBody" x="688" y="644">• recv_message() → backfill for late subscribers</text>
-    <text class="cardBody" x="688" y="664">• expire at SESSION_TTL (300 s default)</text>
+    <text class="cardBody" x="688" y="664">• expire at SESSION_TTL (env-configured; 300 s in develop.sh)</text>
     <text class="cardBody" x="688" y="684">• all values stored in Redis — server is stateless</text>
 
     <!-- PushHub -->
@@ -241,7 +241,7 @@
     <text class="cardBody" x="1032" y="624">  writes a new message</text>
     <text class="cardBody" x="1032" y="644">• broadcasts event over the bounded channel</text>
     <text class="cardBody" x="1032" y="664">• client reads freshly-appended Redis list</text>
-    <text class="cardBody" x="1032" y="684">• heartbeat every HEARTBEAT_SECS (30 s)</text>
+    <text class="cardBody" x="1032" y="684">• event-driven mailbox push on notify()</text>
 
     <!-- Redis cylinder -->
     <g transform="translate(1392 338)">
@@ -256,32 +256,32 @@
       <text class="pillBody" x="175" y="152" text-anchor="middle">TTL = RENDEZVOUS_TTL · one-shot GET+DEL</text>
       <rect fill="#f8fafc" stroke="#0f172a" stroke-width="1.1" x="26" y="174" width="298" height="70" rx="8"/>
       <text class="pillHead" x="175" y="194" text-anchor="middle">sig:mailbox_meta:{id}</text>
-      <text class="code"     x="175" y="214" text-anchor="middle">{ peer_mailbox_id, expires_at }</text>
-      <text class="pillBody" x="175" y="232" text-anchor="middle">TTL = SESSION_TTL (300 s)</text>
+      <text class="code"     x="175" y="214" text-anchor="middle">{ peer_mailbox_id, expires_at_epoch_ms }</text>
+      <text class="pillBody" x="175" y="232" text-anchor="middle">TTL = SESSION_TTL (env-configured)</text>
       <rect fill="#f8fafc" stroke="#0f172a" stroke-width="1.1" x="26" y="254" width="298" height="88" rx="8"/>
       <text class="pillHead" x="175" y="274" text-anchor="middle">sig:mailbox_msgs:{id}</text>
       <text class="code"     x="175" y="294" text-anchor="middle">LIST of { from, ciphertext_b64 }</text>
-      <text class="pillBody" x="175" y="312" text-anchor="middle">RPUSH on send · drained on /recv</text>
+      <text class="pillBody" x="175" y="312" text-anchor="middle">RPUSH on send · backfilled via LRANGE on /recv</text>
       <text class="pillBody" x="175" y="330" text-anchor="middle">PushHub notified per append</text>
     </g>
 
     <!-- coturn -->
     <rect class="coturn" x="650" y="740" width="1100" height="160" rx="14" ry="14"/>
     <text class="cardHead" x="1200" y="766" text-anchor="middle">coturn  ·  NAT Traversal</text>
-    <text class="cardBody" x="1200" y="786" text-anchor="middle">independent UDP service · not proxied by Caddy · reached directly by each client</text>
+    <text class="cardBody" x="1200" y="786" text-anchor="middle">independent UDP service · not proxied by Caddy · used for STUN/TURN when configured</text>
     <rect fill="#ffffff" stroke="#0d9488" stroke-width="1.1" x="680" y="800" width="332" height="86" rx="10"/>
     <text class="pillHead" x="846" y="822" text-anchor="middle">STUN  (port 3478, default)</text>
     <text class="pillBody" x="846" y="842" text-anchor="middle">Binding Request / Binding Success</text>
     <text class="pillBody" x="846" y="860" text-anchor="middle">discovers server-reflexive (srflx)</text>
     <text class="pillBody" x="846" y="878" text-anchor="middle">candidate for each client</text>
     <rect fill="#ffffff" stroke="#0d9488" stroke-width="1.1" x="1028" y="800" width="332" height="86" rx="10"/>
-    <text class="pillHead" x="1194" y="822" text-anchor="middle">TURN  (port 5349, fallback)</text>
-    <text class="pillBody" x="1194" y="842" text-anchor="middle">relay candidate when symmetric</text>
+    <text class="pillHead" x="1194" y="822" text-anchor="middle">TURN  (port 5349, optional fallback)</text>
+    <text class="pillBody" x="1194" y="842" text-anchor="middle">relay candidate when TURN mode is enabled</text>
     <text class="pillBody" x="1194" y="860" text-anchor="middle">NAT / strict firewall blocks direct</text>
     <text class="pillBody" x="1194" y="878" text-anchor="middle">P2P path between peers</text>
     <rect fill="#ffffff" stroke="#0d9488" stroke-width="1.1" x="1376" y="800" width="352" height="86" rx="10"/>
     <text class="pillHead" x="1552" y="822" text-anchor="middle">ICE configuration</text>
-    <text class="pillBody" x="1552" y="842" text-anchor="middle">ICE servers list published to both</text>
+    <text class="pillBody" x="1552" y="842" text-anchor="middle">ICE servers configured locally on both</text>
     <text class="pillBody" x="1552" y="860" text-anchor="middle">clients · IPv4 + IPv6 enabled in the</text>
     <text class="pillBody" x="1552" y="878" text-anchor="middle">RTCConfiguration on Windows</text>
 
@@ -319,7 +319,7 @@
     <rect class="pillPurp" x="2100" y="398" width="252" height="136" rx="10"/>
     <text class="pillHead" x="2226" y="420" text-anchor="middle">WebSocket client</text>
     <text class="code"     x="2226" y="442" text-anchor="middle">WSS /ws/:mailboxB</text>
-    <text class="pillBody" x="2226" y="462" text-anchor="middle">subscribe · heartbeat</text>
+    <text class="pillBody" x="2226" y="462" text-anchor="middle">subscribe · WS push</text>
     <text class="pillBody" x="2226" y="480" text-anchor="middle">receive encrypted</text>
     <text class="pillBody" x="2226" y="498" text-anchor="middle">offer · ICE</text>
     <text class="pillBody" x="2226" y="516" text-anchor="middle">disconnect</text>
@@ -329,17 +329,17 @@
     <text class="cardBody" x="1840" y="609">Derived from URL fragment; private to device.</text>
     <rect class="pillOran" x="1838" y="622" width="168" height="84" rx="10"/>
     <text class="pillHead" x="1922" y="642" text-anchor="middle">parse URL fragment</text>
-    <text class="pillBody" x="1922" y="660" text-anchor="middle">token from path</text>
+    <text class="pillBody" x="1922" y="660" text-anchor="middle">token from query</text>
     <text class="pillBody" x="1922" y="676" text-anchor="middle">secret from # (never</text>
     <text class="pillBody" x="1922" y="692" text-anchor="middle">sent to server)</text>
     <rect class="pillOran" x="2014" y="622" width="168" height="84" rx="10"/>
-    <text class="pillHead" x="2098" y="642" text-anchor="middle">HKDF-SHA256</text>
-    <text class="pillBody" x="2098" y="660" text-anchor="middle">same kSig · kMac as A</text>
+    <text class="pillHead" x="2098" y="642" text-anchor="middle">HMAC-SHA256 KDF</text>
+    <text class="pillBody" x="2098" y="660" text-anchor="middle">same kSig + sas as A</text>
     <text class="pillBody" x="2098" y="676" text-anchor="middle">decrypt offer / ICE</text>
     <text class="pillBody" x="2098" y="692" text-anchor="middle">encrypt answer / ICE</text>
     <rect class="pillOran" x="2190" y="622" width="162" height="84" rx="10"/>
     <text class="pillHead" x="2271" y="642" text-anchor="middle">SAS</text>
-    <text class="pillBody" x="2271" y="660" text-anchor="middle">same 4 digits</text>
+    <text class="pillBody" x="2271" y="660" text-anchor="middle">same 9 digits</text>
     <text class="pillBody" x="2271" y="676" text-anchor="middle">displayed to user</text>
     <text class="pillBody" x="2271" y="692" text-anchor="middle">for out-of-band match</text>
 
@@ -361,7 +361,7 @@
     <text class="pillBody" x="2098" y="832" text-anchor="middle">gatherCandidates</text>
     <text class="pillBody" x="2098" y="852" text-anchor="middle">host candidate</text>
     <text class="pillBody" x="2098" y="870" text-anchor="middle">srflx (via STUN)</text>
-    <text class="pillBody" x="2098" y="888" text-anchor="middle">relay (via TURN)</text>
+    <text class="pillBody" x="2098" y="888" text-anchor="middle">relay (via TURN, if enabled)</text>
     <text class="pillBody" x="2098" y="920" text-anchor="middle">trickle ICE</text>
     <text class="pillBody" x="2098" y="938" text-anchor="middle">sent encrypted over</text>
     <text class="pillBody" x="2098" y="956" text-anchor="middle">the mailbox relay</text>
@@ -472,8 +472,8 @@
   <!-- A WebRTCManager ICE → coturn (step 17 STUN) -->
   <path class="aTeal" d="M 402 900 L 676 820"/>
   <circle class="bTeal" cx="540" cy="860" r="12"/><text class="num" x="540" y="864" text-anchor="middle">17</text>
-  <text class="arrLbl"    x="540" y="840" text-anchor="middle">STUN Binding Request</text>
-  <text class="arrLblSub" x="540" y="890" text-anchor="middle">UDP/3478 · direct from WebRTCManager</text>
+  <text class="arrLbl"    x="540" y="840" text-anchor="middle">Optional STUN Binding Request</text>
+  <text class="arrLblSub" x="540" y="890" text-anchor="middle">UDP/3478 · direct when STUN endpoint is configured</text>
 
   <!-- coturn → A (reflexive candidate back) -->
   <path class="aTeal" d="M 676 840 L 402 920" stroke-dasharray="7 5"/>
@@ -481,8 +481,8 @@
   <!-- B WebRTCManager ICE → coturn (step 18 STUN) -->
   <path class="aTeal" d="M 2014 900 L 1724 820"/>
   <circle class="bTeal" cx="1860" cy="860" r="12"/><text class="num" x="1860" y="864" text-anchor="middle">18</text>
-  <text class="arrLbl"    x="1860" y="840" text-anchor="middle">STUN Binding Request</text>
-  <text class="arrLblSub" x="1860" y="890" text-anchor="middle">UDP/3478 · direct from WebRTCManager</text>
+  <text class="arrLbl"    x="1860" y="840" text-anchor="middle">Optional STUN Binding Request</text>
+  <text class="arrLblSub" x="1860" y="890" text-anchor="middle">UDP/3478 · direct when STUN endpoint is configured</text>
 
   <path class="aTeal" d="M 1724 840 L 2014 920" stroke-dasharray="7 5"/>
 
@@ -491,12 +491,14 @@
   <circle class="bDark" cx="1200" cy="1162" r="16"/><text class="num" x="1200" y="1167" text-anchor="middle">20</text>
   <text class="arrLbl"    x="1200" y="1145" text-anchor="middle" fill="#166534">DTLS + SCTP handshake → encrypted DataChannel</text>
   <text class="arrLblSub" x="1200" y="1195" text-anchor="middle">Step 20: direct peer-to-peer · bypasses Caddy · Axum · Redis · signaling now torn down via step 21 (/connection/close)</text>
+  <circle class="bDark" cx="1460" cy="1212" r="12"/><text class="num" x="1460" y="1216" text-anchor="middle">22</text>
+  <text class="arrLblSub" x="1460" y="1238" text-anchor="middle">Step 22: encrypted file/screen-share payloads continue over the direct DataChannel</text>
 
   <!-- ============================================================ -->
   <!-- STEP TABLE (y = 1230 .. 1680)                                 -->
   <!-- ============================================================ -->
-  <rect x="20" y="1230" width="2360" height="420" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2" rx="16"/>
-  <text class="tableHead" x="1200" y="1260" text-anchor="middle">Initial connection workflow — 21 numbered steps plotted over the architecture above</text>
+  <rect x="20" y="1230" width="2360" height="450" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2" rx="16"/>
+  <text class="tableHead" x="1200" y="1260" text-anchor="middle">Initial connection workflow — 22 numbered steps plotted over the architecture above</text>
 
   <!-- Column 1: steps 1–7 -->
   <g transform="translate(52 1280)">
@@ -506,7 +508,7 @@
 
     <circle class="bOrange" cx="12" cy="68" r="12"/><text class="num" x="12" y="72" text-anchor="middle">2</text>
     <text class="stepText" x="36" y="65">Client A Local Crypto (FRB)</text>
-    <text class="stepBody" x="36" y="82">generate rendezvous_id + secret · HKDF → kSig, kMac · derive 4-digit SAS</text>
+    <text class="stepBody" x="36" y="82">generate rendezvous_id + secret · HMAC-KDF → kSig + sas · derive 9-digit SAS</text>
 
     <circle class="bBlue"   cx="12" cy="118" r="12"/><text class="num" x="12" y="122" text-anchor="middle">3</text>
     <text class="stepText" x="36" y="115">A → POST /connection/init  { rendezvous_id_b64 }</text>
@@ -522,11 +524,11 @@
 
     <circle class="bPurple" cx="12" cy="268" r="12"/><text class="num" x="12" y="272" text-anchor="middle">6</text>
     <text class="stepText" x="36" y="265">A → GET /ws/:mailboxA  (HTTP → WSS upgrade)</text>
-    <text class="stepBody" x="36" y="282">PushHub.subscribe(mailboxA) · heartbeats begin</text>
+    <text class="stepBody" x="36" y="282">PushHub.subscribe(mailboxA) · mailbox WS push active</text>
 
     <circle class="bSlate"  cx="12" cy="318" r="12"/><text class="num" x="12" y="322" text-anchor="middle">7</text>
     <text class="stepText" x="36" y="315">A → B out-of-band : deep link</text>
-    <text class="stepBody" x="36" y="332">relink://join?token=&lt;rendezvous_id&gt;#&lt;secret&gt; · A displays SAS</text>
+    <text class="stepBody" x="36" y="332">https://&lt;base_url&gt;/connection/join?token=&lt;rendezvous_id&gt;#&lt;secret&gt; · A displays SAS</text>
   </g>
 
   <!-- Column 2: steps 8–14 -->
@@ -537,14 +539,14 @@
 
     <circle class="bOrange" cx="12" cy="68" r="12"/><text class="num" x="12" y="72" text-anchor="middle">9</text>
     <text class="stepText" x="36" y="65">Client B Local Crypto (FRB)</text>
-    <text class="stepBody" x="36" y="82">HKDF → same kSig, kMac · derives matching SAS locally</text>
+    <text class="stepBody" x="36" y="82">HMAC-KDF → same kSig + sas · derives matching SAS locally</text>
 
     <circle class="bBlue"   cx="12" cy="118" r="12"/><text class="num" x="12" y="122" text-anchor="middle">10</text>
     <text class="stepText" x="36" y="115">B → POST /connection/join  { token_b64 }</text>
     <text class="stepBody" x="36" y="132">Redis: GET+DEL rendezvous · SETEX mailbox_meta:B · RPUSH join marker → msgs:A</text>
 
     <circle class="bBlue"   cx="12" cy="168" r="12"/><text class="num" x="12" y="172" text-anchor="middle">11</text>
-    <text class="stepText" x="36" y="165">Response → B : { mailboxB, expires_at }</text>
+    <text class="stepText" x="36" y="165">Response → B : { mailboxB, expires_at_epoch_ms }</text>
     <text class="stepBody" x="36" y="182">ResponderPage moves to pairing state</text>
 
     <circle class="bPurple" cx="12" cy="218" r="12"/><text class="num" x="12" y="222" text-anchor="middle">12</text>
@@ -557,10 +559,10 @@
 
     <circle class="bSlate"  cx="12" cy="318" r="12"/><text class="num" x="12" y="322" text-anchor="middle">14</text>
     <text class="stepText" x="36" y="315">Users compare SAS out-of-band</text>
-    <text class="stepBody" x="36" y="332">matching 4-digit codes defeat MitM on the rendezvous channel</text>
+    <text class="stepBody" x="36" y="332">matching 9-digit codes defeat MitM on the rendezvous channel</text>
   </g>
 
-  <!-- Column 3: steps 15–21 -->
+  <!-- Column 3: steps 15–22 -->
   <g transform="translate(1692 1280)">
     <circle class="bGreen"  cx="12" cy="18" r="12"/><text class="num" x="12" y="22" text-anchor="middle">15</text>
     <text class="stepText" x="36" y="15">A → encrypted SDP offer via /connection/send (mailboxA)</text>
@@ -571,12 +573,12 @@
     <text class="stepBody" x="36" y="82">Redis RPUSH msgs:A · PushHub WS push → A · A decrypts, setRemoteAnswer</text>
 
     <circle class="bTeal"   cx="12" cy="118" r="12"/><text class="num" x="12" y="122" text-anchor="middle">17</text>
-    <text class="stepText" x="36" y="115">A WebRTCManager ↔ coturn (direct UDP)</text>
-    <text class="stepBody" x="36" y="132">STUN Binding → server-reflexive candidate for A · TURN relay if needed</text>
+    <text class="stepText" x="36" y="115">A gathers ICE candidates (host first; coturn optional)</text>
+    <text class="stepBody" x="36" y="132">host candidate gathered locally · optional STUN Binding → srflx · TURN relay if TURN is enabled</text>
 
     <circle class="bTeal"   cx="12" cy="168" r="12"/><text class="num" x="12" y="172" text-anchor="middle">18</text>
-    <text class="stepText" x="36" y="165">B WebRTCManager ↔ coturn (direct UDP)</text>
-    <text class="stepBody" x="36" y="182">STUN Binding → server-reflexive candidate for B</text>
+    <text class="stepText" x="36" y="165">B gathers ICE candidates (host first; coturn optional)</text>
+    <text class="stepBody" x="36" y="182">host candidate gathered locally · optional STUN Binding → srflx · TURN relay if TURN is enabled</text>
 
     <circle class="bTeal"   cx="12" cy="218" r="12"/><text class="num" x="12" y="222" text-anchor="middle">19</text>
     <text class="stepText" x="36" y="215">Trickle ICE candidates (both directions)</text>
@@ -588,16 +590,20 @@
 
     <circle class="bSlate"  cx="12" cy="318" r="12"/><text class="num" x="12" y="322" text-anchor="middle">21</text>
     <text class="stepText" x="36" y="315">A &amp; B → POST /connection/close</text>
-    <text class="stepBody" x="36" y="332">mailboxes &amp; WS sockets torn down · signaling role ends · P2P is now the only path</text>
+    <text class="stepBody" x="36" y="332">mailboxes &amp; WS sockets torn down · signaling role ends</text>
+
+    <circle class="bDark"   cx="12" cy="368" r="12"/><text class="num" x="12" y="372" text-anchor="middle">22</text>
+    <text class="stepText" x="36" y="365">A ↔ B direct : encrypted payload exchange continues</text>
+    <text class="stepBody" x="36" y="382">file transfer and screen-share frames continue over DataChannel after signaling teardown</text>
   </g>
 
   <!-- Legend -->
-  <text class="legend" x="60"   y="1620" fill="#64748b">■ startup / out-of-band</text>
-  <text class="legend" x="290"  y="1620" fill="#ea580c">■ local crypto (FRB)</text>
-  <text class="legend" x="500"  y="1620" fill="#2563eb">■ HTTP signaling</text>
-  <text class="legend" x="700"  y="1620" fill="#7c3aed">■ WebSocket (subscribe + push)</text>
-  <text class="legend" x="1000" y="1620" fill="#15803d">■ SDP relay</text>
-  <text class="legend" x="1150" y="1620" fill="#0891b2">■ ICE / STUN / TURN</text>
-  <text class="legend" x="1340" y="1620" fill="#166534">■ direct P2P WebRTC</text>
-  <text class="stepBody" x="1580" y="1620">Dashed = async response / WS push · Solid = synchronous request / STUN probe</text>
+  <text class="legend" x="60"   y="1670" fill="#64748b">■ startup / out-of-band</text>
+  <text class="legend" x="290"  y="1670" fill="#ea580c">■ local crypto (FRB)</text>
+  <text class="legend" x="500"  y="1670" fill="#2563eb">■ HTTP signaling</text>
+  <text class="legend" x="700"  y="1670" fill="#7c3aed">■ WebSocket (subscribe + push)</text>
+  <text class="legend" x="1000" y="1670" fill="#15803d">■ SDP relay</text>
+  <text class="legend" x="1150" y="1670" fill="#0891b2">■ ICE / STUN / TURN</text>
+  <text class="legend" x="1340" y="1670" fill="#166534">■ direct P2P WebRTC</text>
+  <text class="stepBody" x="1580" y="1670">Dashed = async response / WS push · Solid = synchronous request / STUN probe</text>
 </svg>

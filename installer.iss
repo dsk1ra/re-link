@@ -3,7 +3,11 @@
 ; Requires: Inno Setup 6.0 or later
 
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.0"
+#endif
+
+#ifndef OutputBaseFilename
+  #define OutputBaseFilename "ReLinkSetup"
 #endif
 
 #define AppName "ReLink"
@@ -29,7 +33,7 @@ AppVerName={#AppName} {#AppVersion}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 AllowNoIcons=no
-OutputBaseFilename=ReLinkSetup
+OutputBaseFilename={#OutputBaseFilename}
 OutputDir=.
 Compression=lzma2
 SolidCompression=yes
@@ -53,9 +57,7 @@ Name: "quicklaunch"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription
 
 [Files]
 ; Copy the entire Windows build output to the installation directory
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Exclude unwanted build artifacts (debug symbols, temporary files)
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "*.pdb,*.ilk,*.exp,*.lib"; Flags: ignoreversion recursesubdirs
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "*.pdb,*.ilk,*.exp,*.lib"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#AppName}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
