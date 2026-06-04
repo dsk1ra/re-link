@@ -1,0 +1,237 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="980" viewBox="0 0 1800 980" role="img" aria-labelledby="title desc">
+  <title id="title">ReLink initial connection system design diagram</title>
+  <desc id="desc">Simplified ReLink system design diagram showing two clients, internet-facing central infrastructure with Caddy, signaling server, Redis, coturn, and the establishment of a direct WebRTC peer-to-peer connection.</desc>
+
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e5e7eb" stroke-width="1"/>
+    </pattern>
+
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#15803d"/>
+    </marker>
+    <marker id="arrowGray" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#475569"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#ea580c"/>
+    </marker>
+
+    <style>
+      .title { font: 700 30px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 15px 'Segoe UI', Arial, sans-serif; fill: #334155; }
+      .section { font: 700 19px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .sectionSub { font: 600 13px 'Segoe UI', Arial, sans-serif; fill: #475569; letter-spacing: 0.5px; }
+      .boxTitle { font: 700 15px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .boxText { font: 400 13px 'Segoe UI', Arial, sans-serif; fill: #334155; }
+      .step { font: 700 16px 'Segoe UI', Arial, sans-serif; }
+      .note { font: 400 12px 'Segoe UI', Arial, sans-serif; fill: #475569; }
+
+      .client { fill: #f3f4f6; stroke: #334155; stroke-width: 3; }
+      .infra { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2.5; stroke-dasharray: 10 8; }
+      .serverShell { fill: #eff6ff; stroke: #2563eb; stroke-width: 2.3; }
+      .component { fill: #ffffff; stroke: #64748b; stroke-width: 1.8; }
+      .componentBlue { fill: #eff6ff; stroke: #2563eb; stroke-width: 1.8; }
+      .componentGreen { fill: #ecfdf5; stroke: #16a34a; stroke-width: 1.8; }
+      .componentOrange { fill: #fff7ed; stroke: #ea580c; stroke-width: 1.8; }
+      .caddy { fill: #fff7ed; stroke: #ea580c; stroke-width: 2; }
+      .cloud { fill: #f8fafc; stroke: #64748b; stroke-width: 2; }
+      .redisStroke { fill: #ffffff; stroke: #0f172a; stroke-width: 2.2; }
+
+      .lineBlue { fill: none; stroke: #2563eb; stroke-width: 3; marker-end: url(#arrowBlue); }
+      .linePurple { fill: none; stroke: #7c3aed; stroke-width: 3; marker-end: url(#arrowPurple); }
+      .lineGreen { fill: none; stroke: #15803d; stroke-width: 3; marker-end: url(#arrowGreen); }
+      .lineGray { fill: none; stroke: #475569; stroke-width: 2.4; marker-end: url(#arrowGray); }
+      .lineOrange { fill: none; stroke: #ea580c; stroke-width: 2.8; marker-end: url(#arrowOrange); }
+      .lineSoft { fill: none; stroke: #94a3b8; stroke-width: 1.5; marker-end: url(#arrowGray); }
+      .dashed { stroke-dasharray: 8 8; }
+      .p2p {
+        fill: none;
+        stroke: #166534;
+        stroke-width: 4.5;
+        stroke-dasharray: 14 10;
+        marker-start: url(#arrowGreen);
+        marker-end: url(#arrowGreen);
+      }
+    </style>
+  </defs>
+
+  <rect width="1800" height="980" fill="#ffffff"/>
+  <rect width="1800" height="980" fill="url(#grid)"/>
+
+  <text class="title" x="900" y="42" text-anchor="middle">ReLink Initial Connection Flow</text>
+  <text class="subtitle" x="900" y="68" text-anchor="middle">Simplified system design focused on blind rendezvous signaling, ICE setup, and final WebRTC peer-to-peer establishment</text>
+
+  <path class="p2p" d="M 250 104 L 1550 104"/>
+  <text class="step" x="900" y="91" text-anchor="middle" fill="#166534">8. Direct WebRTC P2P connection established</text>
+
+  <g filter="url(#shadow)">
+    <rect class="client" x="50" y="150" rx="28" ry="28" width="420" height="740"/>
+    <text class="section" x="260" y="188" text-anchor="middle">Client A (Initiator)</text>
+    <text class="sectionSub" x="260" y="210" text-anchor="middle">essential initial-connection components</text>
+
+    <rect class="component" x="82" y="250" rx="18" ry="18" width="356" height="74"/>
+    <text class="boxTitle" x="102" y="275">InitiatorPage</text>
+    <text class="boxText" x="102" y="297">Creates the link, shows verification code,</text>
+    <text class="boxText" x="102" y="315">and waits for the peer to join.</text>
+
+    <rect class="componentBlue" x="82" y="362" rx="18" ry="18" width="356" height="74"/>
+    <text class="boxTitle" x="102" y="387">ConnectionService</text>
+    <text class="boxText" x="102" y="409">HTTP and WebSocket client for mailbox init,</text>
+    <text class="boxText" x="102" y="427">send, receive, close, and reconnect logic.</text>
+
+    <rect class="componentOrange" x="82" y="474" rx="18" ry="18" width="356" height="74"/>
+    <text class="boxTitle" x="102" y="499">Local Crypto via FRB</text>
+    <text class="boxText" x="102" y="521">Generates rendezvous ID + secret, derives kSig + SAS,</text>
+    <text class="boxText" x="102" y="539">and encrypts signaling payloads with AES-GCM.</text>
+
+    <rect class="componentGreen" x="82" y="586" rx="18" ry="18" width="356" height="74"/>
+    <text class="boxTitle" x="102" y="611">WebRTCManager</text>
+    <text class="boxText" x="102" y="633">Creates the SDP offer, gathers ICE candidates,</text>
+    <text class="boxText" x="102" y="651">and starts the direct peer connection.</text>
+
+    <path class="lineSoft" d="M 260 324 L 260 362"/>
+    <path class="lineSoft" d="M 260 436 L 260 474"/>
+    <path class="lineSoft" d="M 260 548 L 260 586"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect class="client" x="1330" y="150" rx="28" ry="28" width="420" height="740"/>
+    <text class="section" x="1540" y="188" text-anchor="middle">Client B (Joiner)</text>
+    <text class="sectionSub" x="1540" y="210" text-anchor="middle">essential initial-connection components</text>
+
+    <rect class="component" x="1362" y="250" rx="18" ry="18" width="356" height="74"/>
+    <text class="boxTitle" x="1382" y="275">ResponderPage</text>
+    <text class="boxText" x="1382" y="297">Consumes the deep link, confirms the same</text>
+    <text class="boxText" x="1382" y="315">verification code, and joins the session.</text>
+
+    <rect class="componentBlue" x="1362" y="362" rx="18" ry="18" width="356" height="74"/>
+    <text class="boxTitle" x="1382" y="387">ConnectionService</text>
+    <text class="boxText" x="1382" y="409">HTTP and WebSocket client for join, mailbox</text>
+    <text class="boxText" x="1382" y="427">subscribe, message relay, and teardown.</text>
+
+    <rect class="componentOrange" x="1362" y="474" rx="18" ry="18" width="356" height="74"/>
+    <text class="boxTitle" x="1382" y="499">Local Crypto via FRB</text>
+    <text class="boxText" x="1382" y="521">Derives keys from the link fragment secret and</text>
+    <text class="boxText" x="1382" y="539">decrypts or encrypts the signaling payloads.</text>
+
+    <rect class="componentGreen" x="1362" y="586" rx="18" ry="18" width="356" height="74"/>
+    <text class="boxTitle" x="1382" y="611">WebRTCManager</text>
+    <text class="boxText" x="1382" y="633">Applies the offer, creates the SDP answer, gathers</text>
+    <text class="boxText" x="1382" y="651">ICE candidates, and completes the peer setup.</text>
+
+    <path class="lineSoft" d="M 1540 324 L 1540 362"/>
+    <path class="lineSoft" d="M 1540 436 L 1540 474"/>
+    <path class="lineSoft" d="M 1540 548 L 1540 586"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect class="infra" x="520" y="170" rx="38" ry="38" width="760" height="660"/>
+    <text class="section" x="900" y="208" text-anchor="middle">Central Infrastructure</text>
+    <text class="sectionSub" x="900" y="230" text-anchor="middle">clients reach this over the internet</text>
+
+    <path class="cloud" d="M 792 248
+      C 790 228, 806 214, 826 216
+      C 838 199, 864 197, 880 208
+      C 895 197, 919 198, 934 210
+      C 958 210, 976 225, 976 244
+      C 996 247, 1008 260, 1008 277
+      C 1008 298, 991 312, 968 312
+      L 828 312
+      C 803 312, 785 298, 785 278
+      C 785 264, 789 253, 792 248 z"/>
+    <text class="section" x="896" y="265" text-anchor="middle">Internet</text>
+    <text class="boxText" x="896" y="286" text-anchor="middle">HTTPS / WSS signaling and ICE reachability</text>
+
+    <rect class="caddy" x="740" y="332" rx="18" ry="18" width="320" height="72"/>
+    <text class="section" x="900" y="361" text-anchor="middle">Caddy</text>
+    <text class="boxText" x="900" y="383" text-anchor="middle">TLS termination and reverse proxy to the signaling server</text>
+
+    <rect class="serverShell" x="620" y="436" rx="24" ry="24" width="560" height="226"/>
+    <text class="section" x="900" y="468" text-anchor="middle">server (Rust signaling service)</text>
+    <text class="sectionSub" x="900" y="489" text-anchor="middle">blind rendezvous orchestration</text>
+
+    <rect class="componentBlue" x="648" y="518" rx="16" ry="16" width="162" height="104"/>
+    <text class="boxTitle" x="729" y="545" text-anchor="middle">Axum API + WS</text>
+    <text class="boxText" x="729" y="567" text-anchor="middle">/connection/init</text>
+    <text class="boxText" x="729" y="585" text-anchor="middle">/connection/join</text>
+    <text class="boxText" x="729" y="603" text-anchor="middle">/send, /recv, /close, /ws/:mailbox</text>
+
+    <rect class="componentBlue" x="822" y="518" rx="16" ry="16" width="176" height="104"/>
+    <text class="boxTitle" x="910" y="545" text-anchor="middle">RendezvousService</text>
+    <text class="boxText" x="910" y="567" text-anchor="middle">Creates mailboxes,</text>
+    <text class="boxText" x="910" y="585" text-anchor="middle">pairs peers, and enforces TTL.</text>
+
+    <rect class="componentBlue" x="1010" y="518" rx="16" ry="16" width="142" height="104"/>
+    <text class="boxTitle" x="1081" y="545" text-anchor="middle">PushHub</text>
+    <text class="boxText" x="1081" y="567" text-anchor="middle">In-memory fan-out</text>
+    <text class="boxText" x="1081" y="585" text-anchor="middle">for mailbox WS</text>
+    <text class="boxText" x="1081" y="603" text-anchor="middle">notifications.</text>
+
+    <path class="lineOrange" d="M 900 404 L 900 436"/>
+    <text class="step" x="928" y="429" fill="#ea580c">Ingress proxy</text>
+
+    <path class="lineSoft" d="M 810 570 L 822 570"/>
+    <path class="lineSoft" d="M 998 570 L 1010 570"/>
+
+    <g transform="translate(680 694)">
+      <ellipse class="redisStroke" cx="150" cy="20" rx="150" ry="20"/>
+      <rect class="redisStroke" x="0" y="20" width="300" height="92"/>
+      <ellipse class="redisStroke" cx="150" cy="112" rx="150" ry="20"/>
+      <text class="section" x="150" y="54" text-anchor="middle">Redis</text>
+      <text class="boxText" x="150" y="78" text-anchor="middle">Ephemeral rendezvous and mailbox state</text>
+      <text class="boxText" x="150" y="98" text-anchor="middle">sig:rendezvous:{token} | sig:mailbox_meta:{id}</text>
+      <text class="boxText" x="150" y="118" text-anchor="middle">sig:mailbox_msgs:{id}</text>
+    </g>
+
+    <path class="cloud" d="M 1040 722
+      C 1038 705, 1051 692, 1068 694
+      C 1077 679, 1101 677, 1115 687
+      C 1128 677, 1150 678, 1162 689
+      C 1183 689, 1198 702, 1198 719
+      C 1215 721, 1226 733, 1226 748
+      C 1226 767, 1211 780, 1190 780
+      L 1068 780
+      C 1047 780, 1032 767, 1032 749
+      C 1032 737, 1036 727, 1040 722 z"/>
+    <text class="section" x="1129" y="723" text-anchor="middle">coturn</text>
+    <text class="boxText" x="1129" y="744" text-anchor="middle">STUN by default, TURN fallback optional</text>
+    <text class="boxText" x="1129" y="763" text-anchor="middle">3478 / 5349 / relay ports</text>
+  </g>
+
+  <path class="lineBlue" d="M 438 399 L 640 399 L 640 368 L 740 368"/>
+  <text class="step" x="610" y="350" text-anchor="middle" fill="#2563eb">1. POST /connection/init via internet</text>
+
+  <path class="lineBlue" d="M 1362 399 L 1160 399 L 1160 368 L 1060 368"/>
+  <text class="step" x="1190" y="350" text-anchor="middle" fill="#2563eb">4. POST /connection/join via internet</text>
+
+  <path class="linePurple" d="M 438 399 L 580 399 L 580 610 L 1010 610"/>
+  <path class="linePurple" d="M 1362 399 L 1220 399 L 1220 610 L 1152 610"/>
+  <text class="step" x="900" y="642" text-anchor="middle" fill="#7c3aed">5. WS mailbox subscribe + notify</text>
+
+  <path class="lineGreen" d="M 438 623 L 620 623 L 620 550 L 648 550"/>
+  <path class="lineGreen" d="M 1362 623 L 1180 623 L 1180 588 L 1152 588"/>
+  <text class="step" x="900" y="680" text-anchor="middle" fill="#15803d">6. Encrypted offer / answer / ICE relay</text>
+
+  <path class="lineGray dashed" d="M 438 623 L 560 623 L 560 750 L 1032 750"/>
+  <path class="lineGray dashed" d="M 1362 623 L 1240 623 L 1240 750 L 1226 750"/>
+
+  <path class="lineGray" d="M 900 622 L 900 694"/>
+  <text class="step" x="830" y="712" text-anchor="middle" fill="#475569">2. TTL state in Redis</text>
+  <text class="step" x="1129" y="706" text-anchor="middle" fill="#475569">7. ICE via coturn</text>
+
+  <path class="lineGray dashed" d="M 438 132 L 1362 132"/>
+  <text class="step" x="900" y="128" text-anchor="middle" fill="#475569">3. Share deep link / QR with token + #secret</text>
+
+  <text class="note" x="900" y="928" text-anchor="middle">After the peer connection becomes connected, both clients close the signaling mailboxes and continue over the direct WebRTC path.</text>
+</svg>
