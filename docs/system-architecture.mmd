@@ -1,0 +1,68 @@
+flowchart LR
+    classDef client fill:#f8fafc,stroke:#0f172a,stroke-width:1.5px,color:#0f172a
+    classDef service fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#0f172a
+    classDef crypto fill:#fff7ed,stroke:#ea580c,stroke-width:1.5px,color:#0f172a
+    classDef ws fill:#f5f3ff,stroke:#7c3aed,stroke-width:1.5px,color:#0f172a
+    classDef rtc fill:#ecfdf5,stroke:#15803d,stroke-width:1.5px,color:#0f172a
+    classDef infra fill:#fcfdff,stroke:#94a3b8,stroke-width:1.5px,color:#0f172a
+    classDef store fill:#ffffff,stroke:#0f172a,stroke-width:1.5px,color:#0f172a
+    classDef net fill:#f0fdfa,stroke:#0891b2,stroke-width:1.5px,color:#0f172a
+
+    OOB["Out-of-band channel<br/>7 share deep link<br/>14 compare SAS"]:::infra
+
+    subgraph A["Client A"]
+        A_UI["InitiatorPage<br/>link creation + accept dialog"]:::client
+        A_HTTP["ConnectionService<br/>HTTP client"]:::service
+        A_WS["ConnectionService<br/>WebSocket client"]:::ws
+        A_CRYPTO["Local Crypto via FRB<br/>rendezvous_id + secret<br/>HKDF + SAS"]:::crypto
+        A_RTC["WebRTCManager<br/>offer + ICE + DataChannel"]:::rtc
+    end
+
+    subgraph INF["Central Infrastructure"]
+        CADDY["Caddy Edge<br/>HTTPS + WSS reverse proxy"]:::crypto
+        subgraph SIGNAL["Rust Axum signaling server"]
+            ROUTER["Axum Router<br/>/health /connection/* /ws/:mailbox_id"]:::service
+            RV["RendezvousService<br/>init + join + send + recv + close"]:::ws
+            PUSH["PushHub<br/>WS subscribe + notify"]:::ws
+        end
+        REDIS[("Redis<br/>rendezvous + mailbox metadata + mailbox messages")]:::store
+        TURN["coturn<br/>STUN / TURN"]:::net
+    end
+
+    subgraph B["Client B"]
+        B_UI["ResponderPage<br/>pairing + SAS display"]:::client
+        B_HTTP["ConnectionService<br/>HTTP client"]:::service
+        B_WS["ConnectionService<br/>WebSocket client"]:::ws
+        B_CRYPTO["Local Crypto via FRB<br/>derive keys from secret<br/>matching SAS"]:::crypto
+        B_RTC["WebRTCManager<br/>answer + ICE + DataChannel"]:::rtc
+    end
+
+    A_UI -->|"2 local crypto<br/>3 init connection"| A_CRYPTO
+    A_UI -->|"3 POST /connection/init"| A_HTTP
+    A_UI -->|"15 accept and create offer"| A_RTC
+    A_CRYPTO -->|"encrypt offer / ICE"| A_HTTP
+    A_CRYPTO -.->|"7 token + secret"| OOB
+    A_HTTP -->|"1 /health<br/>3 /init<br/>15 /send<br/>19 /send<br/>21 /close"| CADDY
+    A_WS -->|"6 WSS /ws/:mailboxA"| CADDY
+
+    OOB -.->|"8 parse token + secret"| B_CRYPTO
+    B_CRYPTO -->|"9 derive keys + SAS"| B_UI
+    B_UI -->|"10 POST /connection/join"| B_HTTP
+    B_UI -->|"16 create answer"| B_RTC
+    B_CRYPTO -->|"decrypt / encrypt SDP + ICE"| B_HTTP
+    B_HTTP -->|"1 /health<br/>10 /join<br/>16 /send<br/>19 /send<br/>21 /close"| CADDY
+    B_WS -->|"13 WSS /ws/:mailboxB"| CADDY
+
+    CADDY -->|"reverse proxy"| ROUTER
+    ROUTER -->|"HTTP handlers"| RV
+    ROUTER -->|"WS upgrade + heartbeat"| PUSH
+    RV -->|"SETEX / RPUSH / GET+DEL"| REDIS
+    RV -->|"notify mailbox updates"| PUSH
+    PUSH -.->|"12 join marker<br/>16 answer<br/>19 ICE"| A_WS
+    PUSH -.->|"15 offer<br/>19 ICE"| B_WS
+    A_WS -.->|"deliver answer / ICE"| A_RTC
+    B_WS -.->|"deliver offer / ICE"| B_RTC
+
+    A_RTC -->|"17 STUN / TURN candidate gathering"| TURN
+    B_RTC -->|"18 STUN / TURN candidate gathering"| TURN
+    A_RTC <-->|"20 DTLS + SCTP DataChannel"| B_RTC

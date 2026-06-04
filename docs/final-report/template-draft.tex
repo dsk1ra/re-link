@@ -1,0 +1,794 @@
+%You can delete all the comments after you have finished your document
+%this sets up the defaults for the documents, 12pt font and A4 size. The article type sets this up as such as opposed to letter or memo.
+
+%for the finer points LaTeX see https://en.wikibooks.org/wiki/LaTeX or http://tex.stackexchange.com/
+
+\documentclass[12pt,a4paper]{article}
+\usepackage{titlesec} %these are how we import packages, one helps set up footers and title layout
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\newcommand{\sectionbreak}{\clearpage}
+\usepackage{apacite}
+% !TEX TS-program = pdflatex
+% !TEX encoding = UTF-8 Unicode
+\usepackage[utf8]{inputenc} % set input encoding (not needed with XeLaTeX)
+\usepackage{graphicx} % support the \includegraphics command and options
+
+% \usepackage[parfill]{parskip} % Activate to begin paragraphs with an empty line rather than an indent
+
+%%% PACKAGES
+\usepackage{booktabs} % for much better looking tables
+\usepackage{array} % for better arrays (eg matrices) in maths
+\usepackage{paralist} % very flexible & customisable lists (eg. enumerate/itemize, etc.)
+\usepackage{verbatim} % adds environment for commenting out blocks of text & for better verbatim
+\usepackage{subfig} % make it possible to include more than one captioned figure/table in a single float
+\usepackage[toc,page]{appendix}
+% These packages are all incorporated in the memoir class to one degree or another...
+
+%header and footer settings
+\pagestyle{fancyplain}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\footrulewidth}{0.5pt}
+\setlength{\headheight}{15pt}
+\fancyhead[L]{Student Name - Student ID}
+\fancyhead[R]{ Dissertation / Module}
+\fancyfoot[L]{}
+\fancyfoot[C]{\thepage}
+
+%this starts the document
+\usepackage{url}
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{3}
+\titleformat{\paragraph}[block]{\normalfont\normalsize\bfseries}{\theparagraph}{1em}{}
+\titlespacing*{\paragraph}{0pt}{1.5ex plus .2ex}{0.5ex}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\Huge Re:Link\par}
+\vspace{0.75cm}
+{\Large Final Report Draft\par}
+\vfill
+{\large Replace this page with the dissertation title sheet required by your institution.\par}
+\end{titlepage}
+\clearpage
+
+\section*{Declaration}
+Replace this page with the declaration text required by your institution.
+\clearpage
+
+\section*{Data Protection}
+Replace this page with the data-protection statement required by your institution.
+\clearpage
+
+\begin{abstract}
+Commercial remote-access platforms rely on vendor-controlled infrastructure that can introduce operational and privacy risks. This report investigates whether a custom solution with self-hosting capabilities can preserve practical peer-to-peer functionality while minimising retained metadata. It presents Re:Link, a prototype remote access system designed around privacy-by-design principles and a blind rendezvous protocol. The system combines a Rust signalling server, Redis configured for ephemeral coordination state, and a Windows desktop client built with Flutter and Rust. Session bootstrap uses a deep link for invitations that contains a locally generated secret. After successful negotiation, the connection flows via direct peer-to-peer channels. The evaluation is qualitative and examines current system behaviour and compares it with properties of RustDesk, OnionShare, and Magic Wormhole. The resulting prototype can start peer sessions via a coordination service without persistent identifiers, while limiting the server’s visibility into signalling content. However, Re:Link does not provide anonymity, and it is not a production-ready product. It remains constrained by external secret sharing and connectivity limitations in restrictive network environments. Nevertheless, the report demonstrates that privacy-preserving, self-hosted remote access is a viable architectural direction and provides a proof-of-concept for a lower-retention alternative to conventional remote-access systems.
+\end{abstract}
+\pagebreak
+
+\tableofcontents
+\newpage
+
+\listoftables
+\newpage
+
+\listoffigures
+\newpage
+
+\section*{Acknowledgements}
+Acknowledgements were not provided in \texttt{final-report.txt}.
+\newpage
+
+\section{Introduction}
+
+Remote access software is now a vital part of modern computing infrastructure. Organisations use commercial tools like TeamViewer, AnyDesk, and Microsoft’s Remote Desktop Protocol (RDP) for Information Technology (IT) support, system administration, distributed collaboration, and remote work. The global shift toward remote work intensified during the COVID-19 pandemic. This made companies more dependent on these tools \cite{blsremote}. According to TeamViewer’s annual financial reports, Q1 2020 billings rose by about 75\% year-over-year \cite{teamviewer2020q1} and reached 2.5 billion installations worldwide \cite{teamviewer2020anniversary}. Yet, this widespread use conceals a key limitation: most leading remote access software connects via centralised, vendor-controlled cloud infrastructure.
+
+The centralised model requires users to place complete trust in the service provider, with all data transmitted through the service provider’s infrastructure. It introduces three critical categories of risk:
+
+\begin{itemize}
+
+\item \textbf{Privacy Erosion}
+
+Vendor-controlled servers must observe connection metadata to establish connections. In TeamViewer’s case, this includes the username, display name, email address, Internet Protocol (IP) address, profile picture (optional), language preference, meeting ID, location, and password \cite{teamviewerdpa}. This is a vast collection of user identifiers that enables sophisticated profiling. TeamViewer’s Data Processing Agreement lists all personal data processed. Device identifiers and usage data are confirmed in their Privacy Policy \cite{teamviewerprivacy}. Aggregating such metadata creates a honeypot that attracts state intelligence agencies and commercial surveillance by the service operators themselves.
+
+\item \textbf{Censorship Vulnerability}
+
+Centralised services are notoriously easy to block, as they present a single point of control and failure. Authoritarian regimes systematically restrict access to communication services outside their control. The Great Firewall of China, a state-run Internet censorship system, has historically restricted access to foreign IP addresses and domains for numerous services, including Signal and Discord \cite{signalchina,discordchina}. Russia has similarly imposed widespread blocks on remote access services and Virtual Private Networks (VPNs) \cite{reutersvpn,roskomnadzor}. A single nation-state takedown order may render the system inaccessible to users.
+
+\item \textbf{Operational Dependency}
+
+Reliance on third-party infrastructure implies loss of autonomy, especially when access to targeted user accounts gets restricted. The February 2024 AnyDesk breach \cite{anydesk2024} is a prominent case of the potential damage associated with this risk. During a security audit, attackers were found to have compromised production systems, stealing source code and code-signing certificates \cite{akamaianydesk,cyberreasonanydesk}, with exposed customer credentials subsequently sold on the dark web \cite{resecurityanydesk,secboulevardanydesk}. Such breaches threaten both software integrity and user privacy. Additionally, vendor-controlled platforms reserve the right to deny service based on company-defined policies, effectively eliminating the ability to use the software.
+
+\end{itemize}
+
+\subsection{The Privacy-Functionality Gap}
+
+The impact of these risks becomes further amplified for vulnerable populations - human rights activists, investigative journalists gathering information in conflict zones, and Non-Governmental Organizations working under state surveillance. Confidentiality and availability of remote access tools are the existential requirements for such groups.
+
+The market presents a false dilemma. There are privacy-focused communication tools available, such as Signal \cite{signal}. It provides strong end-to-end encryption (E2EE) and minimal server observation – but was designed for messaging and lacks real-time remote access capabilities. Moreover, the conversation history persists on user devices. On the contrary, commercial remote access platforms provide mature real-time functionality – but are fundamentally incapable of satisfying privacy requirements due to their centralised architecture and persistent metadata collection. Users in high-risk environments are forced to choose between secure communication without remote access or remote access without security.
+
+In recent years, new organisations have emerged that attempt to mitigate the aforementioned risks. Yet, the proposed solutions are designed around data ownership, not minimisation – customers become the data controllers by hosting and managing their own signalling servers. While this is a step forward from centralised systems, the danger of compromise fundamentally remains unaddressed. In the event of infiltration into a self-hosted system, data exfiltration becomes a matter of hours \cite{selfhostexfil}
+
+Re:Link addresses this gap by combining privacy with remote access in a single architecture. The connection lifecycle is designed not to retain server-side knowledge of user identity or activity persistently. The sequence of the connection flow (detailed in Section 3.5) goes as follows:
+
+\begin{enumerate}
+
+\item Initialisation (Out-of-Band): The Initiator generates a token (link) and shares it with the Responder through an independent, uncontrolled channel (e.g., Tailscale \cite{tailscale} tunnel).
+
+\item Blind Registration: Clients register with the server anonymously – the server issues temporary credentials but stores no persistent user identifiers.
+
+\item Mailbox Creation: The Initiator establishes a temporary “mailbox” – a short-lived random token acting as a rendezvous identifier. Key detail: the server can read the token value but cannot decrypt the ciphertext.
+
+\item Responder Join: The Responder is pointed to the mailbox with the token and joins. The server acknowledges both parties.
+
+\item Signalling: The clients exchange Session Description Protocol (SDP) offers -> answers -> Interactive Connectivity Establishment (ICE) candidates through the server. The server perceives them as encrypted opaque blobs. Peer-to-Peer Connection: Once ICE negotiation succeeds, the clients can establish a direct Web Real-Time Communication (WebRTC) tunnel \cite{rfc8825}. All data now flows peer-to-peer, and the server is no longer needed.
+
+\item Metadata Destruction: As soon as the connection has been established or timed out, the server’s Redis \cite{redis} ephemeral store automatically evicts all mailbox data via time-to-live (TTL) expiry – the result: no persistent trace. The architecture is designed to ensure that, even in the case of a compromised signalling server, the attacker can gather only very little data of no investigative value.
+
+\end{enumerate}
+
+\subsection{Problem Statement}
+
+The core problem this dissertation addresses is the absence of a well-architected remote access solution that simultaneously achieves four design objectives:
+
+\begin{enumerate}
+
+\item Peer-to-peer connectivity – independence from the central servers
+
+\item End-to-end encryption – server’s inability to decrypt transmitted data
+
+\item Self-hostability – organisations and individuals’ ability to operate independent instances
+
+\item Minimal metadata storage – lack of retention for persistent user identifiers or activity logs
+
+\end{enumerate}
+
+RustDesk \cite{rustdesk} is a notable open-source project that attempts to address these challenges. However, it falls short on the metadata objective – its architecture persists device ID registrations and last-known peer addresses at the rendezvous server \cite{rustdeskselfhost,flokinetrustdesk}. Similarly, Matrix \cite{matrix} partially satisfies these objectives through its federated and self-hostable design, but it does not address the remote-access use case directly. Besides, it retains persistent identifiers and state as fundamental elements of its protocol architecture. No existing system offers a signalling architecture that both prevents user profiling and delivers real-time remote access performance. A formal comparison of these systems is presented in Section 5.5.
+
+\subsection{Approach}
+
+This dissertation presents Re:Link – a prototype of an alternative, self-hosted remote access system designed to satisfy all four objectives outlined above simultaneously. The system is grounded in privacy-by-design principles \cite{cavoukian2011}, established by Dr Ann Cavoukian (discussed further in Section 2.4.2), which serve as a framework for architectural decisions regarding user privacy. Re:Link comprises two components: server and client.
+
+The server stack comprises a Rust \cite{rustbook}-based signalling server, Redis \cite{redis} ephemeral key-value storage with automatic TTL expiry, and Caddy \cite{caddy} as a Transport Layer Security (TLS) terminating reverse proxy. These are packaged using Docker Compose \cite{docker} for straightforward deployment in any environment.
+
+The client component utilises a Flutter \cite{flutter} frontend providing a Windows-based user interface (limited to a single operating system). Flutter enables a trivial cross-platform implementation with a shared code base, bound to a Rust cryptographic and WebRTC core via the Flutter Rust Bridge (FRB) \cite{frb} Foreign Function Interface (FFI) \cite{flutterffi}. This combination enables Flutter to seamlessly delegate compute-intensive operations to Rust, achieving high performance for I/O and cryptographic operations.
+
+The connection establishment uses a blind rendezvous protocol (Section 3.5) in which the signalling server acts as an opaque relay. Once the WebRTC connection is negotiated, all data flows directly between peers over an E2EE channel, never transiting the server.
+
+\subsection{Contributions}
+
+\begin{enumerate}
+
+\item Design of a blind rendezvous protocol for anonymous session initiation over an untrusted signalling server that ensures the server is not capable of inspecting the payloads (the actual data being sent, such as files) or determining who is connecting to whom.
+
+\item Design of a self-hostable ephemeral-only backend architecture that ensures that no user identifiers are stored persistently, guaranteeing that no non-essential user data is persistently stored at rest.
+
+\item Implementation of a Windows-based desktop client application using a hybrid Flutter/Rust architecture with application-layer E2EE integrated above WebRTC’s native transport security.
+
+\item Qualitative evaluation of the system’s privacy, security, and metadata guarantees against existing open-source, self-hosted alternatives (RustDesk \cite{rustdesk}, OnionShare \cite{onionshare}, Magic Wormhole \cite{magicwormhole}).
+
+\end{enumerate}
+
+\subsection{Research Questions}
+
+\begin{description}
+
+\item[\textbf{RQ1:}] How can a signalling protocol be designed to establish peer-to-peer connections over an untrusted server without exposing identifiable user metadata or connection graphs?
+
+\item[\textbf{RQ2:}] To what extent can an ephemeral-only backend architecture eliminate the persistent storage of user data while maintaining reliable session establishment and routing capabilities?
+
+\item[\textbf{RQ3:}] How effectively does the integration of application-layer E2EE, applied alongside WebRTC’s native transport security, protect the system against infrastructure compromises and untrusted intermediaries?
+
+\item[\textbf{RQ4:}] What is the performance overhead of implementing privacy-by-design limitations and a hybrid architecture on a client application?
+
+\item[\textbf{RQ5:}] How does the implemented system compare with existing open-source, self-hosted alternatives in terms of its demonstrable metadata and anonymity guarantees?
+
+\end{description}
+
+\subsection{Aims and Objectives}
+
+The primary aim of this study is to design and implement a prototype system that provides an architecture capable of enabling privacy-preserving, self-hosted, peer-to-peer remote access. This system must eliminate persistent metadata storage and mitigate risks of privacy, censorship, or operational reliability associated with centralised, vendor-controlled infrastructure. Objectives also include appropriate evaluation and comparison of such systems with existing, widely adopted solutions in terms of privacy guarantees, metadata exposure, and anonymity.
+
+\subsection{Scope and Limitations}
+
+The research and the produced prototype are bound to the foundational mechanisms of secure session establishment, rather than developing a fully featured commercial product ready for production use. To maximise the efficiency of the development work and produce a high-quality prototype with a custom connection protocol, the implementation scope is targeted to a Windows-only client for the duration of the project. The client prototype will utilise a hybrid Flutter and Rust architecture, alongside a custom, lightweight, self-hosted signalling server. Features beyond basic screen and file sharing are explicitly outside the domain of this study to enable future feature expansion. Furthermore, the evaluation is confined to assessing the performance and feasibility of this cryptographic approach, and measuring the overhead and metadata footprint relative to comparable self-hosting solutions. This deliberate constraint is meant to allow for more detailed focus on privacy measures and anonymity evaluations, rather than large-scale human-computer interaction usability trials.
+
+The architectural design of the Re:Link prototype introduces trade-offs between technical and user-experience considerations. Foremost, the connection protocol requires the initial out-of-band token (link) exchange, meaning that the system’s security guarantees remain dependent on the integrity of third-party communication methods. Additionally, reliance on WebRTC for peer-to-peer connections introduces network-level constraints related to the topology. This means that User Datagram Protocol (UDP) hole punching \cite{rfc5128} may not operate reliably in restricted network environments, such as for users behind strict Symmetric Network Address Translations. Such a constraint may require a Traversal Using Relays around NAT (TURN) relay server \cite{rfc8656}, which meets the encryption needs but inherently introduces additional operational costs and latency \cite{geantstun,rfc5389,ploswebrtc}. The design rationale for this trade-off is discussed in Section 3.7.1. Finally, prioritising privacy via ephemerality over data ownership means that, in the event of network interruption during the initial signalling phase, the session will terminate. This sacrifices user convenience for maximised lack of traceability.
+
+The system does not provide network-level anonymity (e.g., resistance to passive traffic analysis by network observers) – a threat model addressed by Tor \cite{tor}-based systems (OnionShare, Briar \cite{briar}) at substantial latency and throughput cost. Re:Link targets operational privacy from service operators and legal compulsion, suitable for users operating in environments with state-level surveillance but without nation-state level passive network monitoring.
+
+\subsection{Report Structure}
+
+This dissertation is organised into 7 chapters. Following this introduction, Chapter 2 reviews the relevant literature; Chapter 3 presents the design of Re:Link; Chapter 4 describes the implementation and testing of the prototype; Chapter 5 evaluates the system against the research questions; Chapter 6 concludes the dissertation; and Chapter 7 outlines future work.
+
+\section{Literature Review}
+
+The development of secure, privacy-preserving communication systems falls at the overlap of distributed systems engineering and digital rights literacy, with a touch of applied cryptography. As a substantial percentage of the world’s population has migrated to a handful of major centralised platforms for data exchange, the attack surface for mass surveillance and profiling has, predictably, increased proportionally. Given these circumstances, the Re:Link system described in this report is motivated by the understanding that the privacy erosion in today’s software industry is a consequence of decisions made over the last 50 years at the infrastructure level. Fortunately, these can be reversed if privacy-by-design principles are purposefully applied \cite{cavoukian2011}.
+
+This literature review outlines four interrelated research directions that support Re: Link’s design rationale. It first places the evolution of file-sharing architectures from centralised cloud storage to federated and finally fully decentralised peer-to-peer systems, and the various privacy trade-offs between such architectures in context. Next, it discusses the WebRTC protocol stack and reviews the growing body of work that uses its DataChannel primitive for privacy-preserving file transfer. Subsequently, it summarises the literature on zero-knowledge and server-blind communication paradigms, focusing on blind rendezvous protocols as a type of privacy-preserving bootstrapping mechanism. Finally, it summarises academic literature on metadata minimisation, ephemeral storage, and identifier elimination as technical and legal controls against user profiling and censorship.
+
+This review of the existing literature identifies a fairly consistent gap: none of the tools surveyed here meets the following requirements simultaneously: (a) trivially self-hostable deployment, (b) a cryptographically blind relay server, (c) modern E2EE transport over WebRTC, and (d) zero persistent user identifiers. Re:Link is designed to fill that gap.
+
+\subsection{Centralised vs Decentralised Architectures}
+
+\subsubsection{Centralised Cloud Storage}
+
+The modern file-sharing landscape is largely dominated by a framework in which user data is stored on servers owned and controlled by a small number of commercial operators. Services like Dropbox, Google Drive, WeTransfer, and OneDrive are prominent examples – the user’s files are transported through and kept on third-party infrastructure, which has both the capability and, under many legal jurisdictions, the obligation to disclose that content upon lawful demand. Bruce Schneier \cite{schneier2015} characterises the aggregation of sensitive user data at a small number of cloud providers as a core vulnerability of the modern internet. This centralisation means users “no longer control [their] data”, while the corporate systems built to collect and store it have been tapped by the National Security Agency (NSA) and other governments through programs such as PRISM \cite{epicprism}, turning the providers into high-value targets for surveillance and potential compromise.
+
+Additionally, the economic logic underlying this model has been most comprehensively theorised by Shoshana Zuboff \cite{zuboff2019} within the framework of surveillance capitalism. In Zuboff’s account, “human experience is unilaterally claimed as free raw material for translation into behavioural data”. Centralised aggregation and extraction are inherent to the business models of dominant platform firms. Extra data about people’s behaviour is collected and used by Artificial Intelligence and Machine Learning (AI/ML) systems to fabricate predictions that are then sold in behavioural futures markets. File-sharing activity, which includes metadata such as peers’ identities and the timing of exchanges (among a surprisingly long list of other attributes), is an example of the kind of behavioural signal that feeds this extraction logic. Centralised architectures thus take advantage of a structural privacy cost that arises from the system’s duties.
+
+From a security engineering standpoint, the threat model extends beyond commercial exploitation. The Snowden disclosures of 2013 \cite{snowden2013} provided evidence that major cloud storage providers were compelled to participate in mass surveillance programmes such as PRISM, often in ways that conflicted with their public privacy policies. Centralised systems create an irresistible single point of pressure where an access demand to one provider can yield the communications and data of numerous users. The asymmetry between the effort required and the harm caused is a fundamental structural issue that decentralisation can address.
+
+\subsubsection{Federated Models}
+
+Federated architectures are those in which multiple independent servers communicate through a shared protocol. They are still niche but are becoming more popular because they offer partial mitigation against the dangers of centralisation. Consequently, protocols such as the Extensible Messaging and Presence Protocol (XMPP) \cite{rfc6120} and Matrix \cite{matrix} let users choose or run their own servers. This extends to where data is collected, so a single server compromise or a forced data handover has the same impact. The adoption of ActivityPub \cite{activitypub} as a World Wide Web Consortium (W3C) standard for federated communication has further legitimised this model.
+
+However, federation only displaces the metadata problem. In the Matrix protocol, for example, room membership lists and event graphs are replicated across all participating homeservers – a user’s social graph may be visible to an arbitrarily large number of server operators. Wang et al. \cite{wang2026} have demonstrated, through forensic analysis of Synapse, an open-source Matrix homeserver, that a substantial server-side metadata footprint persists, including communication timelines, room memberships, and user relationship patterns, allowing the reconstruction of these elements even in E2EE rooms. Thus, federation changes the extent to which the trust is needed, but not what kind of trust. Instead of relying on a single central provider, users depend on multiple server operators; this still does not eliminate potential danger because such a model provides no technical guarantee that any of the operators will respect users’ privacy preferences.
+
+In the case of file transfer, federation introduces extra complexity without commensurate benefit. Large binary payloads must still be routed through the server, which affects throughput and occupies storage on intermediate nodes. The main architectural insight behind peer-to-peer approaches is that the payload itself should never touch the infrastructure responsible for coordination.
+
+\subsubsection{Peer-to-Peer Models}
+
+Fully decentralised peer-to-peer systems entirely remove the middleman from the data path. The BitTorrent protocol \cite{bittorrent} shows that direct peer-to-peer exchange can achieve high throughput and resilience, a performance that centralised servers cannot match. Yet, it is designed around efficiency and robustness rather than privacy – the IP addresses of all peers are disclosed to other peers and to the tracker. Such architecture creates a wide surveillance surface, most extensively exploited by copyright enforcement agencies. The InterPlanetary File System (IPFS) \cite{benet2014} solves issues like identifying content by its data and keeping it available over time. However, once something is published on IPFS, it is globally discoverable. This is the opposite of what’s needed for ephemeral private file sharing, where access should be temporary and limited only to specific people.
+
+More relevant to Re:Link’s design are purpose-built private file transfer tools. Magic Wormhole \cite{magicwormhole} addresses the usability problem of establishing a shared secret between two peers by generating human-readable phrases and using the SPAKE2 \cite{rfc9382} key-exchange protocol to establish an encrypted channel. OnionShare \cite{onionshare} takes a different approach, running an ephemeral Tor onion service on the sender’s machine. It provides an autonomous transfer channel, but at the cost of substantial latency and reachability of the Tor network. Both systems work well for server-minimal or server-free file transfer, but each has constraints: Magic Wormhole transmits the payload through a relay server it operates; OnionShare requires Tor and is therefore subject to censorship and capped by the Tor network’s performance.
+
+Re:Link occupies a different position – it uses a minimal, centralised rendezvous server strictly for WebRTC signalling (the full signalling protocol is described in Section 3.5.3). After the connection is established, the server is excluded, and communication is fully peer-to-peer. Nonetheless, the relay server is, by design, incapable of reading either the content or the metadata of the transferred files.
+
+\subsection{WebRTC and Privacy-Preserving Peer-to-Peer Transfer}
+
+\subsubsection{Security Architecture}
+
+WebRTC is a set of standards developed by the W3C and the Internet Engineering Task Force (IETF) RTCWEB working group, initially motivated by the need for browser-native voice and video communication without plugins \cite{rfc8825}. Its security architecture \cite{rfc8827} requires all media and data traffic to be encrypted by default – using the Datagram Transport Layer Security Secure Real-time Transport Protocol (DTLS-SRTP) framework, it ensures that no data can ever be transmitted in plain text. Additionally, this is a qualitatively stronger guarantee than that offered by most application-layer encryption schemes, where encryption is a policy choice that can be misconfigured or deliberately circumvented. Hence, from a privacy engineering perspective, mandatory transport encryption means that even a compromised or malicious relay cannot observe the content of a DataChannel stream.
+
+WebRTC DataChannel \cite{rfc8831} is well-suited for file transfer because it supports reliable delivery and flow control over an encrypted peer-to-peer channel. The use of DataChannels has been explored in several prototypical file transfer systems, including ShareDrop \cite{sharedrop} and FilePizza \cite{filepizza}, which validate the approach’s feasibility.
+
+\subsubsection{NAT Traversal and the Privacy Cost of TURN Relays}
+
+The primary obstacle to direct peer-to-peer connectivity is Network Address Translation (NAT), which is prevalent in consumer and enterprise networks and prevents arbitrary incoming connections to devices behind Carrier-Grade NAT. The core issue NAT was designed to solve is the Internet Protocol version 4 (IPv4) address range – only about 4.3 billion addresses, which, at the time the Internet was developed, was considered infinite but nowhere near enough to serve all devices today. The ICE framework \cite{rfc8445} addresses this by gathering candidate network addresses and testing them in priority order to find a viable direct or relayed path between peers.
+
+However, ICE candidate collection raises significant privacy concerns. Host candidates expose a device’s local IP address, while server-reflexive candidates expose its public IP address. Reiter and Rubin’s \cite{reiter1998} anonymity framework, although pre-dating WebRTC, helps illustrate why exposing an IP address is a genuine privacy risk. It allows an eavesdropper to link communication activity to a specific network location, and potentially to the end user. New research has revealed that browser-based WebRTC implementations can be exploited to deanonymise VPN users by leaking local IP addresses via ICE candidate gathering. Chromium’s \cite{chromium} subsequent adoption of obfuscating local IP addresses with ephemeral hostnames in the ICE candidate list mitigates this attack for browser implementations.
+
+Fallback TURN relay servers are the main privacy risk in the WebRTC stack - they can inspect the whole data stream. Hence, at the architectural level, this is equivalent to routing through a trusted third party and neutralises the benefits of peer-to-peer connectivity if TURN is required systematically. For the project timeline, Re:Link’s architecture accepts this trade-off. In restricted network environments, where direct connectivity is impossible, a TURN relay may be required and will, in fact, observe encrypted (but opaque to it) DataChannel traffic. This is an acknowledged limitation, discussed further as a design trade-off in Section 3.7.1, and an area where future work could enhance privacy measures.
+
+\subsubsection{Comparison with Alternative Transport Approaches}
+
+An alternative to WebRTC transfer would be a custom-built protocol, such as TLS mutual authentication over Transmission Control Protocol (TCP) or Quick UDP Internet Connections (QUIC) \cite{rfc9000}. Such an approach would avoid the complexity and the NAT-traversal privacy costs of ICE, but would forfeit the NAT traversal machinery itself - requiring either port forwarding, a relay server, or a transport-level hole-punching library, each of which introduces comparable or worse privacy trade-offs. WebRTC’s ICE framework represents decades of accumulated engineering for the specific problem – peer connectivity through NAT. Its mandatory encryption provides a stronger guarantee than most TLS deployments, which are often misconfigured. Re:Link’s choice of WebRTC DataChannels therefore reflects a deliberate balance between the development cost of NAT traversal and the maturity of the available execution library.
+
+\subsection{Zero-Knowledge Signalling and Blind Rendezvous Protocols}
+
+\subsubsection{Defining Server-Blind Operation}
+
+The term “zero-knowledge” in the literature typically refers to a class of interactive proof systems in which a prover can convince a verifier of the truth of a statement without conveying any additional information beyond the validity of the statement itself \cite{goldwasser1989}. In communication systems, the term is usually used looser in the operational sense – to describe architectures where the service is technically unable to observe the content or users’ metadata. This project employs the latter approach: it does not persistently store data, nor does it require the server to observe data; it is not strictly zero-knowledge in a cryptographic sense. This report uses this term to describe systems in which the server’s role is bound to routing or coordination, without access to the payload.
+
+Server-blind signalling mandates that any shared secrets necessary for end-to-end encryption be established out-of-band (i.e., secret-shared outside the service infrastructure) and that the server’s identifiers have no value without those secrets.
+
+\subsubsection{Prior Art in Blind Rendezvous Design}
+
+The most relevant prior work is Magic Wormhole \cite{magicwormhole} - an open-source tool that generates short code phrases and uses them as inputs to the SPAKE2 password-authenticated key exchange protocol. The result is a protocol that uses a "mailbox server" to store encrypted blobs identified by the wormhole code, but cannot decrypt the content because it lacks the shared secret.
+
+This is architecturally close to Re:Link’s blind-mailbox pattern: each uses a server-side store of short-lived opaque blobs identified by a token exchanged via an alternative path. The main difference is that Magic Wormhole uses SPAKE2 for deriving encryption keys (tolerating some brute-force risk). In contrast, Re:Link generates a cryptographically strong, high-entropy random token and requires users to share it out of band. Moreover, Magic Wormhole transmits files through its relay server as a fallback, while Re:Link uses the server only for WebRTC signalling and transfers the payload entirely peer-to-peer.
+
+OnionShare \cite{onionshare} provides stronger anonymity by setting up the rendezvous point as a Tor onion service on the sender’s machine. The service address is ephemeral and bound to the identity key, so no persistent identifier is created, preventing network-level observers from correlating IP addresses with the transfer activity.
+
+Because the onion service address is ephemeral and bound to the sender’s Tor identity key, no persistent identifier is created, and network-level observers cannot correlate the sender’s IP address with the transfer activity. This gives the sender control over the rendezvous and transfer infrastructure, eliminating reliance on third parties entirely. Yet the cost is substantial: Tor network latency ranges from several hundred milliseconds to several seconds per round trip. Essentially, it is impossible to achieve the throughput required for large file transfers. Besides, the requirement for Tor to be reachable makes OnionShare ineffective in environments where Tor is restricted - exactly the environments where censorship resistance is most needed.
+
+Another example of a similar architecture is the Briar messaging system \cite{briar}. It uses the Bramble Rendezvous Protocol (BRP), which derives shared secrets to locate a contact’s "mailbox" on an onion rendezvous server. This prevents the server from associating the mailbox identifier with the contact’s identity. Briar’s model is closest to Re:Link’s threat model, but it is designed for asynchronous messaging rather than remote screen and file sharing. In addition, it depends on Tor, which reintroduces the throughput and reachability limitations noted above.
+
+A prominent implementation of server-blind metadata in messaging systems is Signal’s Sealed Sender feature \cite{signalsealed}. It has a narrower form of server-blindness - the central server can deliver a message to its recipient without learning the sender’s identity, because the sender’s identity is encrypted under the recipient’s public key. The Signal server still processes and stores messages, but demonstrates steps toward server-blind design principles in a major production system.
+
+\subsubsection{Positioning Re:Link’s Contribution}
+
+Re:Link’s rendezvous mechanism is inspired by a mix of technologies mentioned above and occupies a specific niche - a blind-mailbox pattern in which the server keeps short-lived, opaque WebRTC signalling blobs indexed by a randomly generated mailbox identifier that is meaningless to the server. The token for mailbox location is shared outside of Re:Links infrastructure and is never sent to the server in plaintext. The reason why this design is more usable than Tor-based approaches is that it has no additional (Tor) dependency and near-native throughput. Re:Link is also more self-hostable than Magic Wormhole’s default relay - the entire stack is packaged as a Docker Compose deployment. It is more server-blind than federated approaches because servers cannot correlate mailbox IDs or link them to end-user identities. The trade-off - Re:Link does not offer network-level anonymity. Passive network monitoring can flag IP addresses that communicated with the signalling server in temporal proximity, which helps them to establish a WebRTC connection. While such monitoring is resource-intensive, both computationally and in terms of required infrastructure, this is an acknowledged and explicitly scoped limitation. The extent to which these claims hold in practice is evaluated in Chapter 5.
+
+\subsection{Metadata Minimisation, Ephemerality, and Resistance to Profiling}
+
+\subsubsection{Metadata as the Primary Threat Vector}
+
+A common finding in both industry and academic work on surveillance is that metadata is often more revealing than the content itself. Mayer, Mutchler, and Mitchell \cite{mayer2016} demonstrate this empirically - they conducted a controlled study of telephone call records of who called whom, when, and for how long. The experiment demonstrated that even limited metadata is sufficient to infer medical conditions, political affiliations, and professional and personal relationships, without accessing the content of any communication. While content-focused encryption is necessary, these findings provide grounds for arguing that it is insufficient as a privacy control, and that systems must also minimise the metadata generated.
+
+\subsubsection{Privacy-by-Design and Legal Frameworks}
+
+The Privacy-by-Design framework \cite{cavoukian2011} suggests embedding privacy measures during the design level of system architecture rather than retrofitted for compliance. Three principles of it are directly instantiated in Re:Link’s design (the corresponding architectural mechanisms are described in Section 3.5):
+
+Privacy as the default setting: user action is not required to avoid generating persistent identifiers because the system just does not create them
+
+End-to-end security: the WebRTC DataChannel encryption works in such a way that guarantees security and does not depend on the reliability of the intermediary
+
+Visibility and transparency: the open-source strategy and self-hostability allow any operator to verify or amend how the system behaves.
+
+The legal representation of the data minimisation principle is found in Article 5(1)(c) of the General Data Protection Regulation (GDPR) \cite{gdpr5}. Its requirement for personal data is “adequate, relevant and limited to what is necessary in relation to the purposes for which they are processed”. In the context of a remote access service, the only data required is a temporary routing identifier for the signalling exchange. Therefore, any extra data, such as user personal details or IP address logs, may be considered an overextension of what is necessary and poses an avoidable privacy (and regulatory) risk. Re:Link minimises personal data collection and storage by design, explicitly abstaining from gathering data beyond what is required for normal operation, and even that is destroyed immediately upon use. The core feature of this approach is that this logic is embedded into the architecture, not merely as a policy.
+
+\subsubsection{Ephemeral Storage}
+
+The concept of self-destructing or ephemeral data as a privacy control has been explored in the academic literature since at least the work of Geambasu et al. \cite{geambasu2009}, who proposed the Vanish system, in which data objects are encrypted under keys derived from distributed hash table nodes; as those nodes naturally churn and discard the key material, the encrypted data becomes permanently undecipherable, achieving a form of cryptographic self-destruction without requiring the user to take any action. Reardon, Basin, and Capkun \cite{reardon2013} provide a systematic treatment of secure data deletion across storage media and system layers, demonstrating that guaranteeing deletion is technically difficult in complex systems with caching layers, journaling file systems, and backup infrastructure.
+
+Re:Link’s approach to ephemerality lies in signalling data stored in a Redis instance configured as a pure in-memory cache with aggressive TTLs on all keys. With this setup, connection metadata is automatically purged within a fixed short time frame, regardless of the connection result. If this were compared to Vanish, it is, in fact, weaker cryptographically, yet operationally sufficient for the use case and threat model. The adversary would most likely want to extract server-side logs, against which TTL deletion returns a technically sound “nothing to produce” response. This is further hardened by the absence of persistent application-layer logs. The design guarantees that the signalling server accumulates no record of who communicated with whom or when. The effectiveness of this guarantee is verified through direct Redis inspection in Section 5.2.2.
+
+\subsubsection{Identifier Elimination}
+
+The elimination of persistent user IDs is a design choice that affects both privacy enhancement and censorship resistance. Services that require account registration are fundamentally prone to pressure from platform operators or regimes. An account can be blocked or profiled over time and across network locations. Even organisations that present themselves as privacy-preserving, such as ProtonMail \cite{protonmail} or Tresorit \cite{tresorit}, can be compelled to monitor specific users or disclose registration metadata under legal process.
+
+The right to encryption debate, prominently described in the Keys Under Doormats report \cite{abelson2015}, has focused on the role of the government in data control and its right to access to encryption keys or plaintext. The report argues that any requirement for key escrow or backdoors would weaken security for all users. Moreover, it is technically impossible to enforce against sophisticated solutions that simply use non-compliant implementations. From the perspective of censorship resistance, a better answer is to design systems with no keys or accounts. Using this reasoning, if the server holds no secrets and maintains no user records, then there is simply nothing of value to disclose.
+
+\section{Design}
+
+\subsection{Design Overview}
+
+The design of the Re:Link prototype is motivated by an observation about the current state of remote-access tools and their dominant reliance on vendor-controlled, centralised infrastructure. In commercial software, the architecture creates a trust dependency that is difficult to unite with strong privacy requirements. Industry-leading solutions such as TeamViewer, AnyDesk, and Microsoft Remote Desktop Protocol provide a smooth user experience, but they rely on third-party-controlled infrastructure for the whole connection lifecycle. Even where payloads are protected, the provider may still observe connection metadata.
+
+For users operating in sensitive circumstances, such dependence is a valid concern. A wide profile of connection metadata can contribute to de-anonymisation, while reliance on vendor infrastructure introduces both a point of observation and an operational dependency. Re:Link begins as a coordination service that is necessary for rendezvous, but should learn as little as possible about the session it helps establish.
+
+Established secure communication tools, such as Signal, address the messaging case with end-to-end encryption, but lack real-time remote access. Meanwhile, commercial remote-access platforms provide the functionality but cannot fully meet the requirements of a privacy-focused architecture. Re:Link occupies the gap identified in Section 1.1 between these two classes of system: it is a self-hostable, peer-to-peer remote-access and file-transfer system in which the coordination service is deliberately blind to the contents of the sessions it brokers, and in which session metadata has short lifetimes.
+
+These constraints lead to five design objectives. The architecture must pair two clients and relay their negotiation traffic without inspecting payloads. It must minimise retained coordination data and bound it through TTL-based expiry. Once a session is established, traffic should flow directly between peers rather than through operator-controlled infrastructure. Where direct connectivity is impossible, fallback is treated as an explicit, opt-in degradation rather than as a default mode. Finally, the system must remain deployable by operators with modest infrastructure expertise using ordinary container tooling and standard transport-layer security.
+
+These principles are realised through a distributed layered architecture in which a Flutter UI is bridged through a generated FFI layer to a Rust client core. The signalling server runs in Rust, with Caddy providing the coordination edge. Redis provides ephemeral key-value storage with strict TTL expiry configured according to the protocol requirements.
+
+The remainder of this chapter develops the architecture top-down, beginning with the high-level decomposition and progressing through component-level design, the data and workflow model, the security and reliability considerations at every layer, and the trade-offs that have shaped the system’s final form.
+
+\subsection{Technical Stack Selection}
+
+The technical stack was selected to support secure peer-to-peer remote sessions involving signalling and real-time transport, while remaining portable enough for future cross-platform clients and simple enough to deploy on modest infrastructure. These requirements placed particular weight on memory safety, low runtime overhead, and reliable interoperability with networking, cryptographic, and WebRTC-related libraries.
+
+\subsubsection{Backend: Rust}
+
+The selection of Rust as a base implementation technology was based on an analysis of memory-safety requirements and performance characteristics. Rust’s ownership mechanism enforces memory safety at compile time without the overhead of garbage collection. This is especially relevant in a system that handles cryptographic material, network framing, asynchronous I/O, and WebRTC session state.
+
+Rust’s concurrency model also reduces a broad class of data-race errors by construction, making parallel processing safer and more predictable. Asynchronous syntax and mature runtimes such as Tokio \cite{tokio} provide a model for concurrent programming, while the Rust ecosystem supplies crates for the major needs of this project: WebRTC, cryptography, asynchronous networking, Hypertext Transfer Protocol (HTTP) and WebSocket communication, serialisation and deserialization, cross-platform systems programming, concurrency primitives, file transfer and I/O, and interoperability through Flutter Rust Bridge.
+
+Alternative languages were also considered but ultimately rejected. C++ offers high performance and a mature ecosystem, but it requires greater vigilance over memory safety and would increase implementation complexity. Go provides a productive backend environment, but the project also required close integration with lower-level client functionality and a Rust-based core. Node.js performs well for I/O-bound services, but the design here favours predictable low-level control and a narrower runtime surface.
+
+\subsubsection{Frontend: Flutter}
+
+Since the project aims to support cross-platform compatibility in the future, the chosen frontend technology needed an ecosystem that would be practical to extend across major operating systems. Flutter enables substantial source-code sharing across Windows, Linux, macOS, Android, and iOS while still allowing access to platform-specific functionality where required. This aligns with the project’s goal of developing a portable client shell around a lower-level core.
+
+The choice also fits the nature of the interface itself. Re:Link does not require a feature-heavy user interface; rather, it requires a compact application that can present invite and join flows, connection state, file-transfer controls, and screen-sharing controls consistently across platforms. A plugin architecture makes Flutter comparatively easy to integrate with native APIs and therefore suitable for simple cross-platform development.
+
+Qt with C++ provides a mature, high-performance framework with strong multimedia support and cross-platform capabilities. However, using Qt would reinforce dependence on C++ across both client-facing and systems-facing code. React Native was also considered because of its large ecosystem and strong community support, though integration with native functionality often requires additional bridging layers. It was ultimately a weaker fit for a project already centred on a Rust core and concerned with minimising bridging complexity and runtime overhead. Electron was rejected because its process model, binary size, and memory consumption would introduce overhead disproportionate to the needs of this application.
+
+\subsubsection{Interoperability}
+
+Flutter and Rust required an interface that would enable communication between them. The Flutter ecosystem offers two main approaches to this task: a custom Foreign Function Interface (FFI) or the Flutter Rust Bridge (FRB). FRB was selected because it generates two-way communication between Dart UI code and Rust logic, reducing the need for manual interface maintenance. It exposes Rust Application Programming Interfaces (APIs) to Dart through a typed boundary, thereby supporting cleaner architectural separation between user-interface logic and security-sensitive client core logic.
+
+This is an architectural decision as much as an implementation convenience. By placing cryptographic operations, rendezvous-token handling, and WebRTC session control inside the Rust core, the design keeps the most sensitive logic in the same environment as the transport and protocol code. The Flutter layer remains responsible for user-facing orchestration and presentation, but does not need to re-implement cryptographic or transport primitives in Dart.
+
+\subsubsection{Infrastructure}
+
+\paragraph{Storage: Redis}
+
+One of the core requirements of the system design is to minimise the amount of stored data. One way to achieve this is to avoid durable persistence by design and to keep the coordination state in memory. Redis serves as a key-value store for connection coordination, selected for its low-latency performance and suitability for managing short-lived rendezvous state and ephemeral message buffers. In the deployed configuration, durable persistence is disabled so that signalling state remains transient. Redis also provides native TTL support, aligning with the system’s design for ephemeral credentials. This model provides a strong fit for session coordination, where identifiers serve as keys to retrieve the mailbox and pairing state.
+
+\paragraph{Reverse Proxy: Caddy}
+
+Re:Link needed a simple way to expose HTTP Secure (HTTPS) and secure WebSocket endpoints to the public internet while keeping the server behind an edge service. In such cases, a reverse proxy serves as a traffic receiver and a forwarding mechanism for the Coordination layer, reducing the server’s direct exposure to clients. Caddy was selected because it provides reverse proxying and TLS termination with relatively little configuration. This supports easy deployment and reduces networking complexity. Nginx \cite{nginx} was considered because it is mature and widely used in production systems, but it usually requires more manual setup and certificate management. Traefik \cite{traefik} was also considered because it integrates well with containerised environments, but for this project, it would add extra complexity without providing a major advantage over a simpler reverse proxy.
+
+\paragraph{STUN: coturn}
+
+The architecture requires peers on different networks to discover usable ICE candidates, which may not be possible in constrained environments without NAT traversal support. For that reason, WebRTC session establishment commonly uses Session Traversal Utilities for NAT (STUN) and, in many cases, TURN. coturn \cite{coturn} supports both and is therefore a suitable choice for this role. In the current deployment, it is configured in STUN-only mode, meaning it helps each peer discover its public-facing address and port. Since it does not relay any actual traffic, this matches the design goal of keeping communication peer-to-peer after signalling wherever direct connectivity is possible. Public STUN servers were considered an alternative that could eliminate the need to self-host the STUN component, but they would reduce deployment control and introduce an external dependency. A full TURN relay configuration was also considered and remains available as an option, but it was not adopted as the default; the reasons for that trade-off are discussed in Section 3.7.1.
+
+\paragraph{Containerisation: Docker}
+
+To make deployment and portability easier, the aforementioned services benefit from containerisation. Docker was selected to isolate individual services, while Docker Compose provided a simple way to define and run them together as a single stack. This reduces setup effort and supports consistent development and deployment. The component versioning is also enforced, which should prevent unexpected behaviour. Running each component directly on the host system was considered, but that would make configuration less portable between machines and require more manual setup. Kubernetes \cite{kubernetes} was also considered as an alternative to container orchestration, but it was ruled out due to the operational complexity it would introduce at this scale.
+
+\subsection{System Architecture Design}
+
+\subsubsection{Architectural Pattern}
+
+A common approach to determining which architecture best suits a particular use case is first to define the core requirements the project is intended to accommodate. In this case, the main architectural decision was whether to keep the system as a layered application or split it into independently deployed services. Since the prototype development demanded rapid Minimum Viable Product delivery and constant iterative upgrades to the system as a whole rather than to isolated components, a layered approach was the sensible choice. The protocol surface is small and tightly coupled to a single concern, namely pairing peers and establishing a session. Therefore, the complexity of inter-service messaging would not be justified by any meaningful separation of responsibilities.
+
+At the same time, as the implementation evolved, the architecture came to resemble a four-layer structure more closely than a conventional three-tier one. These layers are Client Application, Client Core, Coordination, and Transport. The original idea of a Storage layer became less suitable early on, because the server only requires short-lived key-value state for rendezvous brokering and mailbox coordination during session establishment. For the same reason, the term Coordination layer better reflects the server’s actual responsibilities. The Transport layer also deserves to stand on its own, since the peer-to-peer WebRTC substrate is fundamentally different from the temporary signalling path used during connection setup.
+
+Within this architectural shape, a project structure was also required to enable fast iteration. It was necessary to decide whether to split the client and server into separate repositories or include both components in a single repository. Employing a polyrepo structure would have created an infrastructure requiring the two components to be independently upgraded, which would have been counterproductive to the project’s goals. Instead, the project’s limited timeline made a monorepo structure more suitable for maintainability. The repository is structured into three modules: the client, the server, and a shared module.
+
+The client consists of a Flutter application that contains the user interface and a separate Rust workspace that contains the security-sensitive primitives of the client application. These components are linked via the FRB framework, maintained within the client application. The server consists of a Rust signalling server that coordinates the blind rendezvous and mailbox-based signalling between clients.
+
+A shared Rust crate defines the data objects that travel over the network, various identifiers, and cryptographic functions. Both the client and the server applications use this crate as a local dependency. This structure allows the project to explicitly address the maintainability requirement.
+
+\subsubsection{Architectural Layers}
+
+The resulting architecture can be logically split into four layers that participate in a typical session.
+
+Client Application layer. The Flutter side of the client renders the invite and join flows, connection state, and in-session controls. It also owns the session-facing orchestration logic, including link provisioning and joining, mailbox subscription, invocation of Rust cryptographic helpers, sequencing of the signalling handshake, and deciding when server-side signalling can be closed
+
+Client Core layer. The Rust side of the client, exposed through FRB and backed by the shared crate, generates rendezvous identifiers and shared secrets, derives signalling key material, encrypts and decrypts signalling payloads, and manages the primary WebRTC peer connection, along with its negotiated control and file-transfer data channels.
+
+Coordination layer. The signalling server exposes a small HTTP and WebSocket API backed by Redis and an in-memory push hub. It allocates opaque mailboxes, binds and consumes one-shot rendezvous tokens, stores and relays opaque ciphertext envelopes, supports mailbox-history fetch, and pushes mailbox events to subscribed clients.
+
+Transport layer. After the initial signalling exchange, peers communicate directly over a Rust-managed WebRTC peer connection that carries reliable control and file-transfer traffic. When screen sharing is enabled, a second Flutter-managed WebRTC peer connection is negotiated over the control channel and carries the capture stream.
+
+The primary trust boundary in this stack lies between the coordination and transport layers. Above this boundary, the operator can observe coordination activity, but not the payload contents or shared secrets. Below this boundary, traffic flows directly between peers and is no longer visible to the operator’s coordination path.
+
+\subsection{Architectural Evolution}
+
+The architecture, as it stands, is the product of staged refinement. Understanding that staging is useful because several of the most consequential design decisions are best explained by reference to the alternatives considered and discarded.
+
+\subsubsection{Era 1: Early room-based polling prototype}
+
+The first iteration of the system was a prototype organised around room-based Local Area Network connectivity. Both peers registered with the signalling server, exchanged signalling through server-managed room state, and polled over HTTP for updates. For connectivity, the Initiator creates a high-entropy room ID and password that must be shared via an external source. This setup was useful as a starting point because it separated coordination from data transfer, but it leaked more pairing structure to the server than the privacy goals allowed and did not provide a satisfactory basis for Wide Area Network connectivity.
+
+The target flow in this architecture started with client registration. The Initiator and Responder both had to register with the Central Infrastructure (server) to establish presence. Following that, the Initiator runs peer discovery and invites the Responder, with the server coordinating the handshake to pair the clients. Then the system attempts to negotiate a direct path between clients through NAT traversal and candidate exchange, and upon success, a secure tunnel is established directly between the peers. Once connected, real-time screen/input data, as well as file transfers, flow directly between clients via the End-to-End Encrypted green zone, bypassing the server entirely. In restricted network environments where direct NAT traversal fails, an optional Relay can be opted into, handling only encrypted data packets.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{sys-duagram.drawio.png}
+\caption{Era 1 of the target system architecture diagram}
+\end{figure}
+
+At around the midpoint of the project timeline, which coincided with the end of Era 1, the project shifted to a more structured approach rather than a general development plan. The manual NAT traversal mechanism was dropped due to the complexity that would not be worth the effort, since other solutions like ICE exist and work better with less friction. The TURN relay idea was also retired due to core misalignment in design principles that it would introduce. Since the solution had to be “server minimal”, routing traffic via relay would essentially replicate already existing solutions with issues that Re:Link is attempting to address.
+
+\subsubsection{Era 2: Protocol pivot and WebRTC stack}
+
+During the second phase, the design moved away from the room-based session model and adopted a blind rendezvous protocol. Client registration and persistent identifiers were replaced with short-lived, opaque mailboxes to minimise the amount of client data stored on the server at any time. HTTP polling was replaced with a hybrid push/pull notification model to reduce latency and address frequent requests that may affect bandwidth and be more visible to the network provider. The WebRTC stack was introduced to support cross-network transport. The target signalling server infrastructure was thereby reduced from an active session manager to a blind rendezvous broker that pairs mailboxes and relays ciphertext between them.
+
+Figure 2 below shows the updated architecture at this stage. Instead of registering, the client sends a GET request to the server’s /health endpoint to check whether it is reachable. The credentials for joining the connection have also been changed from ID and password to a joining link. This link is constructed from several parts, using a structure that enables a more secure key exchange, as discussed in Section 3.5.1. WebSocket was also added to the signalling layer to push mailbox updates for ICE candidate exchange in real time while reducing polling overhead.
+
+\begin{figure}[htbp]
+\centering
+\fbox{\parbox{0.85\textwidth}{\centering Figure placeholder\\Original image not supplied in source text.}}
+\caption{End of Era 2 System Architecture}
+\end{figure}
+
+\subsubsection{Era 3: System hardening}
+
+Since the protocol shape has already been sufficiently developed, the final iteration of system design focused on expanding and hardening the features. The codebase was refactored into the monorepo as described above. It was also decided to include a reverse proxy in front of the signalling server, and the central infrastructure stack was packaged as a Docker Compose file. The goal of this stage was to convert an early-stage research prototype into a more developed system that an operator can deploy with simple container tooling. Yet there was no target to polish the system into production readiness.
+
+The architecture described in the remainder of this chapter is the outcome of all the versions above. Historical context related to any of these iterations is provided here because the move from room-based identifiers to blind mailboxes and from polling to push explains the final form.
+
+\begin{figure}[htbp]
+\centering
+\fbox{\parbox{0.85\textwidth}{\centering Figure placeholder\\Original image not supplied in source text.}}
+\caption{Final Version of the System Architecture}
+\end{figure}
+
+\subsection{Data and Workflow Design}
+
+The Re:Link workflow follows a short-lived progression of five stages. The design keeps the server’s role in connection establishment as limited as possible for usability. It is only used to connect two otherwise unknown peers and to pass initial signalling data, but it does not store persistent user data or handle any cryptographic material. The following subsections describe these stages in order.
+
+\subsubsection{Link Provisioning and Out-of-Band Bootstrap}
+
+The system uses a single invite link while separating routing data from cryptographic secrets. The initiator locally generates two values: a high-entropy rendezvous identifier and a separate shared secret. They fulfil distinct functions, but both are required for session establishment. The rendezvous identifier is a routing handle that allows the signalling service to locate the appropriate mailbox. Conversely, a shared secret is a value from which the peers derive the signalling encryption key and a short authentication string (SAS).
+
+These values are then embedded into a link, which is shared with the other peer. The link structure comprises a base Uniform Resource Locator (URL), a token (rendezvous ID), and a secret, in the following format: \{baseUrl\}/connection/join?token=<rendezvous\_id>\#<secret>. When the responder pastes the link into the input field of the pairing page, it extracts the rendezvous token from the query component and the shared secret from the fragment, derives the relevant local key material, and submits only the rendezvous token to the server. Therefore, the server only receives the minimum information necessary to complete the rendezvous.
+
+This approach is superior to the previous iteration with room ID and password because it unifies the secrets into a single shareable link while retaining the architectural property that the coordination service is not the holder of the initialisation data. In the current implementation, the same derived secret also yields a SAS that is displayed to both users as a manual verification code during pairing. Thus, the out-of-band step is upgraded from a pure credential transport mechanism to become an additional trust mechanism outside the signalling service. By comparing the numbers displayed on each peer’s screen, they can prevent a man-in-the-middle attack, one of the most common attacks in key exchange. The effectiveness of this control is evaluated in Section 5.3.
+
+\subsubsection{Pairing and Mailbox Lifecycle}
+
+When the initiator submits a token to the server, it is passed to the connection initialisation endpoint. The server then allocates a fresh mailbox ID with short-lived metadata. Once the mailbox is set up, a temporary mapping is recorded from the rendezvous token to that mailbox ID. At this stage of the connection, the Initiator is recognised by the server (i.e., the server knows that a peer is here, not who the peer is), but not yet paired. It now may subscribe to the mailbox’s WebSocket push stream, but there is still no peer in the mailbox.
+
+When the Responder later calls the join connection endpoint with the rendezvous token, the server consumes the token to start the pairing. It retrieves the Initiator’s mailbox state and allocates a mailbox for the Responder. Once both parties have the mailboxes set up, the server symmetrically links them by exchanging each peer’s mailbox identifiers with the other’s metadata. Upon success, it emits a join notification to the subscribers on the Initiator’s mailbox and returns the Responder’s mailbox identifier with expiry data.
+
+This pairing design makes the mailbox graph the only server-side representation of a live pairing relationship. The philosophy here is to minimise any unnecessary data that is otherwise useless for the core functionality: no accounts created or linked, no long-lived identifiers, no session logs. A single attribute that must be stored for a short period of time is two mailboxes, one for each client.
+
+Connection failure conditions where the server failed are represented as distinct server-side error states. This matters so users can troubleshoot connectivity issues, for example, distinguishing stale invitation state from an interrupted or failed connection.
+
+\subsubsection{Signalling Message Flow and Transition to Direct Transport}
+
+Following a successful pairing flow, a peer serialises a signalling object and encrypts it with the signalling key they derived from the shared link. This envelope with the ciphertext is then submitted to the server. At this stage, the initiator has sent all the information required to establish the direct connection. The server appends the received mailbox to the Responder’s mailbox and notifies subscribers on the mailbox’s WebSocket channel. The Responder processes the envelope either immediately through WebSocket push or, if a transient disconnection has occurred, by retrieving queued envelopes through the mailbox-receive endpoint.
+
+A similar mechanism is used for the ICE negotiation. As a result, the signalling server does not need to interpret signalling semantics to fulfil its role as a ciphertext broker. It exclusively observes the temporary stream of encrypted data exchanged between two mailboxes. The actual meaning of the payloads, whether they are SDP descriptions, ICE candidates, or any other objects, is only interpreted at the endpoints after decryption. This blind server mechanism allows the data for connection to be shared via the central infrastructure without any service being able to read it.
+
+A key feature of this design is that signalling identifiers are intentionally short-lived. While it would be otherwise impossible to conveniently connect two clients without any identifier handling, configuring them as limited-time-only and constantly rotating supports the data minimisation narrative. Once the WebRTC stack on each peer reports that the connection is successful, the application closes the appropriate signalling path. It deletes the associated mailbox state from the server, even if the TTL is still valid. This ensures that such identifiers are confined to rendezvous and connection establishment, rather than becoming a core dependency for the rest of the session. Section 5.2.2 verifies this behaviour by directly inspecting the Redis coordination state. Because the identifiers are treated as disposable, once they are consumed, there is no way to replay the session. Subsequent coordination occurs directly between the peers.
+
+\subsubsection{Direct Transport}
+
+After a successful connection, WebRTC takes over direct communication via an encrypted peer-to-peer tunnel. WebRTC is a particularly good fit for this use case, as it combines ICE-based NAT traversal with encryption for media and transport. Within this project, such a requirement allows for an active session to provide secure exchange between peers while also excluding the central infrastructure from the equation, as its only role is to coordinate the clients. By default, a coturn instance is configured for STUN-only mode as a fallback when direct connection establishment fails. The TURN relay is intentionally disabled, as the core project requirement is to fulfil the minimal infrastructure dependence. Still, this functionality is available with this tool and could therefore be considered for further implementation beyond the current project scope.
+
+Within the direct WebRTC connection, Re:Link uses several transport components to support its features. A control data channel carries coordination messages for services such as file transfer and screen sharing to manage their corresponding workflows. A separate file-transfer data channel is used for streaming a file from one client to another. When screen sharing is active, a media track carries the captured display stream. This separation of responsibilities prevents unnecessary latency introduced by mixing time-sensitive control messages with large data transfers. It provides a transport design that better matches the application’s needs than a single shared channel.
+
+The resulting solution provides a server-assisted session bootstrap that is later upgraded to an endpoint-to-endpoint communication system across both transport and control. This architectural distinction makes the server a temporary facilitator during establishment rather than an intermediary during the session.
+
+\subsubsection{Failure Recovery}
+
+Failure recovery is specific to a phase of the connection and covers mailbox signalling and direct transport stages. During mailbox signalling, resilience comes from combining WebSocket push with mailbox pull. If a WebSocket subscription drops, the client can still re-subscribe and call the mailbox receive endpoint. This backfills the envelopes that were appended while the socket was unavailable, provided the mailbox itself has not expired. A temporary interruption in push-channel work, therefore, does not automatically constitute message loss.
+
+Another mechanism for failure recovery that is implemented in this project is expiry handling. Specifically, when the rendezvous or mailbox has expired, the server throws an error and prompts the user to restart the connection. In the actual connection flow, the Initiator can create a new invite when the old one expires. Similarly, if the Responder encounters a stale invitation state, they should request a new link. The protocol’s design prefers freshly generated credentials over session recovery with already expired credentials. This eliminates both complexity and friction, thereby achieving higher workflow security.
+
+Once the peer connection is established, liveness is actively monitored on the control DataChannel via heartbeat. If responses are delayed past the timeout, or a disconnect event occurs, the application triggers peer-disconnect teardown. It updates the UI to display a “Connection Ended” hint about the current connection state. Because the signalling for this session has been closed, there are no identifiers for retrying. Health is derived from the WebRTC connection state, so once the connection is interrupted or closed, clients must establish a new one.
+
+In case of a direct connection failure, TURN is available via coturn, but its behaviour is not configured. Within the scope of this project, it is disabled as a runtime fallback. The default setup is STUN-only, but relay candidates can be used when TURN servers are configured in the ICE server set. The current implementation does not automatically switch to a TURN relay after failure, a decision to support minimal server dependence and direct traffic peer-to-peer.
+
+\subsection{Security and Reliability Considerations}
+
+\subsubsection{Threat Model}
+
+The system’s threat model mainly focuses on the invasive service operator and on passive observers along the communication path. The design protects signalling payload confidentiality from the relay by encrypting signalling messages before they are submitted to the mailbox service. It does not attempt to provide anonymity against a global passive adversary, which would require much larger infrastructure, nor to defend against client-endpoint compromise. Threat assumptions are therefore separated into “in-scope” and “out-of-scope” cases in a table below. Section 5.3 evaluates the system’s behaviour under each of these threat scenarios.
+
+In scope Out of scope
+
+A signalling-server operator attempting to inspect relayed messages or correlate sessions using coordination metadata A global passive adversary correlating traffic across multiple network vantage points
+
+A passive observer on the path between the client and the signalling edge. Protection is provided by transport security on signalling links and WebRTC transport security on peer-to-peer links. Compromise of either client endpoint. Endpoints are trusted to process decrypted material.
+
+An attacker attempting to redeem a stolen rendezvous token. Token redemption is single-use and TTL-bounded, excluding the reuse opportunity. Integrity of the out-of-band invite-link distribution channel. Link substitution remains possible if that channel is compromised. SAS comparison is the user-facing control for detection
+
+Active tampering is detectable through SAS, provided users perform code comparison
+
+\subsubsection{Cryptographic Design}
+
+The cryptographic part of the design uses widely known, well-studied primitives. This may come across as a conservative design. Still, it deliberately prioritises mature schemes over novel ones to avoid unexpected behaviour stemming from the limited real-world application of such algorithms.
+
+A fresh shared secret is generated on the Initiator client whenever a new session is created. The associated session keys are then derived from that secret.
+
+Signalling payloads are locally encrypted before being sent to the server, so the data is protected during relays and cannot be easily read. The implementation of this mechanism is described in Section 4.2.6.
+
+\subsubsection{Metadata Exposure Analysis}
+
+The operator-observable metadata at the signalling layer comprises the existence of mailboxes, the adjacency between them, the timing and size of relayed envelopes, and the IP addresses of connecting clients. The first three are, by construction, bounded and ephemeral. Mailbox identifiers are opaque and unbound to any client-supplied identity; the pairing adjacency is short-lived; the timing and size of envelopes are inherent to any relayed-message protocol. Exposing IP addresses is an unavoidable consequence of operating any service over the public internet without a network-anonymity overlay; the design does not attempt to mitigate it at the application layer, and the threat model explicitly accepts it.
+
+Two residual risks merit explicit acknowledgement. The first is traffic analysis against the timing and size patterns of the signalling exchange. Because the exchange has a small characteristic shape, an adversary with sustained access to the operator’s infrastructure could, in principle, distinguish signalling activity from other request patterns. The design does not attempt to obscure this; instead, it relies on the small, opaque, TTL-bounded nature of the surrounding state to limit the value of such observations. The second is operator compromise. If the operator’s host or network infrastructure is compromised, the operator-observable metadata becomes adversary-observable metadata. The design does not mitigate this beyond minimising the metadata available in the first place.
+
+\subsubsection{Reliability Mechanisms}
+
+To improve the system’s reliability, it was supported by a combination of WebSocket push and HTTP backfill. Such a pattern is useful because it maintains signalling resilience and minimises the risk of failure. If the connection fails, server-side error handling is implemented to provide a clearer fault description.
+
+At the transport layer, in direct communication, WebRTC provides guaranteed, ordered delivery, ensuring that files are transmitted correctly. Similarly, the screen-sharing mechanism includes adaptive video quality control to handle variable network conditions.
+
+Deployment reliability is reinforced by containerising the service stack and pinning the software version. This also supports reproducible environments and simplicity of initial setup.
+
+\subsection{Design Trade-offs and Justifications}
+
+\subsubsection{NAT Traversal vs Relay}
+
+The trade-off that has the greatest impact on the current proposed architecture is NAT traversal. Since one of the core project objectives is privacy, which is addressed via peer-to-peer connections, active session traffic is not transmitted via operator-controlled infrastructure, including self-hosted. Yet the issue lies in how the Internet Service Provider (ISP) implements the network topology. Some constrained networks will not permit direct connectivity without a TURN relay. Thus, Re:Link adopts a STUN-first design to improve the chances of a connection, but it still does not guarantee one. The system treats relay support, which is available via coturn, as an opt-in degradation that the system administrator can explicitly configure.
+
+This choice improves privacy by default, but it inevitably reduces universal connectivity. Within the experimental bounds of this project, such a reduction is accepted as a conscious trade-off. The system attempts to determine whether a minimal infrastructure solution is viable while still supporting the common case of direct transport.
+
+\subsubsection{Out-of-Band Bootstrap vs Account Pairing}
+
+The decision to register accounts was considered from the outset, but it was clear that ephemeral session state would not align well with persistent identifiers. An account-based design would provide better pairing but would inherently require a long-lived identity for every user, increasing metadata exposure around communication partners and connection frequency. Therefore, the initial design featured a temporary room ID and password, as discussed earlier. It was a known User Experience (UX) trade-off, but it was important for data minimisation. Moreover, this introduced session management complexity, exacerbated by the short TTL of sharing operations.
+
+However, such a trade-off can be partially mitigated. The approach shifted toward secret sharing – a disposable link form minimises friction during sharing, and the verification mechanism remains available for users who may not entirely trust their third-party channel. This design preserves Re:Link’s security goals, but security is still not reducible to the channel through which the user delivers the link. To enhance the peer verification process, users should cross-check SAS whenever the channel is untrusted. Even with such a method, the everyday case is as friction-free as the design permits.
+
+\subsubsection{Push Notification vs Polling}
+
+From the very beginning, the HTTP receive path has been retained as a temporary and recovery mechanism, serving as scaffolding while features mature. The transition to a hybrid push/pull model with WebSocket subscriptions and an HTTP receive endpoint slightly increases server-side bookkeeping. Still, the benefits in latency and bandwidth savings outweigh the cost.
+
+The push model reduces delays in the common case, while the HTTP receive endpoint remains as a fallback. Its presence allows the system to tolerate transient WebSocket loss without dropping signalling messages and to recover the backlog of messages that failed to be delivered after reconnection without custom replay logic. In the current implementation, this pull path is used for backfill on reconnect and no longer serves as a continuous polling mechanism.
+
+\subsubsection{In-Process Push Hub Versus Out-of-Process Pub/Sub}
+
+The Push Hub is implemented in-process, assuming that a given mailbox’s publisher and subscriber will land on the same server instance. In the current setup, it is the only option since the infrastructure is centralised and not yet optimised for horizontal scaling. This enhancement is not viable at this scale, since the system is designed for simple peer-to-peer brokering. There is no heavy computation on the server, so the needs of privacy-conscious users running self-hosted instances are well served by a single instance. The design avoids the extra complexity and premature system improvement of running an additional message bus component. For a multi-instance infrastructure, for example, behind a load balancer, an out-of-process pub/sub stack would be required to bridge events between instances.
+
+\subsubsection{Ephemerality Versus Recoverability}
+
+The design’s commitment to ephemerality trades solid crash recoverability for a stronger privacy posture. This is a deliberate priority order since the defined objective was to target metadata minimisation rather than session continuity. Re:Link accepts that a network drop can invalidate in-flight sessions because the alternative, namely actively storing the session credentials for a reconnection fallback, would create an artefact that could be inspected or exfiltrated.
+
+\subsection{Summary}
+
+The design of Re:Link targets key requirements of the project: server-blind coordination, bounded metadata retention, direct peer-to-peer transport, and practical self-hosting. Together, these form a 4-layer architecture in which a Flutter application sits atop a Rust client core, a Rust coordination service brokers blind rendezvous via short-lived mailboxes, and WebRTC carries the resulting peer session. Redis supplies an ephemeral coordination state, while the shared protocol crate and monorepo structure keep client and server aligned.
+
+The trade-offs of this system are acknowledged and explicit. These may not represent a standard solution, but this project aims to determine how and to what extent such architecture may be usable. Re:Link accepts the discussed trade-offs and is designed to address minimal infrastructure peer-to-peer connectivity rather than guaranteeing maximum convenience or universal connectivity by default. The next chapter, Implementation and Testing, shows how these choices were realised and how far the resulting system satisfied its intended properties.
+
+\section{Implementation and Testing}
+
+\subsection{Chapter Overview}
+
+This chapter presents the realisation of this project and evaluates how well the final implementation satisfies the architecture and security targets defined in Chapters 1 and 3. Beyond final prototype documentation, this chapter emphasises how the implementation evolved, the engineering trade-offs made, and what the observed test results currently mean about system quality. In that sense, this chapter covers both a technical implementation report and validation. It connects design intent to executable software, and it documents the quality of the current codebase as it exists in the repository.
+
+Implementation decisions in Re:Link were driven by four report-level objectives. The first objective was confidentiality-by-default, meaning secrets and derived keys should stay on endpoints rather than on relay infrastructure. The second objective was fail-soft signalling, meaning temporary push-delivery failures should not necessarily cause session failure if durable backfill remains available. The third objective was deployability in realistic self-hosting conditions, where operators may have heterogeneous Domain Name System (DNS), TLS, NAT, and tunnel constraints. The fourth objective was validation traceability, meaning claims in this chapter should be tied to concrete source behaviour, workflow configuration, or direct command evidence. Framing implementation around these objectives reduces descriptive repetition and makes later testing interpretations easier to justify.
+
+Re:Link was developed as a multi-language, multi-runtime system that combines a Flutter desktop client with Rust-native logic via flutter\_rust\_bridge, composing the Client: a Rust signalling backend and a shared Rust crate that centralises protocol and cryptographic routines. The core implementation strategy was to treat signalling as ephemeral coordination and avoid payload transport via the central infrastructure. Similarly, the objectives included keeping security-sensitive material as local as possible, so that even a compromised coordination layer could not steal the connection credentials. Additionally, the ultimate goal was to move user data transfer to direct channels after the rendezvous succeeded, supporting the peer-to-peer architecture. The resulting topology therefore separates concerns across UI orchestration, cryptography lifecycle, signalling, and peer transport.
+
+The chapter is split into two parts: Section 4.2 covers the implementation, starting with repository and component structure, then describing the signalling service, client control flow, cryptographic handling, NAT traversal configuration, and deployment model. These subsections also include an explanation of historic Section 4.3, followed by a description of how the implementation was validated using automated tests, CI quality gates, and direct command execution during chapter preparation. The testing section intentionally includes both positive and negative evidence to support the evaluation. Passing suites are reported, but so are currently failing assertions and identified test-coverage gaps. This approach is essential for transparency and for reporting factual research results.
+
+\subsection{Implementation}
+
+\subsubsection{Implementation and Organisation}
+
+The repository began as a single Flutter scaffold with an embedded Rust library. As the codebase grew, restructurings reshaped the project into its present layout:
+
+Both server and client use the shared crate as a dependency via local Cargo path references, so updates to a shared type will force recompilation of both. This enforces compile-time consistency of the protocol use. FRB generates bindings from annotated Rust functions in the mobile-bridge API module. To keep the client components coupled at build time, the Cargokit package automatically compiles the Rust library during the Flutter build.
+
+\begin{figure}[htbp]
+\centering
+\fbox{\parbox{0.85\textwidth}{\centering Figure placeholder\\Original image not supplied in source text.}}
+\caption{Project Structure}
+\end{figure}
+
+Supporting infrastructure includes GitHub Actions workflows that act as Continuous Integration (CI) matrix pipelines for build status verification. Additionally, the build pipelines generate client installers and build Docker images for the signalling server.
+
+\subsubsection{Runtime Topology}
+
+At runtime, Re:Link separates into four layers with control boundaries governing what stays on the client, what transits through the server, and what moves directly between peers.
+
+The Client Application layer manages the user interface along with locally stored configuration, such as the server address and network traversal settings. Once the user launches the application for the first time, they are presented with onboarding, during which local settings are configured. Then come the pairing flows, where clients generate a connection link or use the link to establish the connection. Once they have connected, peers can see session status, file transfer and screen-sharing menus.
+
+The Client Core layer comprises the client’s backend. It combines local cryptographic computation with HTTP and WebSocket communication and converts native events into reactive streams for the UI. Besides, it provides full control over session management, along with file and screen-sharing feature workflows.
+
+The Coordination layer is a Rust HTTP server that connects to Redis. It temporarily stores data required for coordinating connection establishment and relays only encrypted blobs, without access to their contents.
+
+The Transport layer covers the direct peer-to-peer WebRTC connection and the associated data channels. Once established, all application traffic flows through this layer, bypassing the Coordination layer since it is no longer needed.
+
+\subsubsection{Signalling Service}
+
+The signalling service is a Rust application compiled as a single binary. It is built on an asynchronous HTTP framework and runtime configured via environment variables. Settings manage the server’s core configurations. Instead of a hard-coded configuration, an environment-only approach was chosen because the service is designed for quick containerised deployment, where environment variable setup is the standard mechanism. It also avoids the complexity of a separate config file management in container environments.
+
+The server exposes a health-check endpoint that is pinged to verify reachability, along with coordination endpoints required for session coordination. The /init call initiates mailbox creation for the peer and stores a rendezvous token. There is also a /join endpoint that allows a joining peer to use the token, which consumes it, creates a second mailbox, links the two, and deposits a join notification for the Initiator. The /send and /recv allow either peer to send an encrypted message to or retrieve messages from their respective mailboxes. The /close deletes both linked mailboxes and their contents. There is also a WebSocket endpoint for each mailbox that provides real-time push notification when new messages arrive.
+
+The Push Hub maintains an in-memory set of channels keyed by mailbox. The server notifies WebSocket subscribers when join or message events are written for that mailbox. In case of failure, the client can still recover by fetching the message history. To assist with troubleshooting, error responses use status codes with descriptive messages that guide the user toward a solution.
+
+As discussed in Section 3.4, this architecture evolved to its current form through previous iterations. The earliest experiments used a TCP backend, then an HTTP message-queue model, and finally a room-based model that first introduced Redis as the coordination layer. The current model replaces the requirement for separate connection rooms with a shared identifier by using disposable rendezvous tokens embedded in links.
+
+\subsubsection{Rendezvous and Redis}
+
+Redis is used as an ephemeral source of truth for the coordination state.
+
+Redis serves as the sole authoritative store for the ephemeral coordination state. Keys are scoped under a configurable namespace prefix in Rust. This allows multiple service instances to exist on a shared Redis without interference.
+
+The store can manage multiple categories of state. For example, rendezvous values link a token to the Initiator’s mailbox ID, for which the TTL could be configured. These values are consumed when the Responder joins, so a redeemed token cannot be reused. In case the token expires before the Responder uses it, the Initiator must generate a new link. Mailbox metadata values record each mailbox’s identifier, its linked peer (initially absent for the initiator, populated when the responder joins), and an expiration epoch timestamp. Since the linked pair entries have been created simultaneously, they share the same lifetime. Message lists are queues to which encrypted message records can be appended, and whose expiry is refreshed with each new message. This mechanism keeps the mailboxes alive as long as traffic flows, allowing the idle ones to expire. To allow the client to handle deduplication, the retrieval endpoint returns the full list of values without deleting items, as described in the next section.
+
+\subsubsection{Client Signalling Semantics}
+
+The Client Core’s signalling part is based on local deduplication into a model that tolerates network disruptions during the initial connection phase. It composes HTTP calls with WebSocket push subscriptions, enabling users to remain resilient to network conditions.
+
+The Initiator begins the signalling flow by generating all cryptographic material locally. This would include randomly generated values for the shared secret and rendezvous ID, as well as the derived shared secret and SAS. It registers the rendezvous identifier with Redis and creates a link to be shared with the Responder. This connection link combines the server base URL, the rendezvous identifier as a query parameter (join?token=<rendezvous\_id>), and the secret as a fragment (\#). Since the HTTP specification requires that fragments not be included in requests, the secret is not transmitted to the server – the Responder gets it only from the already shared link. Once the link is pasted into the connection input field, the Responder parses it to extract the token and secret. These are used to derive matching key material, and now the token can be redeemed. Since the link also includes the signalling server address, the Responder does not need to configure the setup beforehand. Domain setup is required only when a server address is specified in the link.
+
+Once the pairing is complete, peers encrypt their signalling payloads before relaying them through the Coordination layer. Delivery combines a persistent WebSocket subscription that receives push notifications in near real time, with an HTTP history fetch on each connection or reconnection to get messages received during a gap.
+
+If the network drops, WebSocket automatically attempts to reconnect with exponential backoff. If successful, the timer resets and history synchronisation is triggered. If a mailbox response is missing, the failure terminates the connection and signals that the session has ended. Once the Transport layer connection is confirmed, the Client Core closes and deletes both mailboxes on the Coordination layer.
+
+\subsubsection{Local Cryptography and Deep Link}
+
+There is a difference between the role of a coordination token and that of a shared secret. In the deep link bootstrap flow, the server uses the coordination token for rendezvous lookups to match clients who want to connect. Meanwhile, the secret, which never leaves the client, is used to derive the keys. The token is a high-entropy random string, while the secret is an independent value inserted into the URL fragment.
+
+From the shared secret, both peers independently derive two values using Hash-based Message Authentication Code (HMAC)-based key derivation with domain-separated context strings, as described in Section 3.6.2. It produces a symmetric encryption key used to protect payloads with authenticated encryption – Advanced Encryption Standard with 256-bit keys in Galois/Counter Mode (AES-256-GCM) with a fresh nonce per message. It also produces a SAS intended for additional client verification. If both peers see matching codes, this means that no intermediary has swapped a secret in the link. This mechanism does not prevent link interception, but it adds an extra verification step.
+
+\subsubsection{WebRTC Sessions}
+
+Once the bootstrap is complete, the Transport layer establishes a direct connection using a Rust-native WebRTC implementation. In this project, it is configured with externally provided ICE servers and a platform-aware network engine. Then, two data channels are pre-negotiated so that both sides can create matching channels independently – one for session control messages and the other for file data, alongside transfer-level control messages.
+
+The Initiator creates a session description offer, encrypts it, and sends it via the mailbox. Upon receipt, the Responder decrypts the offer, generates an answer, encrypts it, and returns it through the same path. Connectivity candidates are exchanged identically. Within the Client Core, incoming messages are handled via a serial queue to prevent ordering violations (tested in Section 4.3.2). This was implemented to combat adding a connectivity candidate before the remote description has been added. Events from the Transport layer are collected into a queue and periodically passed to the Client Application. Once the connection is active, the Coordination layer is no longer involved.
+
+File transfer is managed by a background worker that processes commands sequentially. It supports only a single active transfer at a time to reduce lag and progresses through key states: idle, offer pending, acceptance pending, actively sending or receiving, completed, or error. The transfer itself is inspired by CSP-style concurrency, focusing on independent processes communicating via synchronous, blocking channels. A transfer begins with the Sender computing the file’s hash. The reason this happens beforehand rather than for each chunk is to reduce latency, despite the potential cost of failure on larger files. Then it is transmitting an offer containing the file name, size, hash, and a nonce used for collision resolution. The Receiver may accept, reject, or wait until the proposal expiration. On acceptance, the Sender’s read worker chunks the file, an upload worker publishes the chunks to the file-sharing channel, and a Receiver-side write worker consumes the incoming data to a temporary location while maintaining a running hash. Upon receiving the end-of-transfer signal, it verifies that the received metadata and hash match the declared values before finalising the file to its destination with collision-safe naming to prevent overwrites. When both peers propose transfers at the same time, to prevent a race condition, a deterministic tie-breaking rule based on lexicographic comparison of identifiers ensures one offer prevails without deadlock.
+
+Screen sharing is implemented as a hybrid subsystem. The Client Core maintains the track of session registrations, but the actual desktop capture depends on the Client Application’s platform media APIs. To carry a video stream, a separate peer connection is established, with its session descriptions and connectivity candidates exchanged over the main control channel. To support the variable network conditions, an adaptive quality mechanism periodically samples connection statistics, such as packet loss fraction and round-trip time. This data allows the application to adjust bitrate, frame rate, and resolution across predefined quality tiers, managing overall quality based on current network conditions.
+
+\subsubsection{Connection Establishment and Deployment}
+
+At session creation, the client provides the ICE server configuration, which is required for the NAT traversal. The Native WebRTC engine filters candidates to exclude loopback and multicast addresses. Besides, it also explicitly supports IPv4 and Internet Protocol version 6 (IPv6) addresses on Windows. The ICE server is resolved in priority order. The application first attempts to use the user-provided custom setting; if unsuccessful, it tries a dedicated ICE host setting, and only then falls back to a derived one from the signalling domain. The difference between the signalling domain and the ICE host constraint is discussed in Section 3.7.1. When signalling traffic is routed through an HTTPS-only proxy (e.g., a Cloudflare tunnel), STUN and TURN traffic cannot traverse the same path and require different endpoints.
+
+The deployment of the entire central infrastructure is packaged as a Docker Compose configuration. The signalling server is built with a multi-stage Docker build, where the binary is compiled in a builder stage and copied into a smaller image. Redis is automatically pulled, and the configuration sets memory limits and eviction rules to prevent storage bloat, which could otherwise lead to excessive memory usage. A Caddy reverse proxy manages self-provisioned HTTPS certificates and forwards encrypted HTTP and WebSocket traffic between clients and the server. A coturn service provides self-hosted STUN and is ready for optional TURN relay configuration. It exposes UDP and TCP ports to bypass the HTTP proxy when a direct connection is not possible.
+
+\subsubsection{Implementation Evolution}
+
+The development timeline could be split into six phases that address distinct engineering problems and progressively advance the system’s maturity. These were not initially planned in such shape, but the overall timeline resembles such an iteration structure.
+
+The initial phase established technology choices and the general development vector. A Flutter application scaffold and a Rust library were created. This enabled early backend experiments that contributed to the project’s growth: a simple TCP server and a simple message producer-consumer. These components did not proceed to the later stages, but they allowed testing the combination of Rust for server and protocol logic with Dart for the user interface.
+
+The following phase introduced room-based signalling via Redis, representing the first design iteration with an architecture similar to the current one. Redis was established as the coordination store – a decision that stayed throughout the rest of the project. However, since both peers needed to agree on a shared room ID, this became a constraint for pairing experience, prompting the next phase.
+
+This point in the development underwent the most substantial pivot – rooms were replaced with blind-rendezvous mailbox signalling, already discussed before. UX analysis concluded that separate credentials were cumbersome and awkward to share. Hence, they were replaced with disposable deep links, transforming the system into one in which the server relays opaque traffic between anonymous mailboxes. To complement HTTP history retrieval. WebSocket subscriptions were introduced to tolerate delivery disruptions. During this period, the WebRTC peer connection layer was also integrated.
+
+The next phase focused on expanding the system’s feature breadth to make it practically useful. File transfer workflow development brought it from a simple send-and-receive mechanism into a protocol with integrity verification and backpressure management. Screen sharing was added using platform-level desktop capture, limited to Windows to accommodate the project timeline constraints. Additionally, a session control mechanism was added to address the previously unresolved problem of detecting silently disconnected peers. To address race conditions in signalling and ICE processing, a message serialisation queue was introduced.
+
+After this, the next phase addressed deployment and operational maturity. The repository was restructured from a language-separated structure (rust/ and flutter/) into the current layout with split workspaces. Docker Compose was introduced to package the central infrastructure into a single release. At the same time, a reverse proxy was introduced to improve security in a self-hosted deployment. CI pipelines in GitHub Actions were established and updated in accordance with the new layout and requirements. An Inno installer script was created for packaging Windows releases into executable installer files.
+
+The final phase focused on hardening the system against network heterogeneity. coturn, a self-hosted STUN service, was added to the Docker Compose deployment stack. Separating signalling endpoints from ICE endpoints addressed limitations in UDP proxying. Finally, TLS handling was introduced for Windows, and ICE candidate filtering was tightened.
+
+\subsection{Testing}
+
+\subsubsection{Testing Approach and Scope}
+
+The testing strategy for Re:Link was planned around the constraints of a single-developer project. To maximise the deliverable count, the trade-off was to focus testing on automated runs for subsystems where behaviour deviations are most impactful and most difficult to spot manually. Such hotspots were identified as session liveness management logic, race-condition prevention in message ordering, pairing-code formatting, and system configuration that determines whether peers can connect at all. Full coverage would have significantly increased the development timeline, jeopardising the deadlines. Components that depend on live infrastructure are therefore validated through static analysis, build-pipeline checks where configured, and manual testing during development.
+
+The project has self-contained Dart and Rust tests. Dart tests run with Flutter’s native test framework, and timer-sensitive session-control behaviour is exercised deterministically with fake async. The current client Rust workspace contains three tests in the mobile-bridge crate: two asynchronous filesystem tests and one synchronous state-propagation test. These tests do not depend on a network or central infrastructure, since they are not end-to-end. However, the server Rust workspace currently has no tests.
+
+\subsubsection{Unit Tests}
+
+For the Dart client, there are 4 core unit test files containing 36 test cases. These tests are a minimum requirement because this protocol must detect silent peer failures and coordinate deliberate disconnections.
+
+The session control tests cover the heartbeat and session-close logic used to monitor peer health and manage shutdown. They verify periodic pings and refresh the last-seen heartbeat when a pong is received. Here, tests also include handling timeouts when a peer becomes unresponsive, stopping and restarting heartbeat monitoring, and handling acknowledgements for session-close messages.
+
+Tests also verify that close messages include an identifier and a disconnect reason. Only a correct acknowledgement prevents a delayed warning, while null, invalid, premature, or outdated ones are ignored.
+
+The serial task queue tests cover the mechanism for signalling work to run one item at a time and in the correct order. They check the key to ensure the signalling flow remains consistent.
+
+The pairing-code tests verify the formatting and fallback behaviour that turns authentication strings shared between peers into a verification code shown during initial connection establishment.
+
+The local-settings tests cover ICE server selection and precedence during peer-to-peer setup.
+
+\subsubsection{Static Analysis and Linter}
+
+The project currently passes static analysis checks in Dart and Rust. The Flutter analyser reports no issues, and the main Rust client and server components pass formatting and Clippy checks locally, with warnings treated as errors.
+
+\subsubsection{Continuous Integration}
+
+The repository defines GitHub Actions workflows that are split between CI and releases. The CI runs target Rust validation and the Windows Flutter client build, while the release workflows package and publish the server Docker image and Windows installer on version tags.
+
+\subsubsection{Testing Limitations and Coverage Gaps}
+
+The current test coverage is selective due to time constraints, leaving the server and the shared Rust crate without behavioural tests. Most existing coverage is focused on client-side logic. The repository, therefore, has no dedicated integration or end-to-end test workflows at present. These areas, therefore, remain dependent on manual testing and must be addressed in future development.
+
+\section{Evaluation and Discussion}
+
+\subsection{Overview}
+
+This chapter evaluates the produced prototype against the objectives and research questions introduced in Chapter 1.
+
+A key limitation is a lack of quantitative analysis and benchmarking of the system. The project prioritised delivering architecture, so performance metric measurements were not completed within the available timeframe. Therefore, the performance discussion will be based on quality and development observations, combined with reasoning behind architectural decisions.
+
+The chapter is structured as follows. Section 5.2 addresses RQ1 and RQ2 through server observability analysis and inspection of ephemeral Redis state. Section 5.3 addresses RQ3 through threat analysis. Section 5.4 addresses RQ4 through a qualitative discussion of performance. Section 5.5 addresses RQ5 by comparing it with RustDesk, OnionShare, and Magic Wormhole. Section 5.6 summarises the findings and the evaluation’s limitations.
+
+\subsection{Privacy and Metadata Evaluation}
+
+\subsubsection{Server-Side Observability Analysis (RQ1)}
+
+RQ1 asks how a signalling protocol can establish peer-to-peer connections over an untrusted server without exposing identifiable user metadata or long-term connection graphs. This project solves this by using a blind rendezvous design in which the link token and shared secret are generated locally and shared independently of the current infrastructure, bypassing the server.
+
+The server becomes aware of a session for the first time when the Initiator calls the /init endpoint. At that point, it can observe that a connection attempt exists and can see the client’s IP address, but it cannot simply associate the request with an identity because no user records exist. When the Responder later redeems the token through /join, the server learns that two opaque mailboxes are linked. The most revealing metadata the server holds is this short mailbox pairing, but with the current infrastructure, this is the only way to connect.
+
+During signalling, the peers exchange encrypted payloads through the mailbox, which the server stores and relays and can observe their metadata, but not their contents. This is because the shared secret used to encrypt the signalling payloads is never transmitted to it. After the WebRTC connection is established, communication moves to a direct peer-to-peer channel, and the client explicitly requests that the mailboxes be deleted. As a fallback, the connection data would expire through a short TTL.
+
+Within the stated threat model, this satisfies RQ1. The server may still observe temporary network metadata, such as IP addresses and the fact that two peers are attempting to connect, but it cannot identify users via long-lived personal identifiers. The same applies to the signalling content – the server can observe that payloads are passed, but cannot meaningfully inspect them or reconstruct long-term connection graphs across sessions.
+
+\subsubsection{Ephemeral Storage Verification (RQ2)}
+
+RQ2 asks to what extent an ephemeral-only backend can eliminate the need for persistent storage of user data while still supporting reliable session establishment. An inspection of the Redis instance, both before and after active coordination, shows that there is no user session data in the store.
+
+During signalling, Redis contains only short-lived coordination data required for the initial establishment. The rendezvous token is single-use and is discarded once redeemed, whereas mailbox and message expiry are refreshed while signalling activity continues.
+
+After a successful connection, the client removes both mailboxes through the /close endpoint. If the client cannot do so, for example, because of an interruption or a crash, the keys automatically expire. This way, the server does not retain the session log after completion or expiry. Within the signalling layer, long-term user data storage is eliminated by design.
+
+The trade-off this approach forces is that sessions cannot be recovered once the coordination state expires. If the signal is interrupted or the mailbox times out, the session is lost and must be restarted. The design accepts this UX trade for strong data minimisation.
+
+\subsection{Security Analysis (RQ3)}
+
+RQ3 asks how effectively application-layer end-to-end encryption, combined with WebRTC's native transport security, protects the system against infrastructure compromise and untrusted intermediaries. Given the scope of the project, this evaluation is qualitative and is based on the threat scenarios defined in Section 3.6.1.
+
+If the signalling server or Redis store is compromised, an attacker gains access to the random connection strings within the instance. However, the attacker cannot decrypt the contents because these are protected with AES-256-GCM using keys derived from the shared secret. In the current architecture, the attacker can still observe that two IP addresses are exchanging signalling traffic, but not their content or meaning. This protection is independent of WebRTC’s transport security since it applies before the direct peer connection.
+
+A man-in-the-middle attack remains possible if the link is successfully intercepted or modified. Re:Link mitigates this by displaying a short authentication string to peers during pairing. Since these are derived from a shared secret, altered links will produce different codes, allowing peers to detect tampering by comparison. This is not automatic protection, as users must check the values, but it raises the cost of an undetected attack.
+
+In the case of attempted token reuse, the redemption is single-use, so either the legitimate responder or the attacker uses it first, leaving others unable to join this connection.
+
+Overall, the security model provides defence-in-depth. Signalling content is protected from the coordination infrastructure itself, while WebRTC’s DTLS-SRTP transport security protects the direct channel once established. The main limitations are that Re:Link does not protect against a compromised client and does not secure the external channel used to share the invite link.
+
+\subsection{Performance Considerations (RQ4)}
+
+RQ4 concerns the performance implications of the privacy-by-design architecture and the hybrid Flutter/Rust implementation. Because the project was re-scoped to prioritise architecture design, this evaluation does not include controlled benchmarking of latency, throughput, or resource usage. The discussion here is therefore qualitative.
+
+The Flutter/Rust split introduces some overhead through Flutter Rust Bridge, since data crossing the Dart-Rust boundary must be serialised and deserialised. During development, this did not produce an obvious delay, but this observation is informal and should not be treated as a measured result.
+
+Signalling messages must be encrypted and decrypted at both endpoints before and after server relay. Since these messages are small and AES-256-GCM is highly optimised, the expected computational cost is modest. More significant are the usability costs. Users must share the connection link via a third-party channel, and the ephemeral nature of the connection means that interrupted sessions cannot be recovered once the signalling state expires.
+
+After WebRTC establishment, file transfer and screen sharing no longer pass through the signalling server. The privacy-specific cost of Re:Link is therefore concentrated in initial communication with the coordination layer. The main conclusion is that Re:Link avoids server-side relay costs after setup, but the practical cost of this design still needs to be measured through future benchmarking.
+
+\subsection{Comparative Analysis (RQ5)}
+
+RQ5 asks how Re:Link compares with existing open-source self-hosted alternatives in terms of metadata exposure and anonymity guarantees. The most relevant comparison set is RustDesk, OnionShare, and Magic Wormhole.
+
+Compared with RustDesk, Re:Link offers a lower retention coordination model. It does not include persistent identifiers and removes the server from the data path once the WebRTC is connected. RustDesk, on the other hand, has a more mature remote desktop toolkit and relay fallback, but does so through an ID-based rendezvous model that gives infrastructure a more constant role. Thus, this project trades some convenience and feature breadth for reduced data collection and storage.
+
+When matched with OnionShare, this project offers a different privacy balance rather than stronger anonymity. OnionShare uses Tor’s onion services rather than conventional signalling infrastructure, but it is designed around file sharing and chat rather than real-time interactive sessions. Re:Link does not provide such anonymity, mainly because its device network is not as large. Yet, the Tor-based services are not well aligned with real-time screen sharing and direct peer communication.
+
+Magic Wormhole is closer in terms of underlying philosophy. Both avoid persistent user identity and can operate with a self-hosted coordination infrastructure. Unlike Re:Link, Magic Wormhole is primarily a secure transfer system, but it also relies on mailbox coordination. However, may use a transit relay when a direct transfer is unavailable. Re:Link extends this approach to the context of an interactive remote session.
+
+For each analogue, the representative privacy strategy differs. RustDesk prioritises usability and practicality for remote desktops. OnionShare prioritises anonymity through Tor. Magic Wormhole prioritises low-identity secure transfer. In this niche, Re:Link stands out by combining self-hosted blind rendezvous, minimal retained coordination metadata, and direct transport for real-time peer sessions. Its main advantage is the reduction of application-layer metadata retained by the supporting infrastructure. However, since the central infrastructure is minimal, connection establishment and handling are less reliable than in competing solutions.
+
+\section{Conclusion}
+
+This dissertation investigates whether a remote-access system could preserve user privacy without relying on vendor-controlled infrastructure. The developed prototype, Re:Link, shows that this is feasible within a practical self-hosted architecture. The project demonstrates that a server can assist with session establishment without becoming a durable repository of user identity or transferred content.
+
+The contribution of the project is mainly its architecture as it offers an alternative prototype solution. Re:Link takes a narrow niche between commercial remote access platforms and anonymity-targeted tools. It proves that metadata minimisation and the ability to self-host infrastructure can coexist within a single system, despite trade-offs in overall maturity and robustness.
+
+Re:Link is therefore best presented as a proof-of-concept for remote access. It is more of a research prototype than a production-ready replacement for established platforms or a system that provides network-level anonymity. The significance here is demonstrating an implementable alternative for users who prioritise reduced infrastructural trust over maximum convenience. Within the scope of this dissertation, that is the central conclusion.
+
+\section{Future Work}
+
+The most important next step is full remote control. Re:Link supports screen and file sharing but this does not represent full interactive control of the responder machine. Future iterations could extend the functionality to support input events for the mouse and keyboard. Because this is more security-sensitive than screen streaming alone, there should also be a consent mechanism in place.
+
+Although the current version includes transport hardening via coturn and supports custom ICE configuration, TURN remains closer to a manual fallback than a first-class feature. Future work should attempt a clearer configuration flow and seamless fallback when direct peer-to-peer connectivity fails. It would also be useful to evaluate SaltyRTC \cite{saltyrtc} as an alternative signalling substrate to assess whether it can improve interoperability while preserving metadata minimisation guarantees.
+
+Another suggestion is to enhance the connection joining experience. At the moment, the system requires the Responder to paste the join link manually into the client. A simple landing page at the join URL could instead detect whether Re:Link is installed and redirect to the desktop application via a custom protocol handler. This would improve usability without changing the current security model.
+
+Finally, further work should include support for non-Windows platforms and more complete end-to-end validation of file-transfer and remote-control workflows. These steps promise to move Re:Link from a proof of concept to a more capable remote-access system.
+
+\bibliographystyle{apacite}
+\bibliography{bibliography}
+
+\end{document}

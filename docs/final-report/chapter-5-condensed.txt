@@ -1,0 +1,79 @@
+5. Evaluation and Discussion
+
+5.1 Evaluation Overview
+
+This chapter evaluates the Re:Link prototype against the design objectives and research questions introduced in Chapter 1. The evaluation combines four approaches: analysis of what the signalling server can observe, direct inspection of Redis coordination state, qualitative threat-scenario analysis of the cryptographic design, and comparison with existing open-source self-hosted alternatives.
+
+A key limitation is the absence of comprehensive quantitative benchmarking. The project prioritised architecture, protocol implementation, and validation of the privacy properties that distinguish Re:Link, so systematic measurements of latency, throughput, and resource usage were not completed within the available timeframe. Performance discussion is therefore qualitative and based on development observations and architectural reasoning rather than controlled experiments.
+
+The chapter is structured as follows. Section 5.2 addresses RQ1 and RQ2 through server observability analysis and inspection of ephemeral Redis state. Section 5.3 addresses RQ3 through threat-scenario analysis. Section 5.4 addresses RQ4 through a qualitative discussion of performance implications. Section 5.5 addresses RQ5 through comparison with RustDesk, OnionShare, and Magic Wormhole. Section 5.6 summarises the findings and the limits of the evaluation.
+
+5.2 Privacy and Metadata Evaluation
+
+5.2.1 Server-Side Observability Analysis (RQ1)
+
+RQ1 asks how a signalling protocol can establish peer-to-peer connections over an untrusted server without exposing identifiable user metadata or long-term connection graphs. Re:Link addresses this through a blind-rendezvous design in which the link token and shared secret are generated locally and shared out of band, so the server is not involved during link provisioning.
+
+The server first becomes aware of a session when the Initiator calls the /init endpoint. At that point it can observe that a connection attempt exists and can see the client's IP address, but it cannot associate the request with any persistent identity because no accounts, device registrations, or prior session records exist. When the Responder later redeems the token through /join, the server learns that two opaque mailboxes are linked. This short-lived mailbox pairing is the most revealing metadata the server holds.
+
+During signalling, the peers exchange encrypted SDP offers, answers, and ICE candidates through the mailbox. The server stores and relays these messages, and can observe their timing, count, and size, but not their contents, because the shared secret used to encrypt the signalling payloads is never transmitted to it. After the WebRTC connection is established, communication moves to a direct peer-to-peer channel and the client explicitly deletes the mailboxes. If this cleanup does not occur, Redis TTL expiry removes the remaining state automatically.
+
+Within the stated threat model, this satisfies RQ1. The server may still observe temporary network-level metadata, such as IP addresses and the fact that two peers are attempting to connect, but it cannot identify users through persistent application-level identifiers, decrypt signalling content, or reconstruct long-term connection graphs across sessions.
+
+5.2.2 Ephemeral Storage Verification (RQ2)
+
+RQ2 asks to what extent an ephemeral-only backend can eliminate persistent storage of user data while still supporting reliable session establishment. Inspection of the Redis coordination state shows that before connection there is no session-specific data in the store. There are no user records, device registrations, or historical session logs.
+
+During an active signalling session, Redis contains only short-lived coordination data: a mapping from the rendezvous token to the Initiator's mailbox, mailbox metadata for the paired peers, and encrypted message lists containing the signalling envelopes exchanged between them. These keys are all TTL-bounded. The rendezvous token is single-use and is removed once redeemed, while mailbox and message expiry is refreshed only while signalling activity continues.
+
+After connection establishment, the client removes both mailboxes through the /close endpoint. If the client cannot do so, for example because of interruption or crash, Redis still removes the keys automatically when their TTL expires. As a result, the server does not retain session history after completion or expiry. Within the signalling layer, persistent user-data storage is therefore eliminated by design.
+
+The cost of this approach is that sessions cannot be recovered once the coordination state expires. If signalling is interrupted and the mailbox times out before the peers reconnect, the session is lost and must be restarted. This is a deliberate trade-off in favour of minimal retained data.
+
+5.3 Security Analysis (RQ3)
+
+RQ3 asks how effectively application-layer end-to-end encryption, combined with WebRTC's native transport security, protects the system against infrastructure compromise and untrusted intermediaries. Given the scope of the project, this evaluation is qualitative rather than a formal cryptographic proof, and is based on the threat scenarios defined in Section 3.6.1.
+
+If the signalling server or Redis store is compromised, an attacker gains access to short-lived mailbox identifiers, temporary coordination metadata, and encrypted signalling envelopes. However, the attacker cannot decrypt SDP offers, answers, or ICE candidates because these are protected with AES-256-GCM using key material derived from the shared secret, which is never exposed to the server. The attacker may observe that two IP addresses are exchanging signalling traffic, but not the content or meaning of that traffic. This protection is independent of WebRTC's transport security and applies even before the direct peer connection is established.
+
+A man-in-the-middle attack remains possible if an attacker intercepts and modifies the invite link. Re:Link mitigates this with the short authentication string displayed to both peers during pairing. If the shared secret has been altered, the derived codes will differ and the peers can detect tampering by comparison. This is not automatic protection, because it depends on users checking the displayed values, but it raises the cost of an undetected attack.
+
+If an attacker steals the rendezvous token without the shared secret, they may attempt to redeem it. Token redemption is single-use, so either the legitimate responder uses it first or the attacker does. If the attacker redeems it first, the legitimate user receives an error indicating that the token has already been used. In either case, the attacker still cannot decrypt signalling traffic without the secret embedded in the link fragment.
+
+Replay of captured signalling messages is also limited. Each session derives fresh keys, and the server does not retain signalling envelopes beyond TTL expiry. Messages from a previous session therefore cannot be meaningfully replayed into a later one.
+
+Overall, the security model provides defence in depth. Application-layer encryption protects signalling content from the coordination infrastructure itself, while WebRTC's DTLS-SRTP transport security protects the direct peer channel once established. The main limits are unchanged from the threat model: Re:Link does not protect against a compromised client endpoint, and it does not secure the external channel used to share the invite link.
+
+5.4 Performance Considerations (RQ4)
+
+RQ4 concerns the performance implications of the privacy-by-design architecture and the hybrid Flutter/Rust implementation. Because the project prioritised architecture, protocol design, and privacy validation, this evaluation does not include controlled benchmarking of latency, throughput, or resource usage. The discussion here is therefore qualitative.
+
+The Flutter/Rust split introduces some overhead through Flutter Rust Bridge, since data crossing the Dart-Rust boundary must be serialised and deserialised. During development, this did not produce obvious user-visible delay in pairing, signalling, or file transfer, but this observation is informal and should not be treated as a measured result.
+
+The privacy model adds overhead mainly during setup. Signalling messages must be encrypted and decrypted at both endpoints before and after server relay, but these messages are small and AES-256-GCM is heavily optimised, so the expected computational cost is modest. More significant are the usability costs. Users must share the connection link through an out-of-band channel, and the ephemeral design means that interrupted sessions cannot be recovered once signalling state expires.
+
+After WebRTC establishment, file transfer and screen sharing no longer pass through the signalling server. The privacy-specific cost of Re:Link is therefore concentrated in bootstrap, signalling protection, and recovery limitations rather than in the steady-state transport path. The main conclusion is architectural rather than statistical: Re:Link appears to avoid server-side relay costs after setup, but the practical cost of this design still needs to be measured through future benchmarking of connection time, throughput, screen-sharing quality, and client resource use.
+
+5.5 Comparative Analysis (RQ5)
+
+RQ5 asks how Re:Link compares with existing open-source self-hosted alternatives in terms of metadata exposure and anonymity guarantees. The most relevant comparison set is RustDesk, OnionShare, and Magic Wormhole. Tables 1 and 2 summarise the detailed feature, architecture, and metadata differences; the discussion here focuses on the main conclusions.
+
+Compared with RustDesk, Re:Link offers a lower-retention coordination model. It avoids persistent protocol-level identifiers and removes the server from the data path once the WebRTC connection is established. RustDesk, by contrast, provides a more mature remote desktop workflow with richer features and relay fallback, but does so through an ID-based rendezvous model that gives infrastructure a more persistent role. Re:Link therefore trades some convenience and feature breadth for reduced retained metadata.
+
+Compared with OnionShare, Re:Link offers a different privacy balance rather than stronger anonymity. OnionShare achieves better anonymity within Tor's threat model by using onion services rather than conventional signalling infrastructure, but it is designed around file sharing, receiving, and chat rather than low-latency interactive peer sessions. Re:Link does not provide Tor-level anonymity, yet it is better aligned with real-time screen sharing and direct peer communication.
+
+Compared with Magic Wormhole, Re:Link is closer in underlying philosophy. Both avoid persistent user identity and can operate with self-hosted coordination infrastructure. However, Magic Wormhole is primarily a secure-transfer system. It still relies on mailbox coordination and may use a transit relay when direct transfer is unavailable. Re:Link extends this low-identity, self-hosted approach into an interactive WebRTC-based remote-session context.
+
+These systems therefore represent different privacy strategies. RustDesk prioritises usability and remote desktop practicality. OnionShare prioritises anonymity through Tor. Magic Wormhole prioritises low-identity secure transfer. Re:Link occupies a distinct niche by combining self-hosted blind rendezvous, minimal retained coordination metadata, and direct WebRTC transport for interactive peer sessions. Its main advantage is not absolute anonymity, but reduction of application-layer metadata retained by the supporting infrastructure.
+
+5.6 Summary
+
+The evaluation indicates that Re:Link meets its core design goals within the stated threat model. The server-side observability analysis shows that the signalling server can observe temporary network-level metadata, but cannot identify users through persistent application-level identifiers, decrypt signalling content, or build long-term connection graphs across sessions (RQ1). Inspection of Redis shows that the coordination layer retains only short-lived state, which is removed through explicit cleanup or TTL expiry, with no residual session data remaining after completion or expiry (RQ2).
+
+The security analysis suggests that the dual-layer design provides meaningful defence in depth. Application-layer AES-256-GCM protects signalling content from the coordination infrastructure, while WebRTC's secure transport protects the direct peer channel once established (RQ3). These guarantees do not extend to compromised endpoints or compromised out-of-band invite sharing, which remain outside the system's protection boundary.
+
+RQ4 is addressed only qualitatively. The available evidence suggests that Re:Link's main costs lie in setup complexity, signalling protection, and the inability to recover expired sessions, rather than in steady-state media or file-transfer transport after WebRTC establishment. However, this remains an architectural assessment rather than a measured performance result.
+
+The comparative analysis places Re:Link in a specific position within the design space rather than presenting it as universally superior. Relative to RustDesk, it sacrifices some maturity and convenience for lower-retention coordination. Relative to OnionShare, it sacrifices Tor-based anonymity in favour of direct real-time communication. Relative to Magic Wormhole, it adapts a low-identity secure-transfer philosophy to interactive WebRTC-based peer sessions. The strongest overall conclusion is therefore that Re:Link demonstrates a viable architecture for privacy-preserving, self-hosted interactive peer communication with minimal retained coordination metadata (RQ5).
+
+This evaluation has two main limitations. First, it does not include rigorous quantitative benchmarking. Second, the comparison with alternative systems is based on architecture and documentation rather than controlled side-by-side experiments. Even with these limits, the available evidence supports the conclusion that Re:Link provides a credible privacy-preserving alternative within the specific design space it set out to explore.

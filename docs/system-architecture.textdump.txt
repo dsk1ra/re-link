@@ -1,0 +1,311 @@
+title      x= 1200 y=   44 anchor=middle :: ReLink — System Architecture
+subtitle   x= 1200 y=   70 anchor=middle :: Component topology and initial-connection workflow plotted over it · light theme
+num        x=  508 y=  114 anchor=middle :: 7
+arrLbl     x= 1200 y=   72 anchor=middle :: Out-of-band channel  —  Step 7: share deep link  https://<base_url>/connection/join?token=<rendezvous_id>#<secret>
+num        x=  568 y=  154 anchor=middle :: 14
+arrLblSub  x= 1200 y=  127 anchor=middle :: Step 14: users compare the 9-digit SAS verification code (voice / physical presence) to defeat MitM on the rendezvous channel
+boxHead    x=  310 y=  200 anchor=middle :: Client A — Flutter + Rust (Initiator)
+boxSub     x=  310 y=  219 anchor=middle :: creates the link · displays the SAS · drives peer A
+cardHead   x=   60 y=  263 anchor=start  :: InitiatorPage  ·  Flutter UI
+cardBody   x=   60 y=  284 anchor=start  :: Triggers link creation, shows SAS, hosts the Accept dialog,
+cardBody   x=   60 y=  302 anchor=start  :: opens WebRTC once join marker arrives.
+cardHead   x=   60 y=  363 anchor=start  :: ConnectionService  ·  Dart
+cardBody   x=   60 y=  382 anchor=start  :: Signaling lifecycle for mailboxA.
+pillHead   x=  184 y=  420 anchor=middle :: HTTP client
+code       x=  184 y=  442 anchor=middle :: GET  /health
+code       x=  184 y=  460 anchor=middle :: POST /connection/init
+code       x=  184 y=  478 anchor=middle :: POST /connection/send
+code       x=  184 y=  496 anchor=middle :: POST /connection/recv
+code       x=  184 y=  514 anchor=middle :: POST /connection/close
+pillHead   x=  446 y=  420 anchor=middle :: WebSocket client
+code       x=  446 y=  442 anchor=middle :: WSS /ws/:mailboxA
+pillBody   x=  446 y=  462 anchor=middle :: subscribe · WS push
+pillBody   x=  446 y=  480 anchor=middle :: receive encrypted
+pillBody   x=  446 y=  498 anchor=middle :: join marker · answer
+pillBody   x=  446 y=  516 anchor=middle :: ICE · disconnect
+cardHead   x=   60 y=  591 anchor=start  :: Local Crypto  ·  Rust via flutter_rust_bridge
+cardBody   x=   60 y=  609 anchor=start  :: Key material never leaves the device.
+pillHead   x=  142 y=  642 anchor=middle :: rendezvous_id + secret
+pillBody   x=  142 y=  660 anchor=middle :: CSPRNG
+pillBody   x=  142 y=  676 anchor=middle :: token → public
+pillBody   x=  142 y=  692 anchor=middle :: secret → never sent
+pillHead   x=  318 y=  642 anchor=middle :: HMAC-SHA256 KDF
+pillBody   x=  318 y=  660 anchor=middle :: kSig  (AES-GCM)
+pillBody   x=  318 y=  676 anchor=middle :: sas  (verification)
+pillBody   x=  318 y=  692 anchor=middle :: encrypt/decrypt
+pillHead   x=  491 y=  642 anchor=middle :: SAS
+pillBody   x=  491 y=  660 anchor=middle :: 9-digit code
+pillBody   x=  491 y=  676 anchor=middle :: shown in UI
+pillBody   x=  491 y=  692 anchor=middle :: out-of-band verify
+cardHead   x=   60 y=  757 anchor=start  :: WebRTCManager  ·  Dart + native WebRTC
+cardBody   x=   60 y=  775 anchor=start  :: Drives RTCPeerConnection for peer A.
+pillHead   x=  142 y=  812 anchor=middle :: SDP
+pillBody   x=  142 y=  832 anchor=middle :: createOffer()
+pillBody   x=  142 y=  850 anchor=middle :: setLocalDescription
+pillBody   x=  142 y=  872 anchor=middle :: setRemoteDescription
+pillBody   x=  142 y=  890 anchor=middle :: (peer answer)
+pillBody   x=  142 y=  920 anchor=middle :: offer / answer bodies
+pillBody   x=  142 y=  938 anchor=middle :: are encrypted by
+pillBody   x=  142 y=  956 anchor=middle :: Local Crypto before
+pillBody   x=  142 y=  974 anchor=middle :: entering the mailbox
+pillHead   x=  318 y=  812 anchor=middle :: ICE
+pillBody   x=  318 y=  832 anchor=middle :: gatherCandidates
+pillBody   x=  318 y=  852 anchor=middle :: host candidate
+pillBody   x=  318 y=  870 anchor=middle :: srflx (via STUN)
+pillBody   x=  318 y=  888 anchor=middle :: relay (via TURN, if enabled)
+pillBody   x=  318 y=  920 anchor=middle :: trickle ICE
+pillBody   x=  318 y=  938 anchor=middle :: sent encrypted over
+pillBody   x=  318 y=  956 anchor=middle :: the mailbox relay
+pillBody   x=  318 y=  974 anchor=middle :: addIceCandidate()
+pillHead   x=  491 y=  812 anchor=middle :: DTLS + SCTP
+pillBody   x=  491 y=  832 anchor=middle :: direct UDP
+pillBody   x=  491 y=  850 anchor=middle :: handshake with B
+pillBody   x=  491 y=  870 anchor=middle :: no signaling
+pillBody   x=  491 y=  888 anchor=middle :: server in path
+pillBody   x=  491 y=  920 anchor=middle :: encrypted
+pillBody   x=  491 y=  938 anchor=middle :: DataChannel
+pillBody   x=  491 y=  956 anchor=middle :: ready for file +
+pillBody   x=  491 y=  974 anchor=middle :: screen-share frames
+boxHead    x= 1200 y=  200 anchor=middle :: Central Infrastructure
+boxSub     x= 1200 y=  219 anchor=middle :: reached by both clients over the public internet · HTTPS + WSS + STUN/TURN
+cardHead   x= 1200 y=  266 anchor=middle :: Caddy  ·  Edge
+cardBody   x= 1200 y=  288 anchor=middle :: TLS termination (ACME)  ·  HTTPS + WSS reverse proxy
+cardBody   x= 1200 y=  306 anchor=middle :: all client traffic to /connection/* and /ws/:mailbox_id passes here first
+cardHead   x= 1010 y=  363 anchor=middle :: Signaling Server  ·  Rust  ·  Axum + Tokio
+cardBody   x= 1010 y=  381 anchor=middle :: blind rendezvous · never sees plaintext signaling payload · stateless across instances (state in Redis)
+cardHead   x= 1010 y=  418 anchor=middle :: Axum Router  ·  HTTP handlers + WS upgrade
+code       x=  706 y=  442 anchor=start  :: GET  /health
+code       x= 1018 y=  442 anchor=start  :: POST /connection/init
+code       x=  706 y=  462 anchor=start  :: POST /connection/join
+code       x= 1018 y=  462 anchor=start  :: POST /connection/send
+code       x=  706 y=  482 anchor=start  :: POST /connection/recv
+code       x= 1018 y=  482 anchor=start  :: POST /connection/close
+code       x=  706 y=  498 anchor=start  :: GET  /ws/:mailbox_id
+cardHead   x=  838 y=  541 anchor=middle :: RendezvousService
+cardBody   x=  838 y=  561 anchor=middle :: init · join · pairing · TTL
+cardBody   x=  688 y=  584 anchor=start  :: • init_connection() → allocate mailboxA
+cardBody   x=  688 y=  604 anchor=start  :: • join_connection() → pair mailboxA↔mailboxB
+cardBody   x=  688 y=  624 anchor=start  :: • send_message() → append ciphertext to peer
+cardBody   x=  688 y=  644 anchor=start  :: • recv_message() → backfill for late subscribers
+cardBody   x=  688 y=  664 anchor=start  :: • expire at SESSION_TTL (env-configured; 300 s in develop.sh)
+cardBody   x=  688 y=  684 anchor=start  :: • all values stored in Redis — server is stateless
+cardHead   x= 1182 y=  541 anchor=middle :: PushHub
+cardBody   x= 1182 y=  561 anchor=middle :: in-memory WS fan-out
+cardBody   x= 1032 y=  584 anchor=start  :: • subscribe(mailbox_id) per WS upgrade
+cardBody   x= 1032 y=  604 anchor=start  :: • notify(mailbox_id) after RendezvousService
+cardBody   x= 1032 y=  624 anchor=start  :: writes a new message
+cardBody   x= 1032 y=  644 anchor=start  :: • broadcasts event over the bounded channel
+cardBody   x= 1032 y=  664 anchor=start  :: • client reads freshly-appended Redis list
+cardBody   x= 1032 y=  684 anchor=start  :: • event-driven mailbox push on notify()
+cardHead   x=  175 y=   52 anchor=middle :: Redis  ·  Ephemeral State
+cardBody   x=  175 y=   74 anchor=middle :: single source of truth for rendezvous
+pillHead   x=  175 y=  114 anchor=middle :: sig:rendezvous:{token}
+code       x=  175 y=  134 anchor=middle :: → mailboxA
+pillBody   x=  175 y=  152 anchor=middle :: TTL = RENDEZVOUS_TTL · one-shot GET+DEL
+pillHead   x=  175 y=  194 anchor=middle :: sig:mailbox_meta:{id}
+code       x=  175 y=  214 anchor=middle :: { peer_mailbox_id, expires_at_epoch_ms }
+pillBody   x=  175 y=  232 anchor=middle :: TTL = SESSION_TTL (env-configured)
+pillHead   x=  175 y=  274 anchor=middle :: sig:mailbox_msgs:{id}
+code       x=  175 y=  294 anchor=middle :: LIST of { from, ciphertext_b64 }
+pillBody   x=  175 y=  312 anchor=middle :: RPUSH on send · backfilled via LRANGE on /recv
+pillBody   x=  175 y=  330 anchor=middle :: PushHub notified per append
+cardHead   x= 1200 y=  766 anchor=middle :: coturn  ·  NAT Traversal
+cardBody   x= 1200 y=  786 anchor=middle :: independent UDP service · not proxied by Caddy · used for STUN/TURN when configured
+pillHead   x=  846 y=  822 anchor=middle :: STUN  (port 3478, default)
+pillBody   x=  846 y=  842 anchor=middle :: Binding Request / Binding Success
+pillBody   x=  846 y=  860 anchor=middle :: discovers server-reflexive (srflx)
+pillBody   x=  846 y=  878 anchor=middle :: candidate for each client
+pillHead   x= 1194 y=  822 anchor=middle :: TURN  (port 5349, optional fallback)
+pillBody   x= 1194 y=  842 anchor=middle :: relay candidate when TURN mode is enabled
+pillBody   x= 1194 y=  860 anchor=middle :: NAT / strict firewall blocks direct
+pillBody   x= 1194 y=  878 anchor=middle :: P2P path between peers
+pillHead   x= 1552 y=  822 anchor=middle :: ICE configuration
+pillBody   x= 1552 y=  842 anchor=middle :: ICE servers configured locally on both
+pillBody   x= 1552 y=  860 anchor=middle :: clients · IPv4 + IPv6 enabled in the
+pillBody   x= 1552 y=  878 anchor=middle :: RTCConfiguration on Windows
+boxHead    x= 2090 y=  200 anchor=middle :: Client B — Flutter + Rust (Responder)
+boxSub     x= 2090 y=  219 anchor=middle :: joins via the link · confirms SAS · drives peer B
+cardHead   x= 1840 y=  263 anchor=start  :: ResponderPage  ·  Flutter UI
+cardBody   x= 1840 y=  284 anchor=start  :: Consumes the deep link, confirms the SAS,
+cardBody   x= 1840 y=  302 anchor=start  :: issues /connection/join, shows pairing progress.
+cardHead   x= 1840 y=  363 anchor=start  :: ConnectionService  ·  Dart
+cardBody   x= 1840 y=  382 anchor=start  :: Signaling lifecycle for mailboxB.
+pillHead   x= 1964 y=  420 anchor=middle :: HTTP client
+code       x= 1964 y=  442 anchor=middle :: GET  /health
+code       x= 1964 y=  460 anchor=middle :: POST /connection/join
+code       x= 1964 y=  478 anchor=middle :: POST /connection/send
+code       x= 1964 y=  496 anchor=middle :: POST /connection/recv
+code       x= 1964 y=  514 anchor=middle :: POST /connection/close
+pillHead   x= 2226 y=  420 anchor=middle :: WebSocket client
+code       x= 2226 y=  442 anchor=middle :: WSS /ws/:mailboxB
+pillBody   x= 2226 y=  462 anchor=middle :: subscribe · WS push
+pillBody   x= 2226 y=  480 anchor=middle :: receive encrypted
+pillBody   x= 2226 y=  498 anchor=middle :: offer · ICE
+pillBody   x= 2226 y=  516 anchor=middle :: disconnect
+cardHead   x= 1840 y=  591 anchor=start  :: Local Crypto  ·  Rust via flutter_rust_bridge
+cardBody   x= 1840 y=  609 anchor=start  :: Derived from URL fragment; private to device.
+pillHead   x= 1922 y=  642 anchor=middle :: parse URL fragment
+pillBody   x= 1922 y=  660 anchor=middle :: token from query
+pillBody   x= 1922 y=  676 anchor=middle :: secret from # (never
+pillBody   x= 1922 y=  692 anchor=middle :: sent to server)
+pillHead   x= 2098 y=  642 anchor=middle :: HMAC-SHA256 KDF
+pillBody   x= 2098 y=  660 anchor=middle :: same kSig + sas as A
+pillBody   x= 2098 y=  676 anchor=middle :: decrypt offer / ICE
+pillBody   x= 2098 y=  692 anchor=middle :: encrypt answer / ICE
+pillHead   x= 2271 y=  642 anchor=middle :: SAS
+pillBody   x= 2271 y=  660 anchor=middle :: same 9 digits
+pillBody   x= 2271 y=  676 anchor=middle :: displayed to user
+pillBody   x= 2271 y=  692 anchor=middle :: for out-of-band match
+cardHead   x= 1840 y=  757 anchor=start  :: WebRTCManager  ·  Dart + native WebRTC
+cardBody   x= 1840 y=  775 anchor=start  :: Drives RTCPeerConnection for peer B.
+pillHead   x= 1922 y=  812 anchor=middle :: SDP
+pillBody   x= 1922 y=  832 anchor=middle :: setRemoteDescription
+pillBody   x= 1922 y=  850 anchor=middle :: (peer offer)
+pillBody   x= 1922 y=  872 anchor=middle :: createAnswer()
+pillBody   x= 1922 y=  890 anchor=middle :: setLocalDescription
+pillBody   x= 1922 y=  920 anchor=middle :: answer body
+pillBody   x= 1922 y=  938 anchor=middle :: encrypted by
+pillBody   x= 1922 y=  956 anchor=middle :: Local Crypto before
+pillBody   x= 1922 y=  974 anchor=middle :: entering the mailbox
+pillHead   x= 2098 y=  812 anchor=middle :: ICE
+pillBody   x= 2098 y=  832 anchor=middle :: gatherCandidates
+pillBody   x= 2098 y=  852 anchor=middle :: host candidate
+pillBody   x= 2098 y=  870 anchor=middle :: srflx (via STUN)
+pillBody   x=  2098 y=  888 anchor=middle :: relay (via TURN, if enabled)
+pillBody   x= 2098 y=  920 anchor=middle :: trickle ICE
+pillBody   x= 2098 y=  938 anchor=middle :: sent encrypted over
+pillBody   x= 2098 y=  956 anchor=middle :: the mailbox relay
+pillBody   x= 2098 y=  974 anchor=middle :: addIceCandidate()
+pillHead   x= 2271 y=  812 anchor=middle :: DTLS + SCTP
+pillBody   x= 2271 y=  832 anchor=middle :: direct UDP
+pillBody   x= 2271 y=  850 anchor=middle :: handshake with A
+pillBody   x= 2271 y=  870 anchor=middle :: no signaling
+pillBody   x= 2271 y=  888 anchor=middle :: server in path
+pillBody   x= 2271 y=  920 anchor=middle :: encrypted
+pillBody   x= 2271 y=  938 anchor=middle :: DataChannel
+pillBody   x= 2271 y=  956 anchor=middle :: ready for file +
+pillBody   x= 2271 y=  974 anchor=middle :: screen-share frames
+num        x=  614 y=  664 anchor=middle :: 2
+num        x= 1786 y=  664 anchor=middle :: 9
+num        x=  334 y=  393 anchor=middle :: 1
+num        x=  388 y=  377 anchor=middle :: 3
+num        x=  448 y=  349 anchor=middle :: 15
+num        x=  530 y=  319 anchor=middle :: 19
+num        x=  610 y=  300 anchor=middle :: 21
+arrLbl     x=  476 y=  388 anchor=start  :: POST /connection/*  +  GET /health
+arrLblSub  x=  476 y=  405 anchor=start  :: via HTTPS · Caddy reverse-proxies to Axum Router
+num        x=  568 y=  320 anchor=middle :: 5
+num        x=  608 y=  409 anchor=middle :: 6
+arrLbl     x=  612 y=  443 anchor=start  :: GET /ws/:mailboxA
+arrLblSub  x=  612 y=  459 anchor=start  :: upgrade → WSS · PushHub.subscribe(mailboxA)
+num        x=  660 y=  369 anchor=middle :: 12
+num        x=  630 y=  414 anchor=middle :: 16
+num        x=  605 y=  464 anchor=middle :: 19
+arrLblSub  x=  600 y=  500 anchor=start  :: WS push from PushHub
+num        x= 2066 y=  393 anchor=middle :: 1
+num        x= 2012 y=  377 anchor=middle :: 10
+num        x= 1952 y=  349 anchor=middle :: 16
+num        x= 1870 y=  319 anchor=middle :: 19
+num        x= 1790 y=  300 anchor=middle :: 21
+arrLbl     x= 1924 y=  388 anchor=end    :: POST /connection/*  +  GET /health
+arrLblSub  x= 1924 y=  405 anchor=end    :: via HTTPS · Caddy reverse-proxies to Axum Router
+num        x= 1832 y=  320 anchor=middle :: 11
+num        x= 1792 y=  409 anchor=middle :: 13
+arrLbl     x= 1788 y=  443 anchor=end    :: GET /ws/:mailboxB
+arrLblSub  x= 1788 y=  459 anchor=end    :: upgrade → WSS · PushHub.subscribe(mailboxB)
+num        x= 1768 y=  414 anchor=middle :: 15
+num        x= 1795 y=  464 anchor=middle :: 19
+arrLblSub  x= 1800 y=  500 anchor=end    :: WS push from PushHub
+arrLblSub  x= 1215 y=  360 anchor=start  :: reverse proxy
+arrLblSub  x=  728 y=  515 anchor=start  :: dispatch HTTP handler
+arrLblSub  x= 1206 y=  515 anchor=start  :: WS subscribe / notify
+num        x= 1180 y=  559 anchor=middle :: 4
+num        x= 1180 y=  621 anchor=middle :: 10
+arrLbl     x= 1180 y=  540 anchor=middle :: SETEX mailbox_meta / rendezvous  ·  RPUSH mailbox_msgs  ·  GET+DEL rendezvous
+arrLblSub  x= 1350 y=  650 anchor=start  :: LRANGE on recv
+num        x=  540 y=  864 anchor=middle :: 17
+arrLbl     x=  540 y=  840 anchor=middle :: Optional STUN Binding Request
+arrLblSub  x=  540 y=  890 anchor=middle :: UDP/3478 · direct when STUN endpoint is configured
+num        x= 1860 y=  864 anchor=middle :: 18
+arrLbl     x= 1860 y=  840 anchor=middle :: Optional STUN Binding Request
+arrLblSub  x= 1860 y=  890 anchor=middle :: UDP/3478 · direct when STUN endpoint is configured
+num        x= 1200 y= 1167 anchor=middle :: 20
+arrLbl     x= 1200 y= 1145 anchor=middle :: DTLS + SCTP handshake → encrypted DataChannel
+arrLblSub  x= 1200 y= 1195 anchor=middle :: Step 20: direct peer-to-peer · bypasses Caddy · Axum · Redis · signaling now torn down via step 21 (/connection/close)
+num        x= 1460 y= 1216 anchor=middle :: 22
+arrLblSub  x= 1460 y= 1238 anchor=middle :: Step 22: encrypted file/screen-share payloads continue over the direct DataChannel
+tableHead  x= 1200 y= 1260 anchor=middle :: Initial connection workflow — 22 numbered steps plotted over the architecture above
+num        x=   12 y=   22 anchor=middle :: 1
+stepText   x=   36 y=   15 anchor=start  :: Both clients launch → GET /health (via Caddy → Axum)
+stepBody   x=   36 y=   32 anchor=start  :: verifies server reachable · returns public_base_url + heartbeat_interval_secs
+num        x=   12 y=   72 anchor=middle :: 2
+stepText   x=   36 y=   65 anchor=start  :: Client A Local Crypto (FRB)
+stepBody   x=   36 y=   82 anchor=start  :: generate rendezvous_id + secret · HMAC-KDF → kSig + sas · derive 9-digit SAS
+num        x=   12 y=  122 anchor=middle :: 3
+stepText   x=   36 y=  115 anchor=start  :: A → POST /connection/init  { rendezvous_id_b64 }
+stepBody   x=   36 y=  132 anchor=start  :: Axum Router → RendezvousService.init_connection()
+num        x=   12 y=  172 anchor=middle :: 4
+stepText   x=   36 y=  165 anchor=start  :: RendezvousService → Redis
+stepBody   x=   36 y=  182 anchor=start  :: SETEX sig:mailbox_meta:mailboxA · SETEX sig:rendezvous:{token} → mailboxA
+num        x=   12 y=  222 anchor=middle :: 5
+stepText   x=   36 y=  215 anchor=start  :: Response → A : { mailboxA, expires_at_epoch_ms }
+stepBody   x=   36 y=  232 anchor=start  :: ConnectionService stores mailbox handle
+num        x=   12 y=  272 anchor=middle :: 6
+stepText   x=   36 y=  265 anchor=start  :: A → GET /ws/:mailboxA  (HTTP → WSS upgrade)
+stepBody   x=   36 y=  282 anchor=start  :: PushHub.subscribe(mailboxA) · mailbox WS push active
+num        x=   12 y=  322 anchor=middle :: 7
+stepText   x=   36 y=  315 anchor=start  :: A → B out-of-band : deep link
+stepBody   x=   36 y=  332 anchor=start  :: https://<base_url>/connection/join?token=<rendezvous_id>#<secret> · A displays SAS
+num        x=   12 y=   22 anchor=middle :: 8
+stepText   x=   36 y=   15 anchor=start  :: B parses URL fragment #secret (never sent to server)
+stepBody   x=   36 y=   32 anchor=start  :: feeds it into Local Crypto (FRB)
+num        x=   12 y=   72 anchor=middle :: 9
+stepText   x=   36 y=   65 anchor=start  :: Client B Local Crypto (FRB)
+stepBody   x=   36 y=   82 anchor=start  :: HMAC-KDF → same kSig + sas · derives matching SAS locally
+num        x=   12 y=  122 anchor=middle :: 10
+stepText   x=   36 y=  115 anchor=start  :: B → POST /connection/join  { token_b64 }
+stepBody   x=   36 y=  132 anchor=start  :: Redis: GET+DEL rendezvous · SETEX mailbox_meta:B · RPUSH join marker → msgs:A
+num        x=   12 y=  172 anchor=middle :: 11
+stepText   x=   36 y=  165 anchor=start  :: Response → B : { mailboxB, expires_at_epoch_ms }
+stepBody   x=   36 y=  182 anchor=start  :: ResponderPage moves to pairing state
+num        x=   12 y=  222 anchor=middle :: 12
+stepText   x=   36 y=  215 anchor=start  :: PushHub → A  (WS push) : join marker
+stepBody   x=   36 y=  232 anchor=start  :: triggers “Incoming Connection / Accept” dialog on InitiatorPage
+num        x=   12 y=  272 anchor=middle :: 13
+stepText   x=   36 y=  265 anchor=start  :: B → GET /ws/:mailboxB  (HTTP → WSS upgrade)
+stepBody   x=   36 y=  282 anchor=start  :: PushHub.subscribe(mailboxB)
+num        x=   12 y=  322 anchor=middle :: 14
+stepText   x=   36 y=  315 anchor=start  :: Users compare SAS out-of-band
+stepBody   x=   36 y=  332 anchor=start  :: matching 9-digit codes defeat MitM on the rendezvous channel
+num        x=   12 y=   22 anchor=middle :: 15
+stepText   x=   36 y=   15 anchor=start  :: A → encrypted SDP offer via /connection/send (mailboxA)
+stepBody   x=   36 y=   32 anchor=start  :: Redis RPUSH msgs:B · PushHub WS push → B · B decrypts, setRemoteDescription
+num        x=   12 y=   72 anchor=middle :: 16
+stepText   x=   36 y=   65 anchor=start  :: B → encrypted SDP answer via /connection/send (mailboxB)
+stepBody   x=   36 y=   82 anchor=start  :: Redis RPUSH msgs:A · PushHub WS push → A · A decrypts, setRemoteAnswer
+num        x=   12 y=  122 anchor=middle :: 17
+stepText   x=   36 y=  115 anchor=start  :: A gathers ICE candidates (host first; coturn optional)
+stepBody   x=   36 y=  132 anchor=start  :: host candidate gathered locally · optional STUN Binding → srflx · TURN relay if TURN is enabled
+num        x=   12 y=  172 anchor=middle :: 18
+stepText   x=   36 y=  165 anchor=start  :: B gathers ICE candidates (host first; coturn optional)
+stepBody   x=   36 y=  182 anchor=start  :: host candidate gathered locally · optional STUN Binding → srflx · TURN relay if TURN is enabled
+num        x=   12 y=  222 anchor=middle :: 19
+stepText   x=   36 y=  215 anchor=start  :: Trickle ICE candidates (both directions)
+stepBody   x=   36 y=  232 anchor=start  :: encrypted via /connection/send · delivered over WS · peers call addIceCandidate
+num        x=   12 y=  272 anchor=middle :: 20
+stepText   x=   36 y=  265 anchor=start  :: A ↔ B direct : DTLS + SCTP handshake
+stepBody   x=   36 y=  282 anchor=start  :: encrypted DataChannel established · ready for file / screen-share payloads
+num        x=   12 y=  322 anchor=middle :: 21
+stepText   x=   36 y=  315 anchor=start  :: A & B → POST /connection/close
+stepBody   x=   36 y=  332 anchor=start  :: mailboxes & WS sockets torn down · signaling role ends
+num        x=   12 y=  372 anchor=middle :: 22
+stepText   x=   36 y=  365 anchor=start  :: A ↔ B direct : encrypted payload exchange continues
+stepBody   x=   36 y=  382 anchor=start  :: file transfer and screen-share frames continue over DataChannel after signaling teardown
+legend     x=   60 y= 1670 anchor=start  :: ■ startup / out-of-band
+legend     x=  290 y= 1670 anchor=start  :: ■ local crypto (FRB)
+legend     x=  500 y= 1670 anchor=start  :: ■ HTTP signaling
+legend     x=  700 y= 1670 anchor=start  :: ■ WebSocket (subscribe + push)
+legend     x= 1000 y= 1670 anchor=start  :: ■ SDP relay
+legend     x= 1150 y= 1670 anchor=start  :: ■ ICE / STUN / TURN
+legend     x= 1340 y= 1670 anchor=start  :: ■ direct P2P WebRTC
+stepBody   x= 1580 y= 1670 anchor=start  :: Dashed = async response / WS push · Solid = synchronous request / STUN probe
