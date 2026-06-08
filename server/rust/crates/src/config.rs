@@ -74,7 +74,6 @@ impl SignalingServerConfig {
             .map(Duration::from_secs)
             .unwrap_or_else(|| Duration::from_secs(DEFAULT_MAILBOX_TTL_SECS));
 
-        // SECURITY: Require TLS for Redis by default. Can be disabled for local dev only.
         let redis_require_tls = env::var("SIGNALING_REDIS_REQUIRE_TLS")
             .ok()
             .and_then(|raw| match raw.to_lowercase().as_str() {
