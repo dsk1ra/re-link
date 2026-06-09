@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-shared = { path = "../../../../shared/rust/shared" }
+shared = { path = "../../../shared/rust" }
 anyhow = { workspace = true }
 flutter_rust_bridge = "=2.11.1"
 tokio = { workspace = true, features = ["full"] }

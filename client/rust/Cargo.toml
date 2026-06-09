@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/mobile-bridge",
+    "crates",
 ]
 
 [workspace.dependencies]
