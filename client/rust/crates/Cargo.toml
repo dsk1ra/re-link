@@ -9,7 +9,7 @@ crate-type = ["cdylib", "staticlib"]
 [dependencies]
 shared = { path = "../../../shared/rust" }
 anyhow = { workspace = true }
-flutter_rust_bridge = "=2.11.1"
+flutter_rust_bridge = "=2.12.0"
 tokio = { workspace = true, features = ["full"] }
 webrtc = { workspace = true }
 ice = { workspace = true }
@@ -21,3 +21,28 @@ once_cell = "1.21.3"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+xcap = { workspace = true }
+openh264 = { workspace = true }
+media = { workspace = true }
+fast_image_resize = { workspace = true }
+yuv = { workspace = true }
+xxhash-rust = { workspace = true }
+cpal = { workspace = true }
+opus = { workspace = true }
+x264 = { workspace = true }
+rtcp = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { workspace = true, optional = true }
+gstreamer = { workspace = true, optional = true }
+gstreamer-app = { workspace = true, optional = true }
+gstreamer-video = { workspace = true, optional = true }
+pipewire = { workspace = true, optional = true }
+# Same xcb crate/version xcap already links (with its "randr" feature) -
+# just adding "xtest" for input injection so there's one X11 client in the
+# binary, not two.
+xcb = { version = "1.7", features = ["xtest"] }
+
+[features]
+default = []
+gstreamer = ["dep:ashpd", "dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video", "dep:pipewire"]

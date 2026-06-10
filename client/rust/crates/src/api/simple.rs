@@ -33,11 +33,18 @@ pub fn init_app() {
 
     let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         tracing_subscriber::EnvFilter::new(
-            "warn,webrtc=warn,webrtc_sctp=warn,webrtc_dtls=warn,webrtc_ice=warn",
+            // webrtc_ice logs pingAllCandidates/"no such remote" at warn
+            // level for entirely normal trickle-ICE races (checks starting
+            // before pairs exist yet, late STUN responses after a restart) -
+            // noise, not a signal something's wrong. Bumped to error so only
+            // genuine ICE failures show.
+            "warn,webrtc=warn,webrtc_sctp=warn,webrtc_dtls=warn,webrtc_ice=error",
         )
     });
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(true)
         .try_init();
+
+    crate::api::video_texture::install_copy_pixels_callback();
 }

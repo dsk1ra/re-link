@@ -2,6 +2,13 @@ pub mod client;
 pub mod connection;
 pub mod file_transfer;
 pub mod models;
+pub mod screen_capture;
+#[cfg(feature = "gstreamer")]
+pub(crate) mod screen_capture_gst;
+#[cfg(feature = "gstreamer")]
+pub(crate) mod screen_decode_gst;
 pub mod simple;
 pub mod transfer;
+pub mod video_ring;
+pub mod video_texture;
 pub mod webrtc;

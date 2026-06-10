@@ -1,0 +1,9 @@
+cargo:
+  debug:
+    extra_flags:
+      - "--features"
+      - "gstreamer"
+  release:
+    extra_flags:
+      - "--features"
+      - "gstreamer"

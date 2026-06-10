@@ -16,3 +16,26 @@ sha2 = "0.10.9"
 webrtc = "0.11.0"
 ice = { package = "webrtc-ice", version = "0.11.0" }
 rand = "0.9.2"
+xcap = "0.9"
+openh264 = { version = "0.9", features = ["source"] }
+media = { package = "webrtc-media", version = "0.8" }
+fast_image_resize = "5"
+yuv = { version = "0.8", features = ["fast_mode"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+cpal = "0.18"
+opus = "0.3"
+x264 = "0.5"
+rtcp = "0.11.0"
+ashpd = { version = "0.13", features = ["tokio", "screencast"] }
+gstreamer = "0.25"
+gstreamer-app = "0.25"
+gstreamer-video = "0.25"
+pipewire = "0.9"
+
+[patch.crates-io]
+# Vendored 0.9.6 with a fix for the racy ScreenCast portal handshake: the
+# Response signal subscription could land after the portal already replied,
+# silently losing the signal and deadlocking Monitor::video_recorder() on
+# Wayland. Patched in third_party/xcap/src/linux/{utils,wayland_video_recorder}.rs
+# (look for "RE:LINK PATCH"). Drop this once fixed upstream.
+xcap = { path = "third_party/xcap" }
