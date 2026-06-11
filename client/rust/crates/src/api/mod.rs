@@ -1,5 +1,8 @@
+pub mod audio;
 pub mod client;
 pub mod connection;
+#[cfg(target_os = "linux")]
+pub mod desktop_audio;
 pub mod file_transfer;
 pub mod models;
 pub mod screen_capture;
