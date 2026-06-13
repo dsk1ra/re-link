@@ -4,6 +4,7 @@ pub mod connection;
 #[cfg(target_os = "linux")]
 pub mod desktop_audio;
 pub mod file_transfer;
+pub mod input_inject;
 pub mod models;
 pub mod screen_capture;
 #[cfg(feature = "gstreamer")]
