@@ -19,16 +19,14 @@ const MSG_REJECT: &str = "reject";
 const MSG_CANCEL: &str = "cancel";
 const MSG_EOF: &str = "eof";
 
-const MAX_FILE_SIZE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_FILE_SIZE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const ACCEPT_TIMEOUT: Duration = Duration::from_secs(30);
 const INACTIVITY_TIMEOUT: Duration = Duration::from_secs(30);
 const INTERNAL_TICK_INTERVAL: Duration = Duration::from_secs(1);
 const COMMAND_CHANNEL_CAPACITY: usize = 32;
 const STATE_HISTORY_CAPACITY: usize = 64;
 const PROGRESS_UPDATE_BYTES: u64 = 64 * 1024;
-// Attached RTCDataChannel reads are not robust for large binary messages in this stack.
-// Keep chunks comfortably below the observed read-loop ceiling to avoid stream resets.
-const CHUNK_SIZE: usize = 16 * 1024;
+const CHUNK_SIZE: usize = 64 * 1024;
 const HIGH_WATER_MARK: u64 = 1024 * 1024;
 const LOW_WATER_MARK: u64 = 64 * 1024;
 
@@ -537,6 +535,10 @@ impl FileTransferActor {
     }
 
     async fn handle_cancel_transfer(&mut self, reason: Option<String>) -> anyhow::Result<()> {
+        if self.current_session.is_none() {
+            return Ok(());
+        }
+
         let transfer_id = self
             .current_session
             .as_ref()
@@ -682,6 +684,15 @@ impl FileTransferActor {
                 };
 
                 if should_start {
+                    let file_name = self.current_session.as_ref().map(|s| s.file_name.clone());
+                    self.push_state(FileTransferStateDto {
+                        status: TransferStatusDto::Transferring,
+                        file_name,
+                        total_bytes: file_size,
+                        bytes_transferred: 0,
+                        error: None,
+                    });
+
                     spawn_sender_pipeline(
                         self.connection_id.clone(),
                         id,
