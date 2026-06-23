@@ -2,20 +2,24 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:application/src/presentation/pages/welcome_screen.dart';
+import 'package:application/src/presentation/pages/onboarding/onboarding_flow.dart';
 import 'package:application/src/presentation/pages/connection_pairing_page.dart';
+import 'package:application/src/presentation/ui/theme.dart';
+import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
 import 'package:application/src/features/pairing/data/http/http_signaling_backend.dart';
 import 'package:application/src/features/settings/data/local_settings.dart';
 import 'package:application/src/rust/frb_generated.dart';
 
 Future<void> main() async {
-  // Reset preferences if RESET_APP_PREFS environment variable is set
-  final shouldResetPrefs = Platform.environment.containsKey('RESET_APP_PREFS');
-  if (shouldResetPrefs) {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final prefs = await SharedPreferences.getInstance();
+  final settings = LocalSettings(prefs);
+  if (_shouldResetAppPrefs()) {
+    await settings.reset();
   }
+
   Logger.root.level = Level.WARNING;
   Logger.root.onRecord.listen((record) {
     final loggerName = record.loggerName;
@@ -26,6 +30,16 @@ Future<void> main() async {
   });
   await RustLib.init();
   runApp(const MyApp());
+}
+
+bool _shouldResetAppPrefs() {
+  const resetFromDefine = bool.fromEnvironment('RESET_APP_PREFS');
+  final resetFromEnv = Platform.environment['RESET_APP_PREFS'];
+  return resetFromDefine ||
+      (resetFromEnv != null &&
+          resetFromEnv.isNotEmpty &&
+          resetFromEnv != '0' &&
+          resetFromEnv.toLowerCase() != 'false');
 }
 
 class MyApp extends StatefulWidget {
@@ -54,6 +68,7 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       title: 'Re:Link',
       debugShowCheckedModeBanner: false,
+      theme: buildAppTheme(),
       home: FutureBuilder<LocalSettings>(
         future: _settingsFuture,
         builder: (context, snapshot) {
@@ -68,12 +83,10 @@ class _MyAppState extends State<MyApp> {
           final settings = snapshot.data!;
           final configuredDomain = settings.getDomain();
 
-          // Show welcome until the user has both seen onboarding and set a domain.
           if (!settings.hasSeenWelcome() || !settings.hasDomain()) {
-            return WelcomeScreen(
+            return OnboardingFlow(
               settings: settings,
-              onDomainConfigured: (domain) {
-                // After welcome, navigate to main pairing page
+              onComplete: (domain) {
                 Navigator.of(context).pushReplacement(
                   MaterialPageRoute(
                     builder: (context) => _PairingPageWrapper(
@@ -163,13 +176,20 @@ class _LoadingScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.action),
+              ),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Loading...',
-              style: TextStyle(color: AppColors.textPrimary),
+            Text(
+              'INITIALIZING',
+              style: AppTypography.eyebrow.copyWith(
+                color: AppColors.textMuted,
+              ),
             ),
           ],
         ),
@@ -192,22 +212,20 @@ class _ErrorScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, color: AppColors.error, size: 48),
-            const SizedBox(height: 16),
-            const Text(
-              'Initialization Error',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 24,
-                fontWeight: FontWeight.w600,
-              ),
+            Text(
+              'INITIALIZATION FAILED',
+              style: AppTypography.eyebrow.copyWith(color: AppColors.error),
             ),
+            const SizedBox(height: 16),
+            Text('Initialization Error', style: AppTypography.h1),
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
                 error,
-                style: const TextStyle(color: AppColors.textMuted),
+                style: AppTypography.data.copyWith(
+                  color: AppColors.textMuted,
+                ),
                 textAlign: TextAlign.center,
               ),
             ),

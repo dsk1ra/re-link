@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:application/src/features/settings/data/local_settings.dart';
+import 'package:application/src/presentation/ui/radius.dart';
+import 'package:application/src/presentation/ui/spacing.dart';
+import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
+import 'package:application/src/presentation/widgets/app_button.dart';
 
-/// Dialog for changing the signaling server domain
+enum _SettingsSection { server, ice }
+
 class DomainConfigDialog extends StatefulWidget {
   final LocalSettings settings;
   final Function(String domain)? onDomainChanged;
@@ -18,6 +24,16 @@ class DomainConfigDialog extends StatefulWidget {
 }
 
 class _DomainConfigDialogState extends State<DomainConfigDialog> {
+  static const double _dialogWidthFraction = 0.70;
+  static const double _dialogHeightFraction = 0.60;
+  static const double _maxDialogWidth = 780;
+  static const double _maxDialogHeight = 520;
+  static const double _minDialogWidth = 480;
+  static const double _minDialogHeight = 340;
+  static const double _navWidth = 180;
+
+  _SettingsSection _activeSection = _SettingsSection.server;
+
   late TextEditingController _controller;
   late TextEditingController _iceHostController;
   late TextEditingController _iceServersController;
@@ -53,7 +69,7 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
     super.dispose();
   }
 
-  Future<void> _saveDomain() async {
+  Future<void> _save() async {
     final domain = _controller.text.trim();
     if (domain.isEmpty) {
       _showError('Please enter a domain or server address');
@@ -74,13 +90,18 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
         widget.onDomainChanged?.call(updatedDomain);
       }
     } catch (e) {
-      _showError('Error saving domain: $e');
+      _showError('Error saving: $e');
     }
   }
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.error),
+      SnackBar(
+        content: Text(
+          message,
+          style: AppTypography.label.copyWith(color: AppColors.error),
+        ),
+      ),
     );
   }
 
@@ -99,9 +120,7 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
   }
 
   void _syncDefaultIceServersFromDomain() {
-    if (!_useDefaultIceForDomain) {
-      return;
-    }
+    if (!_useDefaultIceForDomain) return;
 
     final nextValue = _defaultIceServersJsonForCurrentDomain();
     _iceServersController.value = TextEditingValue(
@@ -110,206 +129,279 @@ class _DomainConfigDialogState extends State<DomainConfigDialog> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final defaultIceJson = _defaultIceServersJsonForCurrentDomain();
-    final defaultIceDescription = _defaultIceDescriptionForCurrentDomain();
+  // ─── Nav items ──────────────────────────────────────────────────────────
 
-    return AlertDialog(
-      backgroundColor: AppColors.surface,
-      title: const Text(
-        'Change Server Address',
-        style: TextStyle(color: AppColors.textPrimary),
+  Widget _buildNav() {
+    return Container(
+      width: _navWidth,
+      decoration: const BoxDecoration(
+        border: Border(right: BorderSide(color: AppColors.border)),
       ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.md,
+            ),
+            child: Text('SETTINGS', style: AppTypography.eyebrow),
+          ),
+          _navItem(
+            section: _SettingsSection.server,
+            icon: LucideIcons.server,
+            label: 'Server',
+          ),
+          _navItem(
+            section: _SettingsSection.ice,
+            icon: LucideIcons.network,
+            label: 'ICE / STUN',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _navItem({
+    required _SettingsSection section,
+    required IconData icon,
+    required String label,
+  }) {
+    final selected = _activeSection == section;
+    return InkWell(
+      onTap: () => setState(() => _activeSection = section),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm + 2,
+        ),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.surface : Colors.transparent,
+          border: Border(
+            left: BorderSide(
+              color: selected ? AppColors.action : Colors.transparent,
+              width: 2,
+            ),
+          ),
+        ),
+        child: Row(
           children: [
-            const Text(
-              'Enter the address of your signaling server:',
-              style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+            Icon(
+              icon,
+              size: 16,
+              color: selected ? AppColors.textPrimary : AppColors.textMuted,
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _controller,
-              cursorColor: AppColors.primary,
-              style: const TextStyle(color: AppColors.textMuted),
-              decoration: InputDecoration(
-                hintText: 'https://your-domain.com or localhost:8080',
-                hintStyle: const TextStyle(color: AppColors.textMuted),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppColors.outline),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppColors.outline),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(
-                    color: AppColors.primary,
-                    width: 1.5,
-                  ),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-              ),
-              onChanged: (_) {
-                setState(_syncDefaultIceServersFromDomain);
-              },
-              autofocus: true,
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(width: AppSpacing.sm),
             Text(
-              'Examples:\n'
-              '• localhost:8080 (local development)\n'
-              '• https://example.com (production)\n'
-              '• relay.example.com:8443 (custom port)',
-              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Public ICE Host (optional)',
-              style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _iceHostController,
-              cursorColor: AppColors.primary,
-              style: const TextStyle(color: AppColors.textMuted),
-              decoration: InputDecoration(
-                hintText: '203.0.113.10, stun.example.com, or host:3478',
-                hintStyle: const TextStyle(color: AppColors.textMuted),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppColors.outline),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppColors.outline),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(
-                    color: AppColors.primary,
-                    width: 1.5,
-                  ),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
+              label.toUpperCase(),
+              style: AppTypography.label.copyWith(
+                color: selected ? AppColors.textPrimary : AppColors.textMuted,
               ),
-              onChanged: (_) {
-                setState(_syncDefaultIceServersFromDomain);
-              },
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Optional. Set this when signaling and STUN/TURN are exposed on '
-              'different public endpoints.',
-              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'ICE servers (STUN/TURN JSON)',
-              style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
-            ),
-            const SizedBox(height: 8),
-            SwitchListTile.adaptive(
-              value: _useDefaultIceForDomain,
-              contentPadding: EdgeInsets.zero,
-              activeThumbColor: AppColors.primary,
-              title: const Text(
-                'Use generated STUN config',
-                style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
-              ),
-              subtitle: Text(
-                defaultIceJson.isEmpty
-                    ? 'Enter server address to preview default STUN JSON'
-                    : defaultIceJson,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textMuted,
-                ),
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _useDefaultIceForDomain = value;
-                  if (_useDefaultIceForDomain) {
-                    _syncDefaultIceServersFromDomain();
-                  }
-                });
-              },
-            ),
-            Text(
-              defaultIceDescription,
-              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _iceServersController,
-              maxLines: 5,
-              enabled: !_useDefaultIceForDomain,
-              cursorColor: AppColors.primary,
-              style: const TextStyle(color: AppColors.textMuted),
-              decoration: InputDecoration(
-                hintText:
-                    '[{"urls":"stun:your-domain-or-ip:3478"},{"urls":["turn:turn.example.com:3478?transport=udp"],"username":"user","credential":"pass"}]',
-                hintStyle: const TextStyle(color: AppColors.textMuted),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppColors.outline),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppColors.outline),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(
-                    color: AppColors.primary,
-                    width: 1.5,
-                  ),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-              ),
-              onChanged: (_) => setState(() {
-                _useDefaultIceForDomain = false;
-              }),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'If you expose signaling through Cloudflare Tunnel, keep the '
-              'server address as the tunnel URL and enter a separate public '
-              'STUN/TURN host or IP here.',
-              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          style: TextButton.styleFrom(foregroundColor: AppColors.textMuted),
-          child: const Text('Cancel'),
+    );
+  }
+
+  // ─── Section content ────────────────────────────────────────────────────
+
+  Widget _buildContent() {
+    return switch (_activeSection) {
+      _SettingsSection.server => _buildServerSection(),
+      _SettingsSection.ice => _buildIceSection(),
+    };
+  }
+
+  Widget _sectionLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(text.toUpperCase(), style: AppTypography.eyebrow),
+    );
+  }
+
+  Widget _helperText(String text) {
+    return Text(
+      text,
+      style: AppTypography.caption.copyWith(color: AppColors.textFaint),
+    );
+  }
+
+  Widget _buildServerSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Signaling server', style: AppTypography.h2),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'The signaling server only brokers the rendezvous. '
+          'It never sees session keys or content.',
+          style: AppTypography.body.copyWith(color: AppColors.textMuted),
         ),
-        ElevatedButton(
-          onPressed: _saveDomain,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: AppColors.onPrimary,
+        const SizedBox(height: AppSpacing.lg),
+        _sectionLabel('Server address'),
+        TextField(
+          controller: _controller,
+          style: AppTypography.data,
+          decoration: const InputDecoration(
+            hintText: 'https://your-domain.com or localhost:8080',
           ),
-          child: const Text('Save'),
+          onChanged: (_) {
+            setState(_syncDefaultIceServersFromDomain);
+          },
+          autofocus: true,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        _helperText(
+          'localhost:8080 · https://example.com · relay.example.com:8443',
         ),
       ],
+    );
+  }
+
+  Widget _buildIceSection() {
+    final defaultIceJson = _defaultIceServersJsonForCurrentDomain();
+    final defaultIceDescription = _defaultIceDescriptionForCurrentDomain();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('ICE configuration', style: AppTypography.h2),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'STUN/TURN servers used for WebRTC peer discovery. '
+          'Set a dedicated ICE host when signaling runs behind an '
+          'HTTPS-only proxy like Cloudflare Tunnel.',
+          style: AppTypography.body.copyWith(color: AppColors.textMuted),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _sectionLabel('Public ICE host (optional)'),
+        TextField(
+          controller: _iceHostController,
+          style: AppTypography.data,
+          decoration: const InputDecoration(
+            hintText: '203.0.113.10, stun.example.com, or host:3478',
+          ),
+          onChanged: (_) {
+            setState(_syncDefaultIceServersFromDomain);
+          },
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        _helperText(
+          'Set this when signaling and STUN/TURN are exposed on '
+          'different public endpoints.',
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _sectionLabel('ICE servers (STUN/TURN JSON)'),
+        SwitchListTile.adaptive(
+          value: _useDefaultIceForDomain,
+          contentPadding: EdgeInsets.zero,
+          title: Text('Use generated STUN config', style: AppTypography.label),
+          subtitle: Text(
+            defaultIceJson.isEmpty
+                ? 'Enter server address to preview default STUN JSON'
+                : defaultIceJson,
+            style: AppTypography.caption.copyWith(color: AppColors.textFaint),
+          ),
+          onChanged: (value) {
+            setState(() {
+              _useDefaultIceForDomain = value;
+              if (_useDefaultIceForDomain) {
+                _syncDefaultIceServersFromDomain();
+              }
+            });
+          },
+        ),
+        Text(
+          defaultIceDescription,
+          style: AppTypography.caption.copyWith(color: AppColors.textMuted),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        TextField(
+          controller: _iceServersController,
+          maxLines: 5,
+          enabled: !_useDefaultIceForDomain,
+          style: AppTypography.data,
+          decoration: const InputDecoration(
+            hintText:
+                '[{"urls":"stun:your-domain-or-ip:3478"},'
+                '{"urls":["turn:turn.example.com:3478?transport=udp"],'
+                '"username":"user","credential":"pass"}]',
+          ),
+          onChanged: (_) => setState(() {
+            _useDefaultIceForDomain = false;
+          }),
+        ),
+      ],
+    );
+  }
+
+  // ─── Build ──────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    final dialogWidth = (screen.width * _dialogWidthFraction)
+        .clamp(_minDialogWidth, _maxDialogWidth);
+    final dialogHeight = (screen.height * _dialogHeightFraction)
+        .clamp(_minDialogHeight, _maxDialogHeight);
+
+    return Dialog(
+      backgroundColor: AppColors.background,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      child: SizedBox(
+        width: dialogWidth,
+        height: dialogHeight,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          child: Column(
+            children: [
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildNav(),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        child: _buildContent(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: AppColors.border)),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.md,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.textMuted,
+                      ),
+                      child: const Text('CANCEL'),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    AppButton(onPressed: _save, label: 'Save'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

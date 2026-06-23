@@ -1,6 +1,11 @@
+/// Hard edges are a feature: no radius above 4px anywhere, no pills.
 class AppRadius {
-  static const double sm = 6;
-  static const double md = 10;
-  static const double lg = 16;
-  static const double full = 999;
+  /// Buttons, chips, inputs, badges.
+  static const double sm = 2;
+
+  /// Cards, panels, dialogs.
+  static const double md = 4;
+
+  /// Tables, code blocks, video surface, full-bleed sections.
+  static const double none = 0;
 }

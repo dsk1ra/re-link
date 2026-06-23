@@ -2,42 +2,53 @@ import 'package:flutter/material.dart';
 
 import 'package:application/src/presentation/ui/radius.dart';
 import 'package:application/src/presentation/ui/spacing.dart';
+import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
 
-enum AppCardVariant { normal, success, warning, error }
-
+/// Bordered flat panel. Depth comes from the border and the surface
+/// luminance step, never shadows. Status colours never appear on borders;
+/// state is communicated with dots and status text inside the card.
 class AppCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
-  final AppCardVariant variant;
+
+  /// Optional uppercase mono label rendered above the content.
+  final String? eyebrow;
+
+  /// Set for emphasised panels (e.g. the active region of a screen).
+  final bool emphasized;
 
   const AppCard({
     super.key,
     required this.child,
     this.padding,
-    this.variant = AppCardVariant.normal,
+    this.eyebrow,
+    this.emphasized = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final Color borderColor = switch (variant) {
-      AppCardVariant.normal => AppColors.outline,
-      AppCardVariant.success => AppColors.success,
-      AppCardVariant.warning => AppColors.warning,
-      AppCardVariant.error => AppColors.error,
-    };
-
-    return Card(
-      margin: EdgeInsets.zero,
-      elevation: 0,
-      color: AppColors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        side: BorderSide(color: borderColor, width: 1),
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(
+          color: emphasized ? AppColors.borderStrong : AppColors.border,
+        ),
       ),
       child: Padding(
-        padding: padding ?? const EdgeInsets.all(AppSpacing.base),
-        child: child,
+        padding: padding ?? const EdgeInsets.all(AppSpacing.lg),
+        child: eyebrow == null
+            ? child
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(eyebrow!.toUpperCase(), style: AppTypography.eyebrow),
+                  const SizedBox(height: AppSpacing.md),
+                  child,
+                ],
+              ),
       ),
     );
   }

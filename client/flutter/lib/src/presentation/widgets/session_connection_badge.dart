@@ -19,17 +19,17 @@ class SessionConnectionBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dot = switch (tone) {
-      SessionConnectionBadgeTone.connected => AppColors.success,
-      SessionConnectionBadgeTone.warning => AppColors.warning,
+      SessionConnectionBadgeTone.connected => AppColors.ok,
+      SessionConnectionBadgeTone.warning => AppColors.warn,
       SessionConnectionBadgeTone.error => AppColors.error,
     };
 
     return Container(
       padding: AppUiMetrics.badgePadding,
       decoration: BoxDecoration(
-        color: AppColors.surfaceVariant,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppUiMetrics.badgeBorderRadius),
-        border: Border.all(color: dot.withValues(alpha: 0.6)),
+        border: Border.all(color: AppColors.borderStrong),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -40,13 +40,7 @@ class SessionConnectionBadge extends StatelessWidget {
             decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
           ),
           const SizedBox(width: AppUiMetrics.badgeDotGap),
-          Text(
-            label,
-            style: AppTypography.body(
-              size: AppUiMetrics.badgeFontSize,
-              weight: FontWeight.w600,
-            ),
-          ),
+          Text(label.toUpperCase(), style: AppTypography.caption),
         ],
       ),
     );

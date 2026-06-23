@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:application/src/presentation/ui/motion.dart';
+import 'package:application/src/presentation/ui/radius.dart';
 import 'package:application/src/presentation/ui/spacing.dart';
 import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
@@ -12,7 +15,7 @@ class SessionMenuOverlay extends StatelessWidget {
     required this.isOpen,
     required this.onToggle,
     required this.child,
-    this.handleIconSize = 45,
+    this.handleIconSize = 36,
     this.closedTop = 0,
     this.openTop = 108,
   });
@@ -42,20 +45,20 @@ class SessionMenuOverlay extends StatelessWidget {
               ignoring: !isOpen,
               child: AnimatedOpacity(
                 opacity: isOpen ? 1 : 0,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeInOut,
+                duration: AppMotion.standard,
+                curve: AppMotion.easing,
                 child: AnimatedSlide(
                   offset: isOpen ? Offset.zero : const Offset(0, -1.0),
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeInOut,
+                  duration: AppMotion.large,
+                  curve: AppMotion.easing,
                   child: child,
                 ),
               ),
             ),
           ),
           AnimatedPositioned(
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeInOut,
+            duration: AppMotion.large,
+            curve: AppMotion.easing,
             top: isOpen ? openTop : closedTop,
             left: 0,
             right: 0,
@@ -64,12 +67,12 @@ class SessionMenuOverlay extends StatelessWidget {
                 onTap: onToggle,
                 child: AnimatedRotation(
                   turns: isOpen ? 0.5 : 0.0,
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeInOut,
+                  duration: AppMotion.standard,
+                  curve: AppMotion.easing,
                   child: Icon(
-                    Icons.expand_more,
+                    LucideIcons.chevronDown,
                     size: handleIconSize,
-                    color: AppColors.primary,
+                    color: AppColors.action,
                   ),
                 ),
               ),
@@ -85,7 +88,7 @@ class SessionMenuCard extends StatelessWidget {
   const SessionMenuCard({
     super.key,
     required this.width,
-    required this.cornerRadius,
+    this.cornerRadius = AppRadius.md,
     required this.child,
   });
 
@@ -98,15 +101,15 @@ class SessionMenuCard extends StatelessWidget {
     return Container(
       width: width,
       padding: const EdgeInsets.fromLTRB(
-        AppSpacing.base,
         AppSpacing.md,
-        AppSpacing.base,
-        AppSpacing.base,
+        AppSpacing.sm + AppSpacing.xs,
+        AppSpacing.md,
+        AppSpacing.md,
       ),
       decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.94),
+        color: AppColors.surface2.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(cornerRadius),
-        border: Border.all(color: AppColors.outline),
+        border: Border.all(color: AppColors.borderStrong),
       ),
       child: child,
     );
@@ -123,6 +126,7 @@ class SessionMenuAction extends StatelessWidget {
     required this.labelFontSize,
     this.color,
     this.showSpinner = false,
+    this.onLongPress,
   });
 
   final IconData icon;
@@ -132,16 +136,18 @@ class SessionMenuAction extends StatelessWidget {
   final double labelFontSize;
   final Color? color;
   final bool showSpinner;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final actionColor = onPressed == null
-        ? AppColors.textMuted.withValues(alpha: 0.6)
+        ? AppColors.textFaint
         : (color ?? AppColors.textPrimary);
 
     return InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(10),
+      onLongPress: onLongPress,
+      borderRadius: BorderRadius.circular(AppRadius.sm),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm,
@@ -154,17 +160,18 @@ class SessionMenuAction extends StatelessWidget {
               SizedBox(
                 width: iconSize,
                 height: iconSize,
-                child: const CircularProgressIndicator(strokeWidth: 2),
+                child: const CircularProgressIndicator(strokeWidth: 1.5),
               )
             else
               Icon(icon, color: actionColor, size: iconSize),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              label,
-              style: AppTypography.body(
-                size: labelFontSize,
+              label.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.caption.copyWith(
+                fontSize: labelFontSize,
                 color: actionColor,
-                weight: FontWeight.w500,
               ),
             ),
           ],

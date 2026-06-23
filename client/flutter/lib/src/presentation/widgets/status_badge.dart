@@ -1,18 +1,14 @@
 import 'package:flutter/material.dart';
 
-import 'package:application/src/presentation/ui/radius.dart';
-import 'package:application/src/presentation/ui/ui_config.dart';
+import 'package:application/src/presentation/ui/metrics.dart';
 import 'package:application/src/presentation/ui/typography.dart';
+import 'package:application/src/presentation/ui/ui_config.dart';
 
 enum StatusBadgeTone { neutral, success, warning, error }
 
+/// 2px-radius mono chip with a status dot. The semantic colour lives in the
+/// dot only; the chip itself stays neutral.
 class StatusBadge extends StatelessWidget {
-  static const EdgeInsets _padding = EdgeInsets.symmetric(
-    horizontal: 10,
-    vertical: 6,
-  );
-  static const double _labelFontSize = 12;
-
   final String label;
   final StatusBadgeTone tone;
 
@@ -24,26 +20,31 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color accent = switch (tone) {
-      StatusBadgeTone.neutral => AppColors.primary,
-      StatusBadgeTone.success => AppColors.success,
-      StatusBadgeTone.warning => AppColors.warning,
+    final Color dot = switch (tone) {
+      StatusBadgeTone.neutral => AppColors.textMuted,
+      StatusBadgeTone.success => AppColors.ok,
+      StatusBadgeTone.warning => AppColors.warn,
       StatusBadgeTone.error => AppColors.error,
     };
 
     return Container(
-      padding: _padding,
+      padding: AppUiMetrics.badgePadding,
       decoration: BoxDecoration(
-        color: AppColors.surfaceVariant,
-        borderRadius: BorderRadius.circular(AppRadius.full),
-        border: Border.all(color: accent),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppUiMetrics.badgeBorderRadius),
+        border: Border.all(color: AppColors.borderStrong),
       ),
-      child: Text(
-        label,
-        style: AppTypography.body(
-          size: _labelFontSize,
-          weight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: AppUiMetrics.badgeDotSize,
+            height: AppUiMetrics.badgeDotSize,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: AppUiMetrics.badgeDotGap),
+          Text(label.toUpperCase(), style: AppTypography.caption),
+        ],
       ),
     );
   }
