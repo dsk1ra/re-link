@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:application/src/features/settings/data/local_settings.dart';
+import 'package:application/src/presentation/ui/metrics.dart';
+import 'package:application/src/presentation/ui/spacing.dart';
+import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
+import 'package:application/src/presentation/widgets/app_button.dart';
+import 'package:application/src/presentation/widgets/app_card.dart';
 
 /// Welcome and domain setup screen shown on first launch
 class WelcomeScreen extends StatefulWidget {
@@ -79,7 +84,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.error),
+      SnackBar(
+        content: Text(
+          message,
+          style: AppTypography.label.copyWith(color: AppColors.error),
+        ),
+      ),
     );
   }
 
@@ -109,6 +119,20 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
+  Widget _sectionLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(text.toUpperCase(), style: AppTypography.eyebrow),
+    );
+  }
+
+  Widget _helperText(String text) {
+    return Text(
+      text,
+      style: AppTypography.caption.copyWith(color: AppColors.textFaint),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 600;
@@ -120,282 +144,136 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: EdgeInsets.all(isMobile ? 16 : 32),
+            padding: EdgeInsets.all(isMobile ? AppSpacing.md : AppSpacing.xl),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 500),
+              constraints: const BoxConstraints(
+                maxWidth: AppUiMetrics.formWidth,
+              ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Welcome header
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.lg),
                   Text(
-                    'Welcome to Re:Link',
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                    'RE:LINK',
+                    style: AppTypography.eyebrow.copyWith(
+                      color: AppColors.action,
+                      fontSize: 13,
                     ),
-                    textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.md),
+                  Text('Welcome', style: AppTypography.h1),
+                  const SizedBox(height: AppSpacing.sm),
                   Text(
-                    'A privacy-first remote access system. To get started, please enter the address of your Re:Link server.',
-                    style: const TextStyle(
+                    'Server-blind, ephemeral peer-to-peer remote access. '
+                    'Point the client at your Re:Link server to begin — '
+                    'the server brokers the rendezvous and sees nothing else.',
+                    style: AppTypography.body.copyWith(
                       color: AppColors.textMuted,
-                      fontSize: 14,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 48),
-
-                  // Domain input
-                  Card(
-                    color: AppColors.surfaceVariant,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Server Address',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _domainController,
-                            cursorColor: AppColors.primary,
-                            style: const TextStyle(color: AppColors.textMuted),
-                            decoration: InputDecoration(
-                              hintText:
-                                  'https://your-domain.com or localhost:8080',
-                              hintStyle: const TextStyle(
-                                color: AppColors.textMuted,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: const BorderSide(
-                                  color: AppColors.outline,
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: const BorderSide(
-                                  color: AppColors.outline,
-                                ),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: const BorderSide(
-                                  color: AppColors.primary,
-                                  width: 1.5,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                            ),
-                            onChanged: (_) {
-                              setState(_syncDefaultIceServersFromDomain);
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Examples: localhost:8080, https://example.com, relay.example.com:8443',
-                            style: const TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 11,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Public ICE Host (optional)',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _iceHostController,
-                            cursorColor: AppColors.primary,
-                            style: const TextStyle(color: AppColors.textMuted),
-                            decoration: InputDecoration(
-                              hintText:
-                                  '203.0.113.10, stun.example.com, or host:3478',
-                              hintStyle: const TextStyle(
-                                color: AppColors.textMuted,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: const BorderSide(
-                                  color: AppColors.outline,
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: const BorderSide(
-                                  color: AppColors.outline,
-                                ),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: const BorderSide(
-                                  color: AppColors.primary,
-                                  width: 1.5,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                            ),
-                            onChanged: (_) {
-                              setState(_syncDefaultIceServersFromDomain);
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Optional. Set this when signaling and STUN/TURN '
-                            'are exposed on different public endpoints.',
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 11,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'ICE Servers (STUN/TURN JSON)',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          SwitchListTile.adaptive(
-                            value: _useDefaultIceForDomain,
-                            contentPadding: EdgeInsets.zero,
-                            activeThumbColor: AppColors.primary,
-                            title: const Text(
-                              'Use generated STUN config',
-                              style: TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Text(
-                              defaultIceJson.isEmpty
-                                  ? 'Enter server address to preview default STUN JSON'
-                                  : defaultIceJson,
-                              style: const TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 11,
-                              ),
-                            ),
-                            onChanged: (value) {
-                              setState(() {
-                                _useDefaultIceForDomain = value;
-                                if (_useDefaultIceForDomain) {
-                                  _syncDefaultIceServersFromDomain();
-                                }
-                              });
-                            },
-                          ),
-                          Text(
-                            defaultIceDescription,
-                            style: const TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 11,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _iceServersController,
-                            maxLines: 4,
-                            enabled: !_useDefaultIceForDomain,
-                            cursorColor: AppColors.primary,
-                            style: const TextStyle(color: AppColors.textMuted),
-                            decoration: InputDecoration(
-                              hintText:
-                                  '[{"urls":"stun:your-domain-or-ip:3478"},{"urls":["turn:turn.example.com:3478?transport=udp"],"username":"user","credential":"pass"}]',
-                              hintStyle: const TextStyle(
-                                color: AppColors.textMuted,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: const BorderSide(
-                                  color: AppColors.outline,
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: const BorderSide(
-                                  color: AppColors.outline,
-                                ),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: const BorderSide(
-                                  color: AppColors.primary,
-                                  width: 1.5,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                            ),
-                            onChanged: (_) => setState(() {
-                              _useDefaultIceForDomain = false;
-                            }),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'If you expose signaling through Cloudflare Tunnel, '
-                            'keep the server address as the tunnel URL and '
-                            'enter a separate public STUN/TURN host or IP here.',
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
-                  const SizedBox(height: 32),
-
-                  // Action buttons
+                  const SizedBox(height: AppSpacing.xl),
+                  AppCard(
+                    eyebrow: 'Server configuration',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _sectionLabel('Server address'),
+                        TextField(
+                          controller: _domainController,
+                          style: AppTypography.data,
+                          decoration: const InputDecoration(
+                            hintText:
+                                'https://your-domain.com or localhost:8080',
+                          ),
+                          onChanged: (_) {
+                            setState(_syncDefaultIceServersFromDomain);
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        _helperText(
+                          'localhost:8080 · https://example.com · '
+                          'relay.example.com:8443',
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        _sectionLabel('Public ICE host (optional)'),
+                        TextField(
+                          controller: _iceHostController,
+                          style: AppTypography.data,
+                          decoration: const InputDecoration(
+                            hintText:
+                                '203.0.113.10, stun.example.com, or host:3478',
+                          ),
+                          onChanged: (_) {
+                            setState(_syncDefaultIceServersFromDomain);
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        _helperText(
+                          'Set this when signaling and STUN/TURN are exposed '
+                          'on different public endpoints.',
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        _sectionLabel('ICE servers (STUN/TURN JSON)'),
+                        SwitchListTile.adaptive(
+                          value: _useDefaultIceForDomain,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            'Use generated STUN config',
+                            style: AppTypography.label,
+                          ),
+                          subtitle: Text(
+                            defaultIceJson.isEmpty
+                                ? 'Enter server address to preview default STUN JSON'
+                                : defaultIceJson,
+                            style: AppTypography.caption.copyWith(
+                              color: AppColors.textFaint,
+                            ),
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              _useDefaultIceForDomain = value;
+                              if (_useDefaultIceForDomain) {
+                                _syncDefaultIceServersFromDomain();
+                              }
+                            });
+                          },
+                        ),
+                        Text(
+                          defaultIceDescription,
+                          style: AppTypography.caption.copyWith(
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        TextField(
+                          controller: _iceServersController,
+                          maxLines: 4,
+                          enabled: !_useDefaultIceForDomain,
+                          style: AppTypography.data,
+                          decoration: const InputDecoration(
+                            hintText:
+                                '[{"urls":"stun:your-domain-or-ip:3478"},{"urls":["turn:turn.example.com:3478?transport=udp"],"username":"user","credential":"pass"}]',
+                          ),
+                          onChanged: (_) => setState(() {
+                            _useDefaultIceForDomain = false;
+                          }),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        _helperText(
+                          'If you expose signaling through Cloudflare Tunnel, '
+                          'keep the server address as the tunnel URL and '
+                          'enter a separate public STUN/TURN host or IP here.',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
                   SizedBox(
                     width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _saveDomain,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text(
-                        'Continue',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                    child: AppButton(onPressed: _saveDomain, label: 'Continue'),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: AppSpacing.lg),
                 ],
               ),
             ),

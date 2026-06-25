@@ -2,17 +2,21 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:application/src/features/network/data/server_error.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/features/network/data/windows_tls_compat.dart';
 import 'package:application/src/features/settings/data/local_settings.dart';
 import 'package:application/src/presentation/pages/initiator_page.dart';
 import 'package:application/src/presentation/pages/responder_page.dart';
 import 'package:application/src/presentation/ui/metrics.dart';
+import 'package:application/src/presentation/ui/radius.dart';
 import 'package:application/src/presentation/ui/spacing.dart';
 import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
 import 'package:application/src/presentation/widgets/app_card.dart';
 import 'package:application/src/presentation/widgets/domain_config_dialog.dart';
+import 'package:application/src/presentation/widgets/dot_grid_background.dart';
 import 'package:application/src/presentation/widgets/server_status_banner.dart';
 
 /// Main launcher page for P2P connection
@@ -36,14 +40,11 @@ class ConnectionPairingPage extends StatefulWidget {
 
 class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
   static const double _horizontalLayoutBreakpoint = 720;
-  static const double _maxContentWidth = 900;
-  static const double _cardBorderRadius = 16;
-  static const double _titleFontSize = 28;
-  static const double _cardTitleFontSize = 18;
-  static const double _cardSubtitleFontSize = 12;
+  static const Duration _healthCheckTimeout = Duration(seconds: 8);
 
   bool _connecting = false;
   bool _serverReachable = false;
+  String? _serverErrorMessage;
 
   @override
   void initState() {
@@ -54,31 +55,31 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
   Future<void> _connectToServer() async {
     setState(() {
       _connecting = true;
+      _serverErrorMessage = null;
     });
 
     final client = createPlatformHttpClientForBaseUrl(widget.signalingBaseUrl);
     try {
       final response = await client.get(
         Uri.parse('${widget.signalingBaseUrl}/health'),
-      );
+      ).timeout(_healthCheckTimeout);
+      final reachable = response.statusCode == 200;
       setState(() {
-        _serverReachable = response.statusCode == 200;
+        _serverReachable = reachable;
         _connecting = false;
+        if (!reachable) {
+          _serverErrorMessage =
+              'Server returned status ${response.statusCode}. '
+              'Verify the URL points to a Re:Link server.';
+        }
       });
     } catch (e) {
+      final classified = ServerError.classify(e);
       setState(() {
         _serverReachable = false;
         _connecting = false;
+        _serverErrorMessage = classified.userMessage;
       });
-      final details = e.toString();
-      if (details.contains('Operation not permitted') ||
-          details.contains('errno = 1')) {
-        _showSnackBar(
-          'Connection blocked by OS/network policy. Check firewall, VPN/proxy, or endpoint security and retry.',
-        );
-      } else {
-        _showSnackBar('Connection failed: $e');
-      }
     } finally {
       client.close();
     }
@@ -167,154 +168,170 @@ class _ConnectionPairingPageState extends State<ConnectionPairingPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(
-          'Re:Link',
-          style: AppTypography.title(size: AppUiMetrics.appBarTitleFontSize),
-        ),
-        centerTitle: true,
-        backgroundColor: AppColors.surface,
-        elevation: 0,
+        title: const Text('RE:LINK'),
         actions: [
           if (widget.settings != null)
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: IconButton(
-                icon: const Icon(Icons.settings),
+                icon: const Icon(LucideIcons.settings2),
                 tooltip: 'Change server address',
                 onPressed: _showDomainConfigDialog,
               ),
             ),
         ],
       ),
-      body: Column(
-        children: [
-          ServerStatusBanner(
-            connecting: _connecting,
-            connected: connected,
-            connectedText: 'Connected to server',
-            onRetry: _connectToServer,
-          ),
+      body: DotGridBackground(
+        child: Column(
+          children: [
+            ServerStatusBanner(
+              connecting: _connecting,
+              connected: connected,
+              connectedText: 'Connected to server',
+              errorDetail: _serverErrorMessage,
+              onRetry: _connectToServer,
+            ),
 
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final useHorizontalActions =
-                    constraints.maxWidth >= _horizontalLayoutBreakpoint;
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final useHorizontalActions =
+                      constraints.maxWidth >= _horizontalLayoutBreakpoint;
 
-                Widget buildActionCard({
-                  required String title,
-                  required String subtitle,
-                  required VoidCallback onTap,
-                  required bool enabled,
-                }) {
-                  return AppCard(
-                    variant: connected
-                        ? AppCardVariant.normal
-                        : AppCardVariant.warning,
-                    child: InkWell(
-                      onTap: enabled ? onTap : null,
-                      borderRadius: BorderRadius.circular(_cardBorderRadius),
-                      child: Padding(
-                        padding: const EdgeInsets.all(AppSpacing.lg),
+                  Widget buildActionCard({
+                    required String eyebrow,
+                    required String title,
+                    required String subtitle,
+                    required VoidCallback onTap,
+                    required bool enabled,
+                  }) {
+                    final titleColor = enabled
+                        ? AppColors.textPrimary
+                        : AppColors.textFaint;
+                    final subtitleColor = enabled
+                        ? AppColors.textMuted
+                        : AppColors.textFaint;
+                    return AppCard(
+                      padding: EdgeInsets.zero,
+                      emphasized: enabled,
+                      child: InkWell(
+                        onTap: enabled ? onTap : null,
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppSpacing.lg),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                eyebrow.toUpperCase(),
+                                style: AppTypography.eyebrow.copyWith(
+                                  color: enabled
+                                      ? AppColors.action
+                                      : AppColors.textFaint,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                              Text(
+                                title,
+                                style: AppTypography.h2.copyWith(
+                                  color: titleColor,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              Text(
+                                subtitle,
+                                style: AppTypography.body.copyWith(
+                                  color: subtitleColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  final actions = useHorizontalActions
+                      ? IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: buildActionCard(
+                                  eyebrow: 'Initiate',
+                                  title: 'Create connection',
+                                  subtitle: 'Generate a link to share',
+                                  onTap: _navigateToInitiator,
+                                  enabled: connected,
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.lg),
+                              Expanded(
+                                child: buildActionCard(
+                                  eyebrow: 'Respond',
+                                  title: 'Join connection',
+                                  subtitle: 'Use a shared link',
+                                  onTap: _navigateToResponder,
+                                  enabled: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Column(
+                          children: [
+                            buildActionCard(
+                              eyebrow: 'Initiate',
+                              title: 'Create connection',
+                              subtitle: 'Generate a link to share',
+                              onTap: _navigateToInitiator,
+                              enabled: connected,
+                            ),
+                            const SizedBox(height: AppSpacing.lg),
+                            buildActionCard(
+                              eyebrow: 'Respond',
+                              title: 'Join connection',
+                              subtitle: 'Use a shared link',
+                              onTap: _navigateToResponder,
+                              enabled: true,
+                            ),
+                          ],
+                        );
+
+                  return Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: AppUiMetrics.maxContentWidth,
+                        ),
                         child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              title,
-                              style: AppTypography.title(
-                                size: _cardTitleFontSize,
-                              ),
-                            ),
+                            Text('SESSION', style: AppTypography.eyebrow),
+                            const SizedBox(height: AppSpacing.sm),
+                            Text('Start a session', style: AppTypography.h1),
                             const SizedBox(height: AppSpacing.sm),
                             Text(
-                              subtitle,
-                              style: AppTypography.body(
-                                size: _cardSubtitleFontSize,
+                              'Direct peer-to-peer connection, brokered by a '
+                              'rendezvous server that sees nothing else.',
+                              style: AppTypography.body.copyWith(
                                 color: AppColors.textMuted,
                               ),
                             ),
+                            const SizedBox(height: AppSpacing.xl),
+                            actions,
                           ],
                         ),
                       ),
                     ),
                   );
-                }
-
-                final actions = useHorizontalActions
-                    ? Row(
-                        children: [
-                          Expanded(
-                            child: buildActionCard(
-                              title: 'Create Connection',
-                              subtitle: 'Generate a link to share',
-                              onTap: _navigateToInitiator,
-                              enabled: connected,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.base),
-                          Expanded(
-                            child: buildActionCard(
-                              title: 'Join Connection',
-                              subtitle: 'Use a shared link',
-                              onTap: _navigateToResponder,
-                              enabled: true,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Column(
-                        children: [
-                          buildActionCard(
-                            title: 'Create Connection',
-                            subtitle: 'Generate a link to share',
-                            onTap: _navigateToInitiator,
-                            enabled: connected,
-                          ),
-                          const SizedBox(height: AppSpacing.base),
-                          buildActionCard(
-                            title: 'Join Connection',
-                            subtitle: 'Use a shared link',
-                            onTap: _navigateToResponder,
-                            enabled: true,
-                          ),
-                        ],
-                      );
-
-                return Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: _maxContentWidth,
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'Start your session',
-                            style: AppTypography.title(size: _titleFontSize),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: AppSpacing.base),
-                          Text(
-                            'Direct connection via rendezvous server',
-                            style: AppTypography.body(
-                              color: AppColors.textMuted,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: AppSpacing.xl),
-                          actions,
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
