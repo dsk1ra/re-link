@@ -4,24 +4,31 @@ import 'dart:convert';
 import 'package:application/src/features/file_transfer/file_transfer_service.dart';
 import 'package:application/src/features/session/application/serial_task_queue.dart';
 import 'package:application/src/features/session/application/session_control_protocol.dart';
-import 'package:application/src/presentation/ui/metrics.dart';
 import 'package:application/src/presentation/ui/spacing.dart';
 import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
+import 'package:application/src/presentation/widgets/app_button.dart';
 import 'package:application/src/presentation/widgets/app_card.dart';
+import 'package:application/src/presentation/widgets/dot_grid_background.dart';
+import 'package:application/src/presentation/widgets/handshake_animation.dart';
 import 'package:application/src/presentation/widgets/session_connection_badge.dart';
 import 'package:application/src/presentation/widgets/session_file_transfer_sheet.dart';
 import 'package:application/src/presentation/widgets/session_menu_overlay.dart';
 import 'package:application/src/presentation/widgets/session_status_views.dart';
+import 'package:application/src/presentation/widgets/session_voice_dialog.dart';
+import 'package:application/src/presentation/widgets/remote_input_capture.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:application/src/features/network/data/server_error.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/pairing_code.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/features/pairing/domain/signaling_message.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
+import 'package:application/src/presentation/widgets/texture_video_view.dart';
+import 'package:application/src/rust/api/audio.dart' as rust_audio;
 import 'package:application/src/rust/api/connection.dart' as rust_connection;
-import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 
 /// Responder screen - joins using connection link
 class ResponderPage extends StatefulWidget {
@@ -47,15 +54,11 @@ class _ResponderPageState extends State<ResponderPage> {
 
   // ─── Layout / style constants ────────────────────────────────────────────
   static const double _maxFormWidth = 520;
-  static const double _formTitleFontSize = 20;
-  static const double _joinButtonVerticalPadding = 16;
-  static const double _joinSpinnerSize = 20;
-  static const double _menuHandleIconSize = 45;
-  static const double _floatingMenuWidth = 220;
-  static const double _floatingMenuIconSize = 22;
-  static const double _floatingMenuLabelFontSize = 11;
+  static const double _menuHandleIconSize = 36;
+  static const double _floatingMenuWidth = 280;
+  static const double _floatingMenuIconSize = 20;
+  static const double _floatingMenuLabelFontSize = 10;
   static const double _floatingMenuTopPadding = 10;
-  static const double _floatingMenuCornerRadius = 14;
   static const double _menuHandleClosedTop = 0;
   static const double _menuHandleOpenTop = 108;
   static const double _menuOverlayHeight = 170;
@@ -66,8 +69,10 @@ class _ResponderPageState extends State<ResponderPage> {
   WebRTCManager? _webrtcManager;
   FileTransferService? _fileTransferService;
   StreamSubscription<FileTransferState>? _fileTransferStateSubscription;
-  final rtc.RTCVideoRenderer _remoteRenderer = rtc.RTCVideoRenderer();
-  StreamSubscription<rtc.MediaStream>? _remoteStreamSubscription;
+  bool _hasRemoteVideo = false;
+  double? _remoteVideoWidth;
+  double? _remoteVideoHeight;
+  bool _remoteInputEnabled = false;
 
   RTCPeerConnectionState? _webrtcState;
 
@@ -80,7 +85,12 @@ class _ResponderPageState extends State<ResponderPage> {
   bool _joined = false;
   bool _isPeerDisconnected = false;
   bool _signalingClosed = false;
-  bool _showSessionMenu = false;
+  bool _showSessionMenu = true;
+  bool _audioActive = false;
+  bool _audioMuted = false;
+  bool _startingAudio = false;
+  String? _selectedAudioSourceId;
+  bool _handshakeComplete = false;
   bool _hasPendingIncomingFile = false;
   bool _isFileTransferSheetOpen = false;
   late final SessionControlProtocol _sessionControlProtocol;
@@ -104,6 +114,9 @@ class _ResponderPageState extends State<ResponderPage> {
         await _webrtcManager?.sendSessionClosed(id: id, reason: reason);
       },
       onHeartbeatTimeout: _handlePeerSessionClosed,
+      onIceRestartRequested: () async {
+        await _webrtcManager?.requestIceRestart();
+      },
     );
     _iceCandidateQueue = SerialTaskQueue<RTCIceCandidate>(
       processor: (candidate) async {
@@ -130,26 +143,7 @@ class _ResponderPageState extends State<ResponderPage> {
         _log.warning('Queued signal processing failed');
       },
     );
-    unawaited(_initRemoteRenderer());
     // ...
-  }
-
-  Future<void> _initRemoteRenderer() async {
-    await _remoteRenderer.initialize();
-  }
-
-  Future<void> _attachRemoteStream(rtc.MediaStream stream) async {
-    _remoteRenderer.srcObject = stream;
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  void _detachRemoteStream() {
-    _remoteRenderer.srcObject = null;
-    if (mounted) {
-      setState(() {});
-    }
   }
 
   // ...
@@ -164,17 +158,19 @@ class _ResponderPageState extends State<ResponderPage> {
       await _webrtcManager!.initialize();
       _attachFileTransferService(_webrtcManager!);
 
-      _remoteStreamSubscription?.cancel();
-      _remoteStreamSubscription = _webrtcManager!.onRemoteStream.listen((
-        stream,
-      ) {
-        unawaited(_attachRemoteStream(stream));
+      _webrtcManager!.onVideoFrameSize.listen((frame) {
+        final w = frame.width.toDouble();
+        final h = frame.height.toDouble();
+        final needsRebuild =
+            !_hasRemoteVideo || w != _remoteVideoWidth || h != _remoteVideoHeight;
+        if (needsRebuild && mounted) {
+          setState(() {
+            _hasRemoteVideo = true;
+            _remoteVideoWidth = w;
+            _remoteVideoHeight = h;
+          });
+        }
       });
-
-      final existingStream = _webrtcManager!.remoteStream;
-      if (existingStream != null) {
-        await _attachRemoteStream(existingStream);
-      }
 
       _webrtcManager!.onStateChange.listen((state) {
         setState(() => _webrtcState = state);
@@ -198,7 +194,14 @@ class _ResponderPageState extends State<ResponderPage> {
         unawaited(_handleIncomingFileTransferRequest());
       });
       _webrtcManager!.onScreenShareStopped.listen((_) {
-        _detachRemoteStream();
+        if (mounted) {
+          setState(() {
+            _hasRemoteVideo = false;
+            _remoteVideoWidth = null;
+            _remoteVideoHeight = null;
+            _remoteInputEnabled = false;
+          });
+        }
         _showSnackBar('Host stopped sharing screen');
       });
       _webrtcManager!.onPeerSessionClosed.listen((_) {
@@ -225,7 +228,6 @@ class _ResponderPageState extends State<ResponderPage> {
       _cancelHandshakeTimeout();
       await _webrtcManager?.dispose();
       _disposeFileTransferService();
-      _detachRemoteStream();
       if (!mounted) return;
 
       final isRecoverableRendezvousError = _isRendezvousStatusError(e);
@@ -267,7 +269,6 @@ class _ResponderPageState extends State<ResponderPage> {
       _mailboxSubscription = null;
       await _webrtcManager?.dispose();
       _disposeFileTransferService();
-      _detachRemoteStream();
 
       if (!mounted) return;
       setState(() {
@@ -297,12 +298,10 @@ class _ResponderPageState extends State<ResponderPage> {
     _connectionService.dispose();
     _tokenController.dispose();
     _mailboxSubscription?.cancel();
-    _remoteStreamSubscription?.cancel();
     _sessionControlProtocol.dispose();
     _iceCandidateQueue.dispose();
     _signalQueue.dispose();
     _disposeFileTransferService();
-    _remoteRenderer.dispose();
     _webrtcManager?.dispose();
     super.dispose();
   }
@@ -391,15 +390,24 @@ class _ResponderPageState extends State<ResponderPage> {
         _responderMailboxId = mailboxId;
         _joiningConnection = false;
         _joined = true;
+        _handshakeComplete = false;
       });
 
       _startHandshakeTimeout();
       await _startWebRTCHandshake();
-    } catch (e) {
+    } on MailboxNotFoundException {
       _cancelHandshakeTimeout();
       setState(() {
         _joiningConnection = false;
-        _joinError = e.toString();
+        _joinError =
+            'Link expired or invalid. Ask the host for a new connection link.';
+      });
+    } catch (e) {
+      _cancelHandshakeTimeout();
+      final classified = ServerError.classify(e);
+      setState(() {
+        _joiningConnection = false;
+        _joinError = classified.userMessage;
       });
     }
   }
@@ -482,13 +490,14 @@ class _ResponderPageState extends State<ResponderPage> {
         await _webrtcManager!.addIceCandidate(candidate);
       } else if (signalingMsg.type == 'disconnect') {
         _showSnackBar('Peer has disconnected.');
-        _detachRemoteStream();
         await _webrtcManager?.dispose();
         _disposeFileTransferService();
         setState(() {
           _webrtcManager = null;
           _webrtcState = null;
           _isPeerDisconnected = true;
+          _audioActive = false;
+          _audioMuted = false;
         });
       }
     } catch (_) {
@@ -538,6 +547,88 @@ class _ResponderPageState extends State<ResponderPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  // ─── Voice chat ───────────────────────────────────────────────────────────
+
+  Future<void> _handleVoiceAction() async {
+    final manager = _webrtcManager;
+    if (manager == null) return;
+
+    if (!_audioActive) {
+      await _openVoiceDialog();
+      return;
+    }
+
+    final muteNext = !_audioMuted;
+    try {
+      await manager.setAudioMuted(muteNext);
+      if (!mounted) return;
+      setState(() => _audioMuted = muteNext);
+    } catch (e) {
+      _log.warning('Microphone mute toggle failed: $e');
+      _showSnackBar('Failed to ${muteNext ? 'mute' : 'unmute'} microphone');
+    }
+  }
+
+  Future<void> _openVoiceDialog() async {
+    final manager = _webrtcManager;
+    if (manager == null) return;
+
+    List<rust_audio.AudioSourceDto> sources;
+    try {
+      sources = await manager.listAudioSources();
+    } catch (e) {
+      _showSnackBar('Failed to list microphones');
+      return;
+    }
+    if (!mounted) return;
+
+    final result = await showSessionVoiceDialog(
+      context: context,
+      sources: sources,
+      selectedSourceId: _selectedAudioSourceId,
+      audioActive: _audioActive,
+    );
+    if (result == null || !mounted) return;
+
+    switch (result.action) {
+      case VoiceDialogAction.start:
+        setState(() {
+          _startingAudio = true;
+          _selectedAudioSourceId = result.sourceId;
+        });
+        try {
+          await manager.startAudioCapture(sourceId: result.sourceId);
+          if (!mounted) return;
+          setState(() {
+            _audioActive = true;
+            _audioMuted = false;
+          });
+        } catch (e) {
+          _log.warning('Voice start failed: $e');
+          _showSnackBar('Failed to start voice');
+        } finally {
+          if (mounted) setState(() => _startingAudio = false);
+        }
+      case VoiceDialogAction.apply:
+        try {
+          await manager.setAudioSource(result.sourceId);
+          if (!mounted) return;
+          setState(() => _selectedAudioSourceId = result.sourceId);
+        } catch (e) {
+          _showSnackBar('Failed to switch microphone');
+        }
+      case VoiceDialogAction.stop:
+        try {
+          await manager.stopAudioCapture();
+        } catch (_) {}
+        if (!mounted) return;
+        setState(() {
+          _audioActive = false;
+          _audioMuted = false;
+        });
+    }
+  }
+
   Future<void> _handleIncomingFileTransferRequest() async {
     if (!mounted || _webrtcManager == null || _fileTransferService == null) {
       return;
@@ -568,13 +659,14 @@ class _ResponderPageState extends State<ResponderPage> {
     _cancelHandshakeTimeout();
     _showSnackBar('Peer has disconnected.');
     _sessionControlProtocol.stopHeartbeat();
-    _detachRemoteStream();
     await _webrtcManager?.dispose();
     _disposeFileTransferService();
     setState(() {
       _webrtcManager = null;
       _webrtcState = null;
       _isPeerDisconnected = true;
+      _audioActive = false;
+      _audioMuted = false;
     });
   }
 
@@ -663,23 +755,29 @@ class _ResponderPageState extends State<ResponderPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('End Connection?'),
-        content: const Text(
-          'You are currently in an active session. Disconnecting will end the connection for both parties.',
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('ACTIVE SESSION', style: AppTypography.eyebrow),
+            const SizedBox(height: AppSpacing.sm),
+            Text('End connection?', style: AppTypography.h2),
+          ],
+        ),
+        content: Text(
+          'Disconnecting ends the encrypted session for both parties. '
+          'Session keys are discarded.',
+          style: AppTypography.body.copyWith(color: AppColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             style: TextButton.styleFrom(foregroundColor: AppColors.textMuted),
-            child: const Text('Keep Connected'),
+            child: const Text('KEEP CONNECTED'),
           ),
-          ElevatedButton(
+          OutlinedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Disconnect'),
+            style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('DISCONNECT'),
           ),
         ],
       ),
@@ -719,15 +817,7 @@ class _ResponderPageState extends State<ResponderPage> {
         appBar: isConnected
             ? null
             : AppBar(
-                title: Text(
-                  'Join Connection',
-                  style: AppTypography.title(
-                    size: AppUiMetrics.appBarTitleFontSize,
-                  ),
-                ),
-                backgroundColor: AppColors.surface,
-                elevation: 0,
-                iconTheme: const IconThemeData(color: AppColors.textPrimary),
+                title: const Text('JOIN CONNECTION'),
                 actions: [
                   if (_joined) ...[
                     _buildConnectionBadge(),
@@ -735,7 +825,9 @@ class _ResponderPageState extends State<ResponderPage> {
                   ],
                 ],
               ),
-        body: !_joined ? _buildJoinForm() : _buildConnectedLayout(),
+        body: !_joined
+            ? DotGridBackground(child: _buildJoinForm())
+            : _buildConnectedLayout(),
       ),
     );
   }
@@ -773,78 +865,70 @@ class _ResponderPageState extends State<ResponderPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: AppSpacing.xl),
+              Text('RESPOND', style: AppTypography.eyebrow),
+              const SizedBox(height: AppSpacing.sm),
+              Text('Join a session', style: AppTypography.h1),
+              const SizedBox(height: AppSpacing.sm),
               Text(
-                'Enter connection link',
-                style: AppTypography.title(size: _formTitleFontSize),
-                textAlign: TextAlign.center,
+                'Paste the invite link you received. The security key in the '
+                'link fragment never reaches the server.',
+                style: AppTypography.body.copyWith(color: AppColors.textMuted),
               ),
-              const SizedBox(height: AppSpacing.xl),
+              const SizedBox(height: AppSpacing.lg),
               TextField(
                 controller: _tokenController,
-                style: AppTypography.body(),
-                decoration: InputDecoration(
-                  labelText: 'Paste link or token',
-                  labelStyle: AppTypography.body(color: AppColors.textMuted),
-                  border: const OutlineInputBorder(),
-                  enabledBorder: const OutlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.outline),
-                  ),
-                  focusedBorder: const OutlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.primary, width: 2),
-                  ),
-                  prefixIcon: const Icon(
-                    Icons.link,
+                style: AppTypography.data,
+                decoration: const InputDecoration(
+                  hintText: 'Paste link or token',
+                  prefixIcon: Icon(
+                    LucideIcons.link,
                     color: AppColors.textMuted,
+                    size: 18,
                   ),
-                  filled: true,
-                  fillColor: AppColors.surface,
                 ),
                 maxLines: 3,
               ),
-              const SizedBox(height: AppSpacing.base),
-              ElevatedButton.icon(
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
                 onPressed: _joiningConnection ? null : _joinWithToken,
-                icon: _joiningConnection
-                    ? const SizedBox(
-                        width: _joinSpinnerSize,
-                        height: _joinSpinnerSize,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.login),
-                label: Text(
-                  _joiningConnection ? 'Joining...' : 'Join Connection',
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.onPrimary,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: _joinButtonVerticalPadding,
-                  ),
-                ),
+                loading: _joiningConnection,
+                label: _joiningConnection ? 'Joining' : 'Join connection',
               ),
               if (_verificationCode != null) ...[
-                const SizedBox(height: AppSpacing.base),
+                const SizedBox(height: AppSpacing.lg),
                 _buildVerificationCodeCard(
                   _verificationCode!,
                   'Read this code to the host before the session is accepted.',
                 ),
               ],
               if (_joinError != null) ...[
-                const SizedBox(height: AppSpacing.base),
+                const SizedBox(height: AppSpacing.lg),
                 AppCard(
-                  variant: AppCardVariant.error,
+                  emphasized: true,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Error',
-                        style: AppTypography.body(
-                          weight: FontWeight.w700,
-                          color: AppColors.error,
-                        ),
+                      Row(
+                        children: [
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: const BoxDecoration(
+                              color: AppColors.error,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Text(
+                            'JOIN FAILED',
+                            style: AppTypography.eyebrow.copyWith(
+                              color: AppColors.error,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      Text(_joinError!, style: AppTypography.body()),
+                      Text(_joinError!, style: AppTypography.body),
                     ],
                   ),
                 ),
@@ -858,23 +942,17 @@ class _ResponderPageState extends State<ResponderPage> {
 
   Widget _buildVerificationCodeCard(String code, String message) {
     return AppCard(
+      eyebrow: 'Verify with peer',
+      emphasized: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Text(code, style: AppTypography.displayData),
+          const SizedBox(height: AppSpacing.md),
           Text(
-            'Verification Code',
-            style: AppTypography.body(weight: FontWeight.w700),
+            message,
+            style: AppTypography.body.copyWith(color: AppColors.textMuted),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            code,
-            style: AppTypography.mono(
-              size: _formTitleFontSize,
-              weight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(message, style: AppTypography.body(color: AppColors.textMuted)),
         ],
       ),
     );
@@ -889,27 +967,34 @@ class _ResponderPageState extends State<ResponderPage> {
       );
     }
 
-    if (_webrtcState !=
-        RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: _maxFormWidth),
-            child: Column(
-              children: [
-                const SizedBox(height: AppSpacing.xl),
-                const SessionConnectingView(
-                  message: 'Establishing connection...',
-                ),
-                if (_verificationCode != null) ...[
+    final isConnected =
+        _webrtcState == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+    if (!isConnected || !_handshakeComplete) {
+      return DotGridBackground(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _maxFormWidth),
+              child: Column(
+                children: [
                   const SizedBox(height: AppSpacing.xl),
-                  _buildVerificationCodeCard(
-                    _verificationCode!,
-                    'Keep this visible until the host confirms the same code.',
+                  HandshakeAnimation(
+                    connected: isConnected,
+                    onFinished: () {
+                      if (!mounted) return;
+                      setState(() => _handshakeComplete = true);
+                    },
                   ),
+                  if (_verificationCode != null) ...[
+                    const SizedBox(height: AppSpacing.xl),
+                    _buildVerificationCodeCard(
+                      _verificationCode!,
+                      'Keep this visible until the host confirms the same code.',
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -921,16 +1006,56 @@ class _ResponderPageState extends State<ResponderPage> {
       children: [
         Container(
           color: AppColors.background,
-          child: _remoteRenderer.srcObject != null
-              ? rtc.RTCVideoView(
-                  _remoteRenderer,
-                  objectFit:
-                      rtc.RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+          child: _hasRemoteVideo && _webrtcManager != null
+              ? RemoteInputCapture(
+                  webrtcManager: _webrtcManager!,
+                  sourceWidth: _remoteVideoWidth,
+                  sourceHeight: _remoteVideoHeight,
+                  enabled: _remoteInputEnabled,
+                  child: TextureVideoView(
+                    sourceWidth: _remoteVideoWidth,
+                    sourceHeight: _remoteVideoHeight,
+                  ),
                 )
               : Center(
-                  child: Text(
-                    'Waiting for shared screen…',
-                    style: AppTypography.body(color: AppColors.textMuted),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: const BoxDecoration(
+                              color: AppColors.ok,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Text(
+                            'SESSION ACTIVE · VIEWER',
+                            style: AppTypography.eyebrow.copyWith(
+                              color: AppColors.ok,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        'Connected to host',
+                        style: AppTypography.h2,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        'The host has not started sharing their screen yet.\n'
+                        'Use the menu to transfer files while you wait.',
+                        style: AppTypography.body.copyWith(
+                          color: AppColors.textMuted,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
                 ),
         ),
@@ -968,24 +1093,60 @@ class _ResponderPageState extends State<ResponderPage> {
   Widget _buildFloatingMenu() {
     return SessionMenuCard(
       width: _floatingMenuWidth,
-      cornerRadius: _floatingMenuCornerRadius,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          SessionMenuAction(
-            icon: Icons.swap_horiz,
-            label: 'Files',
-            iconSize: _floatingMenuIconSize,
-            labelFontSize: _floatingMenuLabelFontSize,
-            onPressed: _openFileTransferSheet,
+          if (_hasRemoteVideo)
+            Flexible(
+              child: SessionMenuAction(
+                icon: _remoteInputEnabled
+                    ? LucideIcons.mousePointerClick
+                    : LucideIcons.mousePointer,
+                label: _remoteInputEnabled ? 'Input on' : 'Input off',
+                iconSize: _floatingMenuIconSize,
+                labelFontSize: _floatingMenuLabelFontSize,
+                color: _remoteInputEnabled ? AppColors.ok : null,
+                onPressed: () =>
+                    setState(() => _remoteInputEnabled = !_remoteInputEnabled),
+              ),
+            ),
+          Flexible(
+            child: SessionMenuAction(
+              icon: LucideIcons.arrowLeftRight,
+              label: 'Files',
+              iconSize: _floatingMenuIconSize,
+              labelFontSize: _floatingMenuLabelFontSize,
+              onPressed: _openFileTransferSheet,
+            ),
           ),
-          SessionMenuAction(
-            icon: Icons.call_end,
-            label: 'Disconnect',
-            iconSize: _floatingMenuIconSize,
-            labelFontSize: _floatingMenuLabelFontSize,
-            color: AppColors.error,
-            onPressed: () => Navigator.of(context).maybePop(),
+          Flexible(
+            child: SessionMenuAction(
+              icon: _audioActive && !_audioMuted
+                  ? LucideIcons.mic
+                  : LucideIcons.micOff,
+              label: _startingAudio
+                  ? 'Starting'
+                  : _audioActive
+                  ? (_audioMuted ? 'Unmute' : 'Mute')
+                  : 'Voice',
+              iconSize: _floatingMenuIconSize,
+              labelFontSize: _floatingMenuLabelFontSize,
+              onPressed: _webrtcManager == null || _startingAudio
+                  ? null
+                  : _handleVoiceAction,
+              onLongPress: _audioActive ? _openVoiceDialog : null,
+              showSpinner: _startingAudio,
+            ),
+          ),
+          Flexible(
+            child: SessionMenuAction(
+              icon: LucideIcons.phoneOff,
+              label: 'Disconnect',
+              iconSize: _floatingMenuIconSize,
+              labelFontSize: _floatingMenuLabelFontSize,
+              color: AppColors.error,
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
           ),
         ],
       ),

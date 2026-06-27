@@ -15,6 +15,8 @@ class SerialTaskQueue<T> {
   final AsyncTaskErrorHandler? _onError;
   final List<T> _items = <T>[];
 
+  int get length => _items.length;
+
   bool _isProcessing = false;
   bool _isScheduled = false;
   bool _isDisposed = false;

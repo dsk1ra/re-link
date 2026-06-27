@@ -6,6 +6,7 @@
 #endif
 
 #include "flutter/generated_plugin_registrant.h"
+#include "relink_video_texture.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -46,11 +47,11 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "application");
+    gtk_header_bar_set_title(header_bar, "Re:Link");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "application");
+    gtk_window_set_title(window, "Re:Link");
   }
 
   gtk_window_set_default_size(window, 1280, 720);
@@ -72,6 +73,19 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+
+  // Register the zero-copy video texture. The id is published into the Rust
+  // crate so a FRB-sync getter can hand it to Dart.
+  FlEngine* engine = fl_view_get_engine(view);
+  FlTextureRegistrar* registrar = fl_engine_get_texture_registrar(engine);
+  if (registrar != nullptr) {
+    int64_t texture_id = relink_video_texture_register(registrar);
+    if (texture_id == 0) {
+      g_warning("relink_video_texture: registration returned 0");
+    }
+  } else {
+    g_warning("relink_video_texture: no texture registrar from engine");
+  }
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }

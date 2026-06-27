@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:application/src/features/network/data/server_error.dart';
 import 'package:application/src/features/pairing/data/connection_service.dart';
 import 'package:application/src/features/pairing/domain/signaling_backend.dart';
 import 'package:application/src/features/pairing/domain/signaling_message.dart';
@@ -13,18 +16,25 @@ import 'package:application/src/features/pairing/domain/pairing_code.dart';
 import 'package:application/src/features/session/application/serial_task_queue.dart';
 import 'package:application/src/features/session/application/session_control_protocol.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
-import 'package:application/src/presentation/ui/metrics.dart';
+import 'package:application/src/presentation/ui/radius.dart';
 import 'package:application/src/presentation/ui/spacing.dart';
 import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
+import 'package:application/src/presentation/widgets/app_button.dart';
 import 'package:application/src/presentation/widgets/app_card.dart';
 import 'package:application/src/presentation/widgets/app_ttl_timer.dart';
+import 'package:application/src/presentation/widgets/dot_grid_background.dart';
+import 'package:application/src/presentation/widgets/handshake_animation.dart';
 import 'package:application/src/presentation/widgets/session_connection_badge.dart';
 import 'package:application/src/presentation/widgets/session_file_transfer_sheet.dart';
 import 'package:application/src/presentation/widgets/session_menu_overlay.dart';
 import 'package:application/src/presentation/widgets/session_status_views.dart';
+import 'package:application/src/presentation/widgets/session_voice_dialog.dart';
+import 'package:application/src/rust/api/audio.dart' as rust_audio;
 import 'package:application/src/rust/api/connection.dart' as rust_connection;
-import 'package:application/src/rust/api/share.dart' as rust_share;
+import 'package:application/src/presentation/widgets/raw_video_frame_view.dart';
+import 'package:application/src/rust/api/screen_capture.dart'
+    as rust_screen_capture;
 
 /// Initiator screen - creates and shares connection link
 class InitiatorPage extends StatefulWidget {
@@ -47,33 +57,19 @@ class _InitiatorPageState extends State<InitiatorPage> {
   static final Logger _log = Logger('InitiatorPage');
 
   // ─── Layout / style constants ────────────────────────────────────────────
-  static const double _sectionTitleFontSize = 18;
-  static const double _sessionTitleFontSize = 22;
-  static const double _linkFontSize = 12;
-  static const double _dialogDetailFontSize = 12;
-  static const double _dropdownItemFontSize = 14;
-  static const double _advancedOptionsFontSize = 13;
   static const double _maxPairingBodyWidth = 600;
-  static const double _sessionIconSize = 88;
   static const double _shareDialogWidth = 400;
   static const double _shareDropdownItemWidth = 320;
-  static const double _menuHandleIconSize = 45;
-  static const double _floatingMenuWidth = 280;
-  static const double _floatingMenuIconSize = 22;
-  static const double _floatingMenuLabelFontSize = 11;
+  static const double _menuHandleIconSize = 36;
+  static const double _floatingMenuWidth = 340;
+  static const double _floatingMenuIconSize = 20;
+  static const double _floatingMenuLabelFontSize = 10;
   static const double _floatingMenuTopPadding = 10;
-  static const double _floatingMenuCornerRadius = 14;
-  static const double _floatingMenuStatusFontSize = 12;
   static const double _menuHandleClosedTop = 0;
   static const double _menuHandleOpenTop = 108;
   static const double _menuOverlayHeight = 170;
 
-  static const EdgeInsets _shareDropdownContentPadding = EdgeInsets.symmetric(
-    horizontal: 12,
-    vertical: 10,
-  );
-  static const double _dialogSpacing = AppSpacing.base;
-  static const int _autoShareFps = 30;
+  static const int _autoShareFps = 60;
 
   late ConnectionService _connectionService;
   WebRTCManager? _webrtcManager;
@@ -94,17 +90,27 @@ class _InitiatorPageState extends State<InitiatorPage> {
   StreamSubscription? _mailboxSubscription;
   bool _signalingClosed = false;
   late final SessionControlProtocol _sessionControlProtocol;
-  List<rust_share.SourceDescriptor> _shareSources = const [];
+  List<rust_screen_capture.CaptureSourceDto> _shareSources = const [];
   String? _selectedSourceId;
-  // 0 = Auto (adaptive), 1–5 = fixed kbps from _bitrateSteps
-  int _bitrateSliderIndex = 0;
-  static const List<int?> _bitrateSteps = [null, 500, 1000, 2000, 4000, 8000];
-  StreamSubscription<ScreenShareQualityStatus>? _qualitySubscription;
+  bool get _isPortalSource =>
+      _shareSources.length == 1 && _shareSources.first.kind == 'portal';
+  // Acts as the ceiling for network-adaptive quality; capture starts here
+  // and steps down automatically on packet loss.
+  int _bitrateSliderIndex = 3;
+  static const List<int> _bitrateSteps = [500, 1000, 2000, 4000, 6000, 8000];
   bool _loadingShareSources = false;
   bool _startingShare = false;
   bool _stoppingShare = false;
   bool _isScreenSharing = false;
-  bool _showSessionMenu = false;
+  bool _localPreview = false;
+  bool _shareSystemAudio = true;
+  bool _audioActive = false;
+  bool _audioMuted = false;
+  bool _remoteControlAllowed = false;
+  bool _startingAudio = false;
+  String? _selectedAudioSourceId;
+  bool _showSessionMenu = true;
+  bool _handshakeComplete = false;
   String? _shareStatus;
   bool _hasPendingIncomingFile = false;
   bool _isFileTransferSheetOpen = false;
@@ -132,6 +138,9 @@ class _InitiatorPageState extends State<InitiatorPage> {
         await _webrtcManager?.sendSessionClosed(id: id, reason: reason);
       },
       onHeartbeatTimeout: _handlePeerSessionClosed,
+      onIceRestartRequested: () async {
+        await _webrtcManager?.requestIceRestart();
+      },
     );
     _iceCandidateQueue = SerialTaskQueue<RTCIceCandidate>(
       processor: (candidate) async {
@@ -197,6 +206,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
         if (!mounted) return;
         setState(() {
           _isScreenSharing = false;
+          _localPreview = false;
+          _remoteControlAllowed = false;
           _shareStatus = 'Peer stopped sharing screen.';
         });
       });
@@ -270,22 +281,22 @@ class _InitiatorPageState extends State<InitiatorPage> {
   Future<void> _loadShareSources() async {
     setState(() => _loadingShareSources = true);
     try {
-      final sources = await _webrtcManager?.listShareSources() ?? const [];
+      final sources = _webrtcManager?.listCaptureSources() ?? const [];
 
       final selectedStillValid =
           _selectedSourceId != null &&
-          sources.any((source) => source.sourceId == _selectedSourceId);
+          sources.any((source) => source.id == _selectedSourceId);
 
       setState(() {
         _shareSources = sources;
         _selectedSourceId = selectedStillValid
             ? _selectedSourceId
-            : (sources.isNotEmpty ? sources.first.sourceId : null);
+            : (sources.isNotEmpty ? sources.first.id : null);
         _shareStatus = sources.isEmpty ? 'No share sources available.' : null;
       });
-    } catch (e) {
+    } catch (e, st) {
       setState(() {
-        _shareStatus = 'Failed to load share sources: $e';
+        _shareStatus = 'Failed to load share sources: $e\n\n$st';
       });
     } finally {
       if (mounted) {
@@ -308,28 +319,30 @@ class _InitiatorPageState extends State<InitiatorPage> {
 
     setState(() => _startingShare = true);
     try {
-      final refreshedSources =
-          await _webrtcManager?.listShareSources() ?? const [];
-      if (refreshedSources.isNotEmpty) {
-        final selectedStillValid = refreshedSources.any(
-          (source) => source.sourceId == _selectedSourceId,
-        );
+      if (!_isPortalSource) {
+        final refreshedSources =
+            _webrtcManager?.listCaptureSources() ?? const [];
+        if (refreshedSources.isNotEmpty) {
+          final selectedStillValid = refreshedSources.any(
+            (source) => source.id == _selectedSourceId,
+          );
 
-        if (!selectedStillValid) {
-          final fallbackSource = refreshedSources.first;
-          if (mounted) {
+          if (!selectedStillValid) {
+            final fallbackSource = refreshedSources.first;
+            if (mounted) {
+              setState(() {
+                _shareSources = refreshedSources;
+                _selectedSourceId = fallbackSource.id;
+              });
+            }
+            _showSnackBar(
+              'Selected source is no longer available. Using: ${fallbackSource.name}',
+            );
+          } else if (mounted) {
             setState(() {
               _shareSources = refreshedSources;
-              _selectedSourceId = fallbackSource.sourceId;
             });
           }
-          _showSnackBar(
-            'Selected source is no longer available. Using: ${fallbackSource.name}',
-          );
-        } else if (mounted) {
-          setState(() {
-            _shareSources = refreshedSources;
-          });
         }
       }
 
@@ -338,36 +351,37 @@ class _InitiatorPageState extends State<InitiatorPage> {
       }
 
       final bitrateKbps = _bitrateSteps[_bitrateSliderIndex];
-      await _qualitySubscription?.cancel();
-      _qualitySubscription = webrtcManager.onScreenShareStatus.listen((status) {
-        if (!mounted) return;
-        setState(() {
-          _shareStatus = _buildShareStatus(status);
-        });
-      });
 
       await webrtcManager.startScreenCapture(
         sourceId: _selectedSourceId!,
         fps: _autoShareFps,
-        bitrateKbps: bitrateKbps,
+        targetBitrateKbps: bitrateKbps,
+        localPreview: _localPreview,
       );
 
-      final currentShareStatus = webrtcManager.currentScreenShareStatus;
+      // Desktop audio is Linux/PipeWire only for now and best-effort: a
+      // failure here (e.g. no sink monitor available) shouldn't block the
+      // screen share itself, just leave it silent.
+      if (Platform.isLinux && _shareSystemAudio) {
+        try {
+          await webrtcManager.startDesktopAudioCapture();
+        } catch (e) {
+          _log.warning('Desktop audio capture failed to start: $e');
+        }
+      }
 
       setState(() {
         _isScreenSharing = true;
-        _shareStatus = currentShareStatus == null
-            ? 'Sharing screen...'
-            : _buildShareStatus(currentShareStatus);
+        _shareStatus =
+            'Sharing screen · adaptive, up to ${bitrateKbps}kbps @ ${_autoShareFps}fps';
       });
-    } catch (e) {
-      _qualitySubscription?.cancel();
-      _qualitySubscription = null;
+    } catch (e, st) {
       setState(() {
-        _shareStatus = 'Failed to start share: $e';
+        _shareStatus = 'Failed to start share: $e\n\n$st';
         _isScreenSharing = false;
+        _remoteControlAllowed = false;
       });
-      _showSnackBar('Failed to start share');
+      _showSnackBar('Failed to start share — tap error to copy');
     } finally {
       if (mounted) {
         setState(() => _startingShare = false);
@@ -382,11 +396,16 @@ class _InitiatorPageState extends State<InitiatorPage> {
     try {
       await _webrtcManager?.stopScreenCapture();
       await _webrtcManager?.sendScreenShareStopped();
-      await _qualitySubscription?.cancel();
-      _qualitySubscription = null;
+      if (_remoteControlAllowed) {
+        await _webrtcManager?.setRemoteControlAllowed(false);
+      }
+      if (Platform.isLinux && (_webrtcManager?.isDesktopAudioCaptureActive ?? false)) {
+        await _webrtcManager?.stopDesktopAudioCapture();
+      }
 
       setState(() {
         _isScreenSharing = false;
+        _remoteControlAllowed = false;
         _shareStatus = 'Screen sharing stopped.';
       });
     } catch (e) {
@@ -401,26 +420,118 @@ class _InitiatorPageState extends State<InitiatorPage> {
     }
   }
 
-  String _sourceKindLabel(rust_share.SourceKind kind) {
+  // ─── Remote control consent ────────────────────────────────────────────────
+
+  Future<void> _toggleRemoteControl() async {
+    final manager = _webrtcManager;
+    if (manager == null) return;
+
+    final next = !_remoteControlAllowed;
+    try {
+      await manager.setRemoteControlAllowed(next);
+      if (!mounted) return;
+      setState(() => _remoteControlAllowed = next);
+    } catch (e) {
+      _log.warning('Remote control toggle failed: $e');
+      _showSnackBar('Failed to ${next ? 'enable' : 'disable'} remote control');
+    }
+  }
+
+  // ─── Voice chat ───────────────────────────────────────────────────────────
+
+  Future<void> _handleVoiceAction() async {
+    final manager = _webrtcManager;
+    if (manager == null) return;
+
+    if (!_audioActive) {
+      await _openVoiceDialog();
+      return;
+    }
+
+    final muteNext = !_audioMuted;
+    try {
+      await manager.setAudioMuted(muteNext);
+      if (!mounted) return;
+      setState(() => _audioMuted = muteNext);
+    } catch (e) {
+      _log.warning('Microphone mute toggle failed: $e');
+      _showSnackBar('Failed to ${muteNext ? 'mute' : 'unmute'} microphone');
+    }
+  }
+
+  Future<void> _openVoiceDialog() async {
+    final manager = _webrtcManager;
+    if (manager == null) return;
+
+    List<rust_audio.AudioSourceDto> sources;
+    try {
+      sources = await manager.listAudioSources();
+    } catch (e) {
+      _showSnackBar('Failed to list microphones');
+      return;
+    }
+    if (!mounted) return;
+
+    final result = await showSessionVoiceDialog(
+      context: context,
+      sources: sources,
+      selectedSourceId: _selectedAudioSourceId,
+      audioActive: _audioActive,
+    );
+    if (result == null || !mounted) return;
+
+    switch (result.action) {
+      case VoiceDialogAction.start:
+        setState(() {
+          _startingAudio = true;
+          _selectedAudioSourceId = result.sourceId;
+        });
+        try {
+          await manager.startAudioCapture(sourceId: result.sourceId);
+          if (!mounted) return;
+          setState(() {
+            _audioActive = true;
+            _audioMuted = false;
+          });
+        } catch (e) {
+          _log.warning('Voice start failed: $e');
+          _showSnackBar('Failed to start voice');
+        } finally {
+          if (mounted) setState(() => _startingAudio = false);
+        }
+      case VoiceDialogAction.apply:
+        try {
+          await manager.setAudioSource(result.sourceId);
+          if (!mounted) return;
+          setState(() => _selectedAudioSourceId = result.sourceId);
+        } catch (e) {
+          _showSnackBar('Failed to switch microphone');
+        }
+      case VoiceDialogAction.stop:
+        try {
+          await manager.stopAudioCapture();
+        } catch (_) {}
+        if (!mounted) return;
+        setState(() {
+          _audioActive = false;
+          _audioMuted = false;
+        });
+    }
+  }
+
+  String _sourceKindLabel(String kind) {
     switch (kind) {
-      case rust_share.SourceKind.display:
+      case 'display':
         return 'Display';
-      case rust_share.SourceKind.window:
+      case 'window':
         return 'Window';
+      default:
+        return kind;
     }
   }
 
   String _bitrateLabelForIndex(int index) {
-    final kbps = _bitrateSteps[index];
-    return kbps == null ? 'Auto' : '$kbps kbps';
-  }
-
-  String _buildShareStatus(ScreenShareQualityStatus status) {
-    final qualityMode = status.autoQuality
-        ? 'Auto ${status.qualityLabel}'
-        : 'Fixed ${status.qualityLabel}';
-    return 'Sharing @ ${status.resolutionLabel}, ${status.fps}fps '
-        '($qualityMode)';
+    return '${_bitrateSteps[index]} kbps';
   }
 
   Future<void> _sendIceCandidate(RTCIceCandidate candidate) async {
@@ -461,7 +572,6 @@ class _InitiatorPageState extends State<InitiatorPage> {
   void dispose() {
     _connectionService.dispose();
     _mailboxSubscription?.cancel();
-    _qualitySubscription?.cancel();
     _sessionControlProtocol.dispose();
     _iceCandidateQueue.dispose();
     _signalQueue.dispose();
@@ -527,11 +637,12 @@ class _InitiatorPageState extends State<InitiatorPage> {
         } catch (_) {}
       }
     } catch (e) {
+      final classified = ServerError.classify(e);
       setState(() {
         _generatingLink = false;
         _verificationCode = null;
       });
-      _showSnackBar('Error: $e');
+      _showSnackBar(classified.userMessage);
     } finally {
       _refreshingExpiredLink = false;
     }
@@ -613,96 +724,132 @@ class _InitiatorPageState extends State<InitiatorPage> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Incoming Connection'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(height: _dialogSpacing),
-              const Text('A peer wants to connect'),
-              const SizedBox(height: AppSpacing.sm),
-              if (verificationCode != null) ...[
-                Text(
-                  'Verification code',
-                  style: AppTypography.body(
-                    size: _dialogDetailFontSize,
-                    color: AppColors.textMuted,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.base,
-                    vertical: AppSpacing.md,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.outline),
-                  ),
-                  child: Text(
-                    verificationCode,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.mono(
-                      size: _dialogDetailFontSize + 6,
-                      weight: FontWeight.w700,
+        var codeVerified = false;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('INCOMING CONNECTION', style: AppTypography.eyebrow),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text('A peer wants to connect', style: AppTypography.h2),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (verificationCode != null) ...[
+                    Text('VERIFY WITH PEER', style: AppTypography.eyebrow),
+                    const SizedBox(height: AppSpacing.sm),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.md,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        border: Border.all(color: AppColors.borderStrong),
+                      ),
+                      child: Text(
+                        verificationCode,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.displayData.copyWith(
+                          fontSize: 28,
+                          letterSpacing: 28 * 0.08,
+                        ),
+                      ),
                     ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text(
+                      'Read this code aloud to your peer. '
+                      'Only accept if they confirm it matches.',
+                      style: AppTypography.body.copyWith(
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    GestureDetector(
+                      onTap: () =>
+                          setDialogState(() => codeVerified = !codeVerified),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: Checkbox(
+                              value: codeVerified,
+                              onChanged: (v) =>
+                                  setDialogState(() => codeVerified = v!),
+                              activeColor: AppColors.action,
+                              checkColor: AppColors.onAction,
+                              side: const BorderSide(
+                                color: AppColors.borderStrong,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              'My peer confirmed the code matches',
+                              style: AppTypography.label,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                OutlinedButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    setState(() => _hasIncomingRequest = false);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.error,
                   ),
+                  child: const Text('REJECT'),
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Ask the peer to confirm this code before you accept.',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.body(
-                    size: _dialogDetailFontSize,
-                    color: AppColors.textMuted,
-                  ),
+                AppButton(
+                  onPressed: codeVerified
+                      ? () async {
+                          Navigator.of(ctx).pop();
+
+                          if (_remainingFromEpochMs(_mailboxExpiresAtEpochMs) ==
+                              Duration.zero) {
+                            setState(() {
+                              _hasIncomingRequest = false;
+                              _peerAccepted = false;
+                            });
+                            _showSnackBar(
+                              'Link expired. Generating a new link...',
+                            );
+                            if (!_generatingLink && !_refreshingExpiredLink) {
+                              unawaited(
+                                _createInitiatorLink(isAutoRefresh: true),
+                              );
+                            }
+                            return;
+                          }
+
+                          setState(() {
+                            _peerAccepted = true;
+                            _hasIncomingRequest = false;
+                            _handshakeComplete = false;
+                          });
+                          await _startWebRTCHandshake();
+                        }
+                      : null,
+                  label: 'Accept',
                 ),
               ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                setState(() => _hasIncomingRequest = false);
-              },
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.textPrimary,
-              ),
-              child: const Text('Reject'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.of(ctx).pop();
-
-                if (_remainingFromEpochMs(_mailboxExpiresAtEpochMs) ==
-                    Duration.zero) {
-                  setState(() {
-                    _hasIncomingRequest = false;
-                    _peerAccepted = false;
-                  });
-                  _showSnackBar('Link expired. Generating a new link...');
-                  if (!_generatingLink && !_refreshingExpiredLink) {
-                    unawaited(_createInitiatorLink(isAutoRefresh: true));
-                  }
-                  return;
-                }
-
-                setState(() {
-                  _peerAccepted = true;
-                  _hasIncomingRequest = false;
-                });
-                await _startWebRTCHandshake();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-              ),
-              child: const Text('Accept'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -743,6 +890,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
           _webrtcManager = null;
           _webrtcState = null;
           _isPeerDisconnected = true;
+          _audioActive = false;
+          _audioMuted = false;
         });
       }
     } catch (_) {
@@ -805,6 +954,9 @@ class _InitiatorPageState extends State<InitiatorPage> {
       _webrtcState = null;
       _isPeerDisconnected = true;
       _isScreenSharing = false;
+      _remoteControlAllowed = false;
+      _audioActive = false;
+      _audioMuted = false;
     });
   }
 
@@ -893,23 +1045,29 @@ class _InitiatorPageState extends State<InitiatorPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('End Connection?'),
-        content: const Text(
-          'You are currently in an active session. Disconnecting will end the connection for both parties.',
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('ACTIVE SESSION', style: AppTypography.eyebrow),
+            const SizedBox(height: AppSpacing.sm),
+            Text('End connection?', style: AppTypography.h2),
+          ],
+        ),
+        content: Text(
+          'Disconnecting ends the encrypted session for both parties. '
+          'Session keys are discarded.',
+          style: AppTypography.body.copyWith(color: AppColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             style: TextButton.styleFrom(foregroundColor: AppColors.textMuted),
-            child: const Text('Keep Connected'),
+            child: const Text('KEEP CONNECTED'),
           ),
-          ElevatedButton(
+          OutlinedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Disconnect'),
+            style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('DISCONNECT'),
           ),
         ],
       ),
@@ -949,15 +1107,7 @@ class _InitiatorPageState extends State<InitiatorPage> {
         appBar: isConnected
             ? null
             : AppBar(
-                title: Text(
-                  'Create Connection',
-                  style: AppTypography.title(
-                    size: AppUiMetrics.appBarTitleFontSize,
-                  ),
-                ),
-                backgroundColor: AppColors.surface,
-                elevation: 0,
-                iconTheme: const IconThemeData(color: AppColors.textPrimary),
+                title: const Text('CREATE CONNECTION'),
                 actions: [
                   if (_peerAccepted) ...[
                     _buildConnectionBadge(),
@@ -965,7 +1115,9 @@ class _InitiatorPageState extends State<InitiatorPage> {
                   ],
                 ],
               ),
-        body: _peerAccepted ? _buildConnectedLayout() : _buildPairingBody(),
+        body: _peerAccepted
+            ? _buildConnectedLayout()
+            : DotGridBackground(child: _buildPairingBody()),
       ),
     );
   }
@@ -1005,60 +1157,56 @@ class _InitiatorPageState extends State<InitiatorPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (_generatingLink)
-                const Center(child: CircularProgressIndicator())
-              else if (_connectionLink != null && !_peerAccepted) ...[
-                Text(
-                  'Share this with your peer',
-                  style: AppTypography.title(size: 18),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Center(
-                  child: AppTtlTimer(
-                    remaining: _mailboxTimeRemaining,
-                    progress: _mailboxClockProgress(),
+                const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 1.5),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
+                )
+              else if (_connectionLink != null && !_peerAccepted) ...[
+                Text('INVITE', style: AppTypography.eyebrow),
+                const SizedBox(height: AppSpacing.sm),
+                Text('Share this with your peer', style: AppTypography.h1),
+                const SizedBox(height: AppSpacing.lg),
                 AppCard(
+                  eyebrow: 'Connection link',
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        'Connection Link',
-                        style: AppTypography.body(weight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
                       SelectableText(
                         _connectionLink!,
-                        style: AppTypography.mono(size: _linkFontSize),
+                        style: AppTypography.data.copyWith(
+                          color: AppColors.info,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      AppTtlTimer(
+                        remaining: _mailboxTimeRemaining,
+                        progress: _mailboxClockProgress(),
                       ),
                     ],
                   ),
                 ),
                 if (verificationCode != null) ...[
-                  const SizedBox(height: AppSpacing.base),
+                  const SizedBox(height: AppSpacing.lg),
                   AppCard(
+                    eyebrow: 'Verification code',
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'Verification Code',
-                          style: AppTypography.body(weight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        Text(
                           verificationCode,
-                          style: AppTypography.mono(
-                            size: _linkFontSize + 4,
-                            weight: FontWeight.w700,
+                          style: AppTypography.displayData.copyWith(
+                            fontSize: 28,
+                            letterSpacing: 28 * 0.08,
                           ),
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         Text(
-                          'Ask your peer to read back this code before you accept the session.',
-                          style: AppTypography.body(
-                            size: _dialogDetailFontSize,
+                          'Ask your peer to read back this code before you '
+                          'accept the session.',
+                          style: AppTypography.body.copyWith(
                             color: AppColors.textMuted,
                           ),
                         ),
@@ -1066,57 +1214,113 @@ class _InitiatorPageState extends State<InitiatorPage> {
                     ),
                   ),
                 ],
-                const SizedBox(height: AppSpacing.base),
+                const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
                     Expanded(
-                      child: ElevatedButton.icon(
+                      child: AppButton(
                         onPressed: _copyLink,
-                        icon: const Icon(Icons.copy),
-                        label: const Text('Copy Link'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.onPrimary,
-                        ),
+                        icon: LucideIcons.copy,
+                        label: 'Copy link',
                       ),
                     ),
                     const SizedBox(width: AppSpacing.md),
                     Expanded(
-                      child: ElevatedButton.icon(
+                      child: AppButton(
                         onPressed: _shareLink,
-                        icon: const Icon(Icons.share),
-                        label: const Text('Share'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.onPrimary,
-                        ),
+                        icon: LucideIcons.share2,
+                        label: 'Share',
+                        variant: AppButtonVariant.outline,
                       ),
                     ),
                   ],
                 ),
                 if (_waitingForPeer) ...[
                   const SizedBox(height: AppSpacing.lg),
-                  AppCard(
-                    child: Row(
-                      children: [
-                        const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.warn,
+                          ),
                         ),
-                        const SizedBox(width: AppSpacing.base),
-                        Text(
-                          'Waiting for peer...',
-                          style: AppTypography.body(),
+                      ),
+                      const SizedBox(width: AppSpacing.sm + AppSpacing.xs),
+                      Text(
+                        'WAITING FOR PEER',
+                        style: AppTypography.caption.copyWith(
+                          color: AppColors.warn,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ],
+                const SizedBox(height: AppSpacing.xl),
+                _buildServerVisibilityPanel(),
               ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ─── Server visibility panel ──────────────────────────────────────────────
+
+  Widget _buildServerVisibilityPanel() {
+    Widget row(String label, String value, {bool visible = true}) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 120,
+              child: Text(
+                label,
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.textFaint,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                value,
+                style: AppTypography.caption.copyWith(
+                  color: visible ? AppColors.info : AppColors.textMuted,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('WHAT THE SERVER SEES', style: AppTypography.eyebrow),
+          const SizedBox(height: AppSpacing.sm + AppSpacing.xs),
+          row('MAILBOX ID', _initiatorServerMailboxId ?? '—'),
+          row('PAYLOADS', 'ciphertext only (AEAD)'),
+          row('EXPIRY', 'enforced by TTL'),
+          const SizedBox(height: AppSpacing.sm),
+          Text('NEVER LEAVES THE PEERS', style: AppTypography.eyebrow),
+          const SizedBox(height: AppSpacing.sm + AppSpacing.xs),
+          row('SESSION KEYS', 'k_sig · k_mac', visible: false),
+          row('SAS CODE', 'verified out-of-band', visible: false),
+          row('CONTENT', 'screen, files, control', visible: false),
+        ],
       ),
     );
   }
@@ -1130,9 +1334,18 @@ class _InitiatorPageState extends State<InitiatorPage> {
       );
     }
 
-    if (_webrtcState !=
-        RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-      return const SessionConnectingView(message: 'Establishing connection…');
+    final isConnected =
+        _webrtcState == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+    if (!isConnected || !_handshakeComplete) {
+      return DotGridBackground(
+        child: HandshakeAnimation(
+          connected: isConnected,
+          onFinished: () {
+            if (!mounted) return;
+            setState(() => _handshakeComplete = true);
+          },
+        ),
+      );
     }
 
     return Stack(
@@ -1172,27 +1385,48 @@ class _InitiatorPageState extends State<InitiatorPage> {
   // ─── Left content area (host idle view) ───────────────────────────────────
 
   Widget _buildSessionMainArea() {
+    if (_isScreenSharing && _localPreview && _webrtcManager != null) {
+      return Container(
+        color: AppColors.background,
+        child: RawVideoFrameView(
+          frameStream: _webrtcManager!.onVideoFrame,
+          fit: BoxFit.contain,
+        ),
+      );
+    }
+
     return Container(
       color: AppColors.background,
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(
-              Icons.computer,
-              size: _sessionIconSize,
-              color: AppColors.primary.withValues(alpha: 0.25),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(
+                    color: AppColors.ok,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  'SESSION ACTIVE · HOST',
+                  style: AppTypography.eyebrow.copyWith(color: AppColors.ok),
+                ),
+              ],
             ),
-            const SizedBox(height: AppSpacing.lg),
-            Text(
-              'Session Active',
-              style: AppTypography.title(size: _sessionTitleFontSize),
-            ),
+            const SizedBox(height: AppSpacing.md),
+            Text('You are hosting this session', style: AppTypography.h2),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'You are hosting this session.\nUse the menu to share your screen or transfer files.',
-              style: AppTypography.body(color: AppColors.textMuted),
+              'Use the menu to share your screen or transfer files.',
+              style: AppTypography.body.copyWith(color: AppColors.textMuted),
               textAlign: TextAlign.center,
             ),
           ],
@@ -1204,67 +1438,133 @@ class _InitiatorPageState extends State<InitiatorPage> {
   Widget _buildFloatingMenu() {
     return SessionMenuCard(
       width: _floatingMenuWidth,
-      cornerRadius: _floatingMenuCornerRadius,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              SessionMenuAction(
-                icon: Icons.monitor,
-                label: _loadingShareSources
-                    ? 'Loading'
-                    : _startingShare
-                    ? 'Starting'
-                    : 'Screen',
-                iconSize: _floatingMenuIconSize,
-                labelFontSize: _floatingMenuLabelFontSize,
-                onPressed:
-                    _loadingShareSources || _startingShare || _stoppingShare
-                    ? null
-                    : _openShareSourceDialog,
-                showSpinner: _loadingShareSources || _startingShare,
+              Flexible(
+                child: SessionMenuAction(
+                  icon: LucideIcons.monitor,
+                  label: _loadingShareSources
+                      ? 'Loading'
+                      : _startingShare
+                      ? 'Starting'
+                      : 'Screen',
+                  iconSize: _floatingMenuIconSize,
+                  labelFontSize: _floatingMenuLabelFontSize,
+                  onPressed:
+                      _loadingShareSources || _startingShare || _stoppingShare
+                      ? null
+                      : _openShareSourceDialog,
+                  showSpinner: _loadingShareSources || _startingShare,
+                ),
               ),
-              SessionMenuAction(
-                icon: Icons.swap_horiz,
-                label: 'Files',
-                iconSize: _floatingMenuIconSize,
-                labelFontSize: _floatingMenuLabelFontSize,
-                onPressed: _webrtcManager == null
-                    ? null
-                    : _openFileTransferSheet,
+              Flexible(
+                child: SessionMenuAction(
+                  icon: LucideIcons.arrowLeftRight,
+                  label: 'Files',
+                  iconSize: _floatingMenuIconSize,
+                  labelFontSize: _floatingMenuLabelFontSize,
+                  onPressed: _webrtcManager == null
+                      ? null
+                      : _openFileTransferSheet,
+                ),
               ),
-              SessionMenuAction(
-                icon: Icons.call_end,
-                label: 'Disconnect',
-                iconSize: _floatingMenuIconSize,
-                labelFontSize: _floatingMenuLabelFontSize,
-                color: AppColors.error,
-                onPressed: () => Navigator.of(context).maybePop(),
+              Flexible(
+                child: SessionMenuAction(
+                  icon: _audioActive && !_audioMuted
+                      ? LucideIcons.mic
+                      : LucideIcons.micOff,
+                  label: _startingAudio
+                      ? 'Starting'
+                      : _audioActive
+                      ? (_audioMuted ? 'Unmute' : 'Mute')
+                      : 'Voice',
+                  iconSize: _floatingMenuIconSize,
+                  labelFontSize: _floatingMenuLabelFontSize,
+                  onPressed: _webrtcManager == null || _startingAudio
+                      ? null
+                      : _handleVoiceAction,
+                  onLongPress: _audioActive ? _openVoiceDialog : null,
+                  showSpinner: _startingAudio,
+                ),
               ),
-              if (_isScreenSharing)
-                SessionMenuAction(
-                  icon: Icons.stop_screen_share,
-                  label: _stoppingShare ? 'Stopping' : 'Stop',
+              Flexible(
+                child: SessionMenuAction(
+                  icon: LucideIcons.phoneOff,
+                  label: 'Disconnect',
                   iconSize: _floatingMenuIconSize,
                   labelFontSize: _floatingMenuLabelFontSize,
                   color: AppColors.error,
-                  onPressed: _stoppingShare ? null : _stopScreenShare,
-                  showSpinner: _stoppingShare,
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+              ),
+              if (_isScreenSharing)
+                Flexible(
+                  child: SessionMenuAction(
+                    icon: _remoteControlAllowed
+                        ? LucideIcons.mousePointerClick
+                        : LucideIcons.mousePointer,
+                    label: _remoteControlAllowed ? 'Input on' : 'Input off',
+                    iconSize: _floatingMenuIconSize,
+                    labelFontSize: _floatingMenuLabelFontSize,
+                    color: _remoteControlAllowed ? AppColors.ok : null,
+                    onPressed: _toggleRemoteControl,
+                  ),
+                ),
+              if (_isScreenSharing)
+                Flexible(
+                  child: SessionMenuAction(
+                    icon: LucideIcons.monitorOff,
+                    label: _stoppingShare ? 'Stopping' : 'Stop',
+                    iconSize: _floatingMenuIconSize,
+                    labelFontSize: _floatingMenuLabelFontSize,
+                    color: AppColors.error,
+                    onPressed: _stoppingShare ? null : _stopScreenShare,
+                    showSpinner: _stoppingShare,
+                  ),
                 ),
             ],
           ),
           if (_shareStatus != null) ...[
             const SizedBox(height: AppSpacing.sm),
-            Text(
-              _shareStatus!,
-              style: AppTypography.body(
-                size: _floatingMenuStatusFontSize,
-                color: AppColors.textMuted,
+            if (_shareStatus!.startsWith('Failed'))
+              GestureDetector(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: _shareStatus!));
+                  _showSnackBar('Error copied to clipboard');
+                },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        _shareStatus!,
+                        style: AppTypography.caption
+                            .copyWith(color: AppColors.error),
+                        textAlign: TextAlign.center,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Icon(
+                      LucideIcons.copy,
+                      size: 12,
+                      color: AppColors.textMuted,
+                    ),
+                  ],
+                ),
+              )
+            else
+              Text(
+                _shareStatus!,
+                style:
+                    AppTypography.caption.copyWith(color: AppColors.textMuted),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
           ],
         ],
       ),
@@ -1305,18 +1605,22 @@ class _InitiatorPageState extends State<InitiatorPage> {
     await _loadShareSources();
     if (!mounted) return;
 
-    // Local mutable dialog state
     String? dialogSourceId = _selectedSourceId;
     int dialogBitrateIndex = _bitrateSliderIndex;
+    bool dialogLocalPreview = _localPreview;
+    bool dialogShareAudio = _shareSystemAudio;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: Text(
-            'Share Screen',
-            style: AppTypography.title(size: _sectionTitleFontSize),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('SCREEN SHARE', style: AppTypography.eyebrow),
+              const SizedBox(height: AppSpacing.sm),
+              Text('Share screen', style: AppTypography.h2),
+            ],
           ),
           content: SizedBox(
             width: _shareDialogWidth,
@@ -1327,43 +1631,34 @@ class _InitiatorPageState extends State<InitiatorPage> {
                 if (_shareSources.isEmpty)
                   Text(
                     'No sources available.',
-                    style: AppTypography.body(color: AppColors.textMuted),
+                    style: AppTypography.body.copyWith(
+                      color: AppColors.textMuted,
+                    ),
+                  )
+                else if (_isPortalSource)
+                  Text(
+                    'Your system will ask which screen to share.',
+                    style: AppTypography.body.copyWith(
+                      color: AppColors.textMuted,
+                    ),
                   )
                 else ...[
-                  Text(
-                    'Source',
-                    style: AppTypography.body(
-                      color: AppColors.textMuted,
-                      size: 12,
-                    ),
-                  ),
+                  Text('SOURCE', style: AppTypography.eyebrow),
                   const SizedBox(height: AppSpacing.sm),
                   DropdownButtonFormField<String>(
                     initialValue: dialogSourceId,
-                    dropdownColor: AppColors.surface,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: AppColors.outline),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: AppColors.primary),
-                      ),
-                      contentPadding: _shareDropdownContentPadding,
-                    ),
+                    dropdownColor: AppColors.surface2,
+                    style: AppTypography.label,
                     items: _shareSources
                         .map(
                           (source) => DropdownMenuItem<String>(
-                            value: source.sourceId,
+                            value: source.id,
                             child: SizedBox(
                               width: _shareDropdownItemWidth,
                               child: Text(
                                 '${source.name} (${_sourceKindLabel(source.kind)})',
                                 overflow: TextOverflow.ellipsis,
-                                style: AppTypography.body(
-                                  color: AppColors.textPrimary,
-                                  size: _dropdownItemFontSize,
-                                ),
+                                style: AppTypography.label,
                               ),
                             ),
                           ),
@@ -1379,11 +1674,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
                     ).copyWith(dividerColor: Colors.transparent),
                     child: ExpansionTile(
                       title: Text(
-                        'Advanced Options',
-                        style: AppTypography.body(
-                          size: _advancedOptionsFontSize,
-                          weight: FontWeight.w600,
-                        ),
+                        'ADVANCED OPTIONS',
+                        style: AppTypography.eyebrow,
                       ),
                       tilePadding: EdgeInsets.zero,
                       iconColor: AppColors.textMuted,
@@ -1394,23 +1686,85 @@ class _InitiatorPageState extends State<InitiatorPage> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Bitrate: ${_bitrateLabelForIndex(dialogBitrateIndex)}',
-                              style: AppTypography.body(),
+                              'MAX BITRATE: ${_bitrateLabelForIndex(dialogBitrateIndex)}',
+                              style: AppTypography.caption,
                             ),
                           ],
                         ),
                         Slider(
                           min: 0,
-                          max: 5,
-                          divisions: 5,
+                          max: 3,
+                          divisions: 3,
                           value: dialogBitrateIndex.toDouble(),
                           label: _bitrateLabelForIndex(dialogBitrateIndex),
-                          activeColor: AppColors.primary,
+                          activeColor: AppColors.action,
                           onChanged: (val) => setDialogState(
                             () => dialogBitrateIndex = val.round(),
                           ),
                         ),
                         const SizedBox(height: AppSpacing.sm),
+                        GestureDetector(
+                          onTap: () => setDialogState(
+                            () => dialogLocalPreview = !dialogLocalPreview,
+                          ),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: Checkbox(
+                                  value: dialogLocalPreview,
+                                  onChanged: (v) => setDialogState(
+                                    () => dialogLocalPreview = v!,
+                                  ),
+                                  activeColor: AppColors.action,
+                                  checkColor: AppColors.onAction,
+                                  side: const BorderSide(
+                                    color: AppColors.borderStrong,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Text(
+                                'Show local preview (downscaled)',
+                                style: AppTypography.label,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                      ],
+                    ),
+                  ),
+                ],
+                if (Platform.isLinux && _shareSources.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  GestureDetector(
+                    onTap: () => setDialogState(
+                      () => dialogShareAudio = !dialogShareAudio,
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: Checkbox(
+                            value: dialogShareAudio,
+                            onChanged: (v) => setDialogState(
+                              () => dialogShareAudio = v!,
+                            ),
+                            activeColor: AppColors.action,
+                            checkColor: AppColors.onAction,
+                            side: const BorderSide(
+                              color: AppColors.borderStrong,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Text(
+                          'Share system audio',
+                          style: AppTypography.label,
+                        ),
                       ],
                     ),
                   ),
@@ -1421,21 +1775,15 @@ class _InitiatorPageState extends State<InitiatorPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.textPrimary,
-              ),
-              child: const Text('Cancel'),
+              style: TextButton.styleFrom(foregroundColor: AppColors.textMuted),
+              child: const Text('CANCEL'),
             ),
-            ElevatedButton.icon(
+            AppButton(
               onPressed: dialogSourceId == null
                   ? null
                   : () => Navigator.of(ctx).pop(true),
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Start Sharing'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-              ),
+              icon: LucideIcons.play,
+              label: 'Start sharing',
             ),
           ],
         ),
@@ -1446,6 +1794,8 @@ class _InitiatorPageState extends State<InitiatorPage> {
       setState(() {
         _selectedSourceId = dialogSourceId;
         _bitrateSliderIndex = dialogBitrateIndex;
+        _localPreview = dialogLocalPreview;
+        _shareSystemAudio = dialogShareAudio;
       });
       await _startScreenShare();
     }

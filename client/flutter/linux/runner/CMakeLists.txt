@@ -9,6 +9,7 @@ project(runner LANGUAGES CXX)
 add_executable(${BINARY_NAME}
   "main.cc"
   "my_application.cc"
+  "relink_video_texture.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 
@@ -24,3 +25,9 @@ target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
+
+# Export the runner's symbols so the Rust dylib (loaded via `dlopen` by the
+# Dart side) can resolve calls into the C functions defined in this binary.
+# Without this the Rust crate's `extern "C" { fn relink_video_…(); }` lookups
+# fail at load time.
+set_target_properties(${BINARY_NAME} PROPERTIES ENABLE_EXPORTS ON)
