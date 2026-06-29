@@ -38,6 +38,19 @@ void main() {
     );
   });
 
+  test('uses public STUN fallback for tunnel signaling domains', () async {
+    final settings = await createSettings();
+
+    expect(
+      settings.resolveIceServersForSignalingDomain(
+        'https://example.trycloudflare.com',
+      ),
+      [
+        {'urls': 'stun:stun.l.google.com:19302'},
+      ],
+    );
+  });
+
   test('preserves explicit port on dedicated ICE host', () async {
     final settings = await createSettings();
     await settings.setIceHost('stun.example.com:5349');

@@ -9,6 +9,7 @@ import '../../domain/signaling_backend.dart';
 
 /// HTTP client for the signaling server implementing the domain interface.
 class HttpSignalingBackend implements SignalingBackend {
+  static const Duration _httpTimeout = Duration(seconds: 10);
   final String baseUrl;
   final http.Client _client;
   final bool _ownsClient;
@@ -39,7 +40,7 @@ class HttpSignalingBackend implements SignalingBackend {
       uri,
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'device_label': deviceLabel}),
-    );
+    ).timeout(_httpTimeout);
     if (resp.statusCode != 200) {
       throw Exception('Register failed: ${resp.statusCode} ${resp.body}');
     }
@@ -94,7 +95,7 @@ class HttpSignalingBackend implements SignalingBackend {
         'client_id': _clientId,
         'session_token': _sessionToken,
       }),
-    );
+    ).timeout(_httpTimeout);
     if (resp.statusCode == 200) {
       final hb = HeartbeatResponse.fromJson(jsonDecode(resp.body));
       _heartbeatIntervalSecs = hb.nextHeartbeatSecs;

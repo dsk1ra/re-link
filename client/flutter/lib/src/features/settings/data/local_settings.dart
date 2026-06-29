@@ -9,6 +9,7 @@ class LocalSettings {
   static const String _keyIceServersJson = 'webrtc_ice_servers_json';
   static const String _keyWelcomeShown = 'welcome_shown';
   static const int _defaultStunPort = 3478;
+  static const String _defaultPublicStunUrl = 'stun:stun.l.google.com:19302';
 
   final SharedPreferences _prefs;
 
@@ -73,7 +74,16 @@ class LocalSettings {
   ///
   /// This is only used when no dedicated ICE host is configured.
   String defaultStunUrlForSignalingDomain(String signalingDomain) {
-    return defaultStunUrlForIceHost(signalingDomain);
+    final normalized = _normalizeIceHost(signalingDomain);
+    if (normalized == null) {
+      return _defaultPublicStunUrl;
+    }
+
+    if (_isTunnelLikeHost(normalized)) {
+      return _defaultPublicStunUrl;
+    }
+
+    return defaultStunUrlForIceHost(normalized);
   }
 
   /// Build default ICE JSON from signaling domain.
@@ -85,11 +95,13 @@ class LocalSettings {
     String signalingDomain, {
     String? iceHost,
   }) {
+    final explicitIceHost = _normalizeIceHost(iceHost ?? getIceHost());
+    final stunUrl = explicitIceHost != null
+        ? defaultStunUrlForIceHost(explicitIceHost)
+        : defaultStunUrlForSignalingDomain(signalingDomain);
     return jsonEncode([
       {
-        'urls': defaultStunUrlForIceHost(
-          _effectiveIceHost(signalingDomain, overrideIceHost: iceHost),
-        ),
+        'urls': stunUrl,
       },
     ]);
   }
@@ -99,11 +111,10 @@ class LocalSettings {
     String signalingDomain, {
     String? iceHost,
   }) {
-    final effectiveIceHost = _effectiveIceHost(
-      signalingDomain,
-      overrideIceHost: iceHost,
-    );
-    final defaultStunUrl = defaultStunUrlForIceHost(effectiveIceHost);
+    final normalizedIceHost = _normalizeIceHost(iceHost ?? getIceHost());
+    final defaultStunUrl = normalizedIceHost != null
+        ? defaultStunUrlForIceHost(normalizedIceHost)
+        : defaultStunUrlForSignalingDomain(signalingDomain);
     final normalized = signalingDomain.trim();
     final explicitIceHost = (iceHost ?? getIceHost())?.trim();
 
@@ -118,10 +129,9 @@ class LocalSettings {
           'Use this when signaling and STUN/TURN are exposed on different endpoints.';
     }
 
-    return 'Generated ICE falls back to the signaling host and assumes STUN is '
-        'reachable directly at $defaultStunUrl. If signaling is behind '
+    return 'Generated ICE falls back to $defaultStunUrl. If signaling is behind '
         'Cloudflare Tunnel or another HTTPS-only proxy, set a separate public '
-        'ICE host instead.';
+        'ICE host or TURN server for better reachability.';
   }
 
   /// Return user-custom ICE config when present; otherwise return domain default.
@@ -133,8 +143,13 @@ class LocalSettings {
       return custom;
     }
 
+    final explicitIceHost = _normalizeIceHost(getIceHost());
+    final stunUrl = explicitIceHost != null
+        ? defaultStunUrlForIceHost(explicitIceHost)
+        : defaultStunUrlForSignalingDomain(signalingDomain);
+
     return [
-      {'urls': defaultStunUrlForIceHost(_effectiveIceHost(signalingDomain))},
+      {'urls': stunUrl},
     ];
   }
 
@@ -221,16 +236,6 @@ class LocalSettings {
     return null;
   }
 
-  String _effectiveIceHost(String signalingDomain, {String? overrideIceHost}) {
-    final explicitIceHost = _normalizeIceHost(overrideIceHost ?? getIceHost());
-    if (explicitIceHost != null) {
-      return explicitIceHost;
-    }
-
-    final normalizedSignalingHost = _normalizeIceHost(signalingDomain);
-    return normalizedSignalingHost ?? 'localhost';
-  }
-
   String _endpointWithDefaultPort(String rawHost) {
     final normalized = _normalizeIceHost(rawHost);
     if (normalized == null) {
@@ -290,6 +295,12 @@ class LocalSettings {
     return hostOrEndpoint.contains(':') &&
         !hostOrEndpoint.startsWith('[') &&
         ':'.allMatches(hostOrEndpoint).length > 1;
+  }
+
+  bool _isTunnelLikeHost(String hostOrEndpoint) {
+    final normalized = hostOrEndpoint.toLowerCase();
+    return normalized == 'trycloudflare.com' ||
+        normalized.endsWith('.trycloudflare.com');
   }
 
   /// Save the signaling domain

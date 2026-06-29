@@ -11,6 +11,7 @@ class ConnectionService {
   static final Logger _log = Logger('ConnectionService');
   static const Duration _initialReconnectDelay = Duration(milliseconds: 250);
   static const Duration _maxReconnectDelay = Duration(seconds: 2);
+  static const Duration _httpTimeout = Duration(seconds: 10);
   final String signalingBaseUrl;
   final http.Client httpClient;
 
@@ -49,7 +50,7 @@ class ConnectionService {
       Uri.parse('$signalingBaseUrl/connection/init'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'rendezvous_id_b64': rendezvousId}),
-    );
+    ).timeout(_httpTimeout);
 
     if (response.statusCode != 200) {
       _log.warning('Connection init failed with status ${response.statusCode}');
@@ -68,8 +69,11 @@ class ConnectionService {
       Uri.parse('$signalingBaseUrl/connection/join'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'token_b64': tokenB64}),
-    );
+    ).timeout(_httpTimeout);
 
+    if (response.statusCode == 404) {
+      throw MailboxNotFoundException(tokenB64);
+    }
     if (response.statusCode != 200) {
       throw Exception('Failed to join connection: ${response.statusCode}');
     }
@@ -161,7 +165,7 @@ class ConnectionService {
         // server expects same shape as MailboxSendRequest
         'ciphertext_b64': '',
       }),
-    );
+    ).timeout(_httpTimeout);
 
     if (response.statusCode != 200) {
       throw Exception('Failed to fetch messages: ${response.statusCode}');
@@ -292,7 +296,7 @@ class ConnectionService {
       Uri.parse('$signalingBaseUrl/connection/close'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'mailbox_id': mailboxId}),
-    );
+    ).timeout(_httpTimeout);
 
     if (response.statusCode != 202) {
       throw Exception('Failed to close connection: ${response.statusCode}');
