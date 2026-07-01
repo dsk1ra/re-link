@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:application/src/features/file_transfer/file_transfer_service.dart';
 import 'package:application/src/features/file_transfer/file_transfer_widget.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
+import 'package:application/src/presentation/ui/radius.dart';
 import 'package:application/src/presentation/ui/spacing.dart';
 import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
@@ -15,9 +17,11 @@ Future<void> showSessionFileTransferSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: AppColors.surface2,
+    elevation: 0,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.md)),
+      side: BorderSide(color: AppColors.borderStrong),
     ),
     builder: (ctx) => _SessionFileTransferSheetFrame(
       webrtcManager: webrtcManager,
@@ -35,10 +39,9 @@ class _SessionFileTransferSheetFrame extends StatelessWidget {
   final WebRTCManager? webrtcManager;
   final FileTransferService? fileTransferService;
 
-  static const double _dragHandleWidth = 40;
-  static const double _dragHandleHeight = 4;
-  static const double _dragHandleBorderRadius = 2;
-  static const double _sheetHeaderIconSize = 18;
+  static const double _dragHandleWidth = 32;
+  static const double _dragHandleHeight = 3;
+  static const double _sheetHeaderIconSize = 16;
   static const double _sheetHeaderIconGap = AppSpacing.sm;
 
   @override
@@ -66,27 +69,19 @@ class _SessionFileTransferSheetFrame extends StatelessWidget {
                   width: _dragHandleWidth,
                   height: _dragHandleHeight,
                   margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: AppColors.outline,
-                    borderRadius: BorderRadius.circular(
-                      _dragHandleBorderRadius,
-                    ),
-                  ),
+                  color: AppColors.borderStrong,
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
               Row(
                 children: [
                   const Icon(
-                    Icons.swap_horiz,
+                    LucideIcons.arrowLeftRight,
                     color: AppColors.textMuted,
                     size: _sheetHeaderIconSize,
                   ),
                   const SizedBox(width: _sheetHeaderIconGap),
-                  Text(
-                    'File Transfer',
-                    style: AppTypography.body(weight: FontWeight.w700),
-                  ),
+                  Text('FILE TRANSFER', style: AppTypography.eyebrow),
                 ],
               ),
               const SizedBox(height: AppSpacing.md),

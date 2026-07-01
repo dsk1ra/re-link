@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:application/src/rust/api/file_transfer.dart'
     as rust_file_transfer;
+import 'package:application/src/features/session/application/serial_task_queue.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
 import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
@@ -62,6 +63,13 @@ class FileTransferService {
   Timer? _syncTimer;
   bool _syncInFlight = false;
 
+  // Runs queued files one at a time through the existing single-slot
+  // sendOffer protocol - no Rust/wire format changes needed for batches.
+  late final SerialTaskQueue<File> _transferQueue = SerialTaskQueue<File>(
+    processor: _runQueuedTransfer,
+    onError: (e, _) => _log.warning('Queued file transfer failed: $e'),
+  );
+
   FileTransferState _currentState = FileTransferState(
     status: TransferStatus.idle,
   );
@@ -69,6 +77,7 @@ class FileTransferService {
 
   Stream<FileTransferState> get onStateChange => _stateController.stream;
   FileTransferState get currentState => _currentState;
+  int get queuedCount => _transferQueue.length;
 
   FileTransferService(this._webrtcManager) {
     rust_file_transfer.initTransfer(connectionId: _webrtcManager.connectionId);
@@ -82,6 +91,30 @@ class FileTransferService {
       (_) => unawaited(_syncFromRust()),
     );
     unawaited(_syncFromRust());
+  }
+
+  /// Queues [files] and sends them one at a time via [sendOffer].
+  Future<void> sendOffers(List<File> files) async {
+    files.forEach(_transferQueue.enqueue);
+  }
+
+  /// Sends [file] and waits until it reaches a terminal state, so the
+  /// queue only advances once the current transfer is actually done.
+  Future<void> _runQueuedTransfer(File file) async {
+    final completer = Completer<void>();
+    late final StreamSubscription<FileTransferState> sub;
+    sub = onStateChange.listen((state) {
+      if (state.status == TransferStatus.completed ||
+          state.status == TransferStatus.error) {
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+    try {
+      await sendOffer(file);
+      await completer.future;
+    } finally {
+      await sub.cancel();
+    }
   }
 
   void _updateState(FileTransferState newState) {
@@ -101,25 +134,15 @@ class FileTransferService {
       return;
     }
 
-    if (_webrtcManager.fileChannelState !=
-        RTCDataChannelState.RTCDataChannelStateOpen) {
-      _updateState(
-        _currentState.copyWith(
-          status: TransferStatus.error,
-          error: 'File channel is not open',
-        ),
-      );
-      return;
-    }
-
     try {
+      await _webrtcManager.createFileTransferChannel();
       await rust_file_transfer.sendOffer(
         connectionId: _webrtcManager.connectionId,
         filePath: file.path,
       );
       await _syncFromRust();
-    } catch (_) {
-      _log.warning('File transfer offer failed');
+    } catch (e) {
+      _log.warning('File transfer offer failed: $e');
       _updateState(
         _currentState.copyWith(
           status: TransferStatus.error,
@@ -151,6 +174,7 @@ class FileTransferService {
   }
 
   Future<void> cancelTransfer({String? reason}) async {
+    _transferQueue.clear();
     try {
       await rust_file_transfer.cancelTransfer(
         connectionId: _webrtcManager.connectionId,
@@ -234,6 +258,7 @@ class FileTransferService {
 
     _fileChannelStateSubscription?.cancel();
     _syncTimer?.cancel();
+    _transferQueue.dispose();
 
     _fileChannelStateSubscription = null;
     _syncTimer = null;
@@ -248,16 +273,8 @@ class FileTransferService {
   }
 
   void _handleFileChannelState(RTCDataChannelState state) {
-    switch (state) {
-      case RTCDataChannelState.RTCDataChannelStateClosing:
-        unawaited(cancelTransfer(reason: 'file_channel_closing'));
-        break;
-      case RTCDataChannelState.RTCDataChannelStateClosed:
-        unawaited(cancelTransfer(reason: 'file_channel_closed'));
-        break;
-      case RTCDataChannelState.RTCDataChannelStateConnecting:
-      case RTCDataChannelState.RTCDataChannelStateOpen:
-        break;
-    }
+    // Intentionally empty. The file transfer actor detects failures
+    // via send errors and the inactivity timeout, avoiding race
+    // conditions where a premature cancel destroys in-flight data.
   }
 }

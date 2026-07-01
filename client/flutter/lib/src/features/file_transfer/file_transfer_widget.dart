@@ -2,22 +2,20 @@ import 'dart:io';
 
 import 'package:application/src/features/file_transfer/file_transfer_service.dart';
 import 'package:application/src/features/webrtc/webrtc_manager.dart';
+import 'package:application/src/presentation/ui/radius.dart';
 import 'package:application/src/presentation/ui/spacing.dart';
 import 'package:application/src/presentation/ui/typography.dart';
 import 'package:application/src/presentation/ui/ui_config.dart';
-import 'package:application/src/presentation/widgets/app_card.dart';
 import 'package:application/src/presentation/widgets/app_button.dart';
+import 'package:application/src/presentation/widgets/app_card.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 class FileTransferWidget extends StatefulWidget {
-  static const double _sectionTitleFontSize = 18;
-  static const double _fileNameFontSize = 15;
-  static const double _metaFontSize = 12;
-  static const double _progressBarHeight = 8;
+  static const double _progressBarHeight = 2;
   static const double _dropZoneVerticalPadding = 20;
-  static const double _fileInfoBorderRadius = 8;
 
   final WebRTCManager webrtcManager;
   final FileTransferService? fileTransferService;
@@ -35,7 +33,8 @@ class FileTransferWidget extends StatefulWidget {
 class _FileTransferWidgetState extends State<FileTransferWidget> {
   late FileTransferService _service;
   late bool _ownsService;
-  File? _selectedFile;
+  List<File> _selectedFiles = [];
+  int _batchTotal = 0;
   bool _isDragging = false;
 
   @override
@@ -56,10 +55,10 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
 
   Future<void> _pickFile() async {
     try {
-      final XFile? xFile = await openFile();
-      if (xFile != null) {
+      final files = await openFiles();
+      if (files.isNotEmpty) {
         setState(() {
-          _selectedFile = File(xFile.path);
+          _selectedFiles = files.map((f) => File(f.path)).toList();
         });
       }
     } catch (e) {
@@ -73,12 +72,13 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
   }
 
   Future<void> _startTransfer() async {
-    if (_selectedFile == null) return;
+    if (_selectedFiles.isEmpty) return;
     try {
       await widget.webrtcManager.createFileTransferChannel();
-      await _service.sendOffer(_selectedFile!);
+      _batchTotal = _selectedFiles.length;
+      await _service.sendOffers(_selectedFiles);
       setState(() {
-        _selectedFile = null; // Clear selection after starting
+        _selectedFiles = []; // Clear selection after starting
       });
     } catch (e) {
       _showError('Failed to send file: $e');
@@ -89,15 +89,41 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('File Selection Note'),
-        content: Text(message),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('FILE TRANSFER', style: AppTypography.eyebrow),
+            const SizedBox(height: AppSpacing.sm),
+            Text('File selection note', style: AppTypography.h2),
+          ],
+        ),
+        content: Text(
+          message,
+          style: AppTypography.body.copyWith(color: AppColors.textMuted),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Got it'),
+            child: const Text('GOT IT'),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _statusLine(String text, Color color) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Text(text, style: AppTypography.caption.copyWith(color: color)),
+      ],
     );
   }
 
@@ -109,38 +135,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
       builder: (context, snapshot) {
         final state = snapshot.data!;
 
-        final variant = switch (state.status) {
-          TransferStatus.completed => AppCardVariant.success,
-          TransferStatus.error => AppCardVariant.error,
-          TransferStatus.offered => AppCardVariant.warning,
-          _ => AppCardVariant.normal,
-        };
-
-        return AppCard(
-          variant: variant,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.swap_horizontal_circle,
-                    color: AppColors.primary,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    'File Transfer',
-                    style: AppTypography.title(
-                      size: FileTransferWidget._sectionTitleFontSize,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.base),
-              _buildContent(state),
-            ],
-          ),
-        );
+        return AppCard(child: _buildContent(state));
       },
     );
   }
@@ -149,43 +144,48 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
     if (state.status == TransferStatus.transferring ||
         state.status == TransferStatus.receiving) {
       return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
+          _statusLine(
             state.status == TransferStatus.transferring
-                ? 'Sending...'
-                : 'Receiving...',
-            style: AppTypography.body(weight: FontWeight.w600),
+                ? 'SENDING'
+                : 'RECEIVING',
+            AppColors.warn,
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.md),
           Text(
             state.fileName ?? 'Unknown File',
-            style: AppTypography.mono(weight: FontWeight.w700),
+            textAlign: TextAlign.center,
+            style: AppTypography.data,
           ),
+          if (state.status == TransferStatus.transferring && _batchTotal > 1)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: Text(
+                'File ${_batchTotal - _service.queuedCount} of $_batchTotal',
+                textAlign: TextAlign.center,
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ),
           const SizedBox(height: AppSpacing.md),
           LinearProgressIndicator(
             value: state.progress,
-            backgroundColor: AppColors.surfaceVariant,
-            color: AppColors.primary,
             minHeight: FileTransferWidget._progressBarHeight,
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            '${(state.progress * 100).toStringAsFixed(1)}% • ${state.bytesTransferred}/${state.totalBytes} bytes',
-            style: AppTypography.mono(
-              size: FileTransferWidget._metaFontSize,
-              color: AppColors.textMuted,
-            ),
+            '${(state.progress * 100).toStringAsFixed(1)}% · '
+            '${state.bytesTransferred}/${state.totalBytes} bytes',
+            textAlign: TextAlign.center,
+            style: AppTypography.caption.copyWith(color: AppColors.textMuted),
           ),
           const SizedBox(height: AppSpacing.md),
           TextButton(
             onPressed: () => _service.cancelTransfer(reason: 'user_cancel'),
-            child: Text(
-              'Cancel Transfer',
-              style: AppTypography.body(
-                weight: FontWeight.w600,
-                color: AppColors.error,
-              ),
-            ),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('CANCEL TRANSFER'),
           ),
         ],
       );
@@ -194,30 +194,23 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
     if (state.status == TransferStatus.offering) {
       return Column(
         children: [
-          Text(
-            'Waiting for peer to accept...',
-            style: AppTypography.body(
-              color: AppColors.textMuted,
-              weight: FontWeight.w500,
+          _statusLine('WAITING FOR PEER TO ACCEPT', AppColors.warn),
+          const SizedBox(height: AppSpacing.md),
+          Text(state.fileName ?? '', style: AppTypography.data),
+          const SizedBox(height: AppSpacing.md),
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.warn),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            state.fileName ?? '',
-            style: AppTypography.mono(weight: FontWeight.w700),
-          ),
-          const SizedBox(height: AppSpacing.base),
-          const CircularProgressIndicator(color: AppColors.warning),
-          const SizedBox(height: AppSpacing.base),
+          const SizedBox(height: AppSpacing.md),
           TextButton(
             onPressed: () => _service.cancelTransfer(reason: 'user_cancel'),
-            child: Text(
-              'Cancel Request',
-              style: AppTypography.body(
-                color: AppColors.error,
-                weight: FontWeight.w600,
-              ),
-            ),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('CANCEL REQUEST'),
           ),
         ],
       );
@@ -225,47 +218,42 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
 
     if (state.status == TransferStatus.offered) {
       return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Incoming File Transfer',
-            style: AppTypography.body(weight: FontWeight.w700),
-          ),
+          Text('INCOMING FILE', style: AppTypography.eyebrow),
           const SizedBox(height: AppSpacing.md),
           Container(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
-              color: AppColors.surfaceVariant,
-              borderRadius: BorderRadius.circular(
-                FileTransferWidget._fileInfoBorderRadius,
-              ),
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              border: Border.all(color: AppColors.border),
             ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(state.fileName ?? 'unknown', style: AppTypography.data),
+                const SizedBox(height: AppSpacing.xs),
                 Text(
-                  state.fileName ?? 'unknown',
-                  style: AppTypography.mono(
-                    size: FileTransferWidget._fileNameFontSize,
-                  ),
-                ),
-                Text(
-                  'Size: ${(state.totalBytes / 1024 / 1024).toStringAsFixed(2)} MB',
-                  style: AppTypography.body(
-                    size: FileTransferWidget._metaFontSize,
+                  '${(state.totalBytes / 1024 / 1024).toStringAsFixed(2)} MB',
+                  style: AppTypography.caption.copyWith(
                     color: AppColors.textMuted,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: AppSpacing.base),
+          const SizedBox(height: AppSpacing.md),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               Expanded(
-                child: AppButton(
+                child: OutlinedButton(
                   onPressed: () => _service.rejectOffer(),
-                  label: 'Reject',
-                  variant: AppButtonVariant.outline,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                  ),
+                  child: const Text('REJECT'),
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
@@ -283,32 +271,19 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
 
     // Default: Idle / Selected / Completed / Error
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (state.status == TransferStatus.completed) ...[
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.check_circle,
-                color: AppColors.success,
-                size: 16,
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                'Transfer complete!',
-                style: AppTypography.body(
-                  color: AppColors.success,
-                  weight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
+          _statusLine('TRANSFER COMPLETE', AppColors.ok),
           const SizedBox(height: AppSpacing.md),
         ],
         if (state.status == TransferStatus.error) ...[
+          _statusLine('TRANSFER FAILED', AppColors.error),
+          const SizedBox(height: AppSpacing.sm),
           Text(
-            'Error: ${state.error}',
-            style: AppTypography.body(size: 12, color: AppColors.error),
+            '${state.error}',
+            textAlign: TextAlign.center,
+            style: AppTypography.caption.copyWith(color: AppColors.textMuted),
           ),
           const SizedBox(height: AppSpacing.md),
         ],
@@ -317,7 +292,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
           onDragDone: (detail) {
             if (detail.files.isNotEmpty) {
               setState(() {
-                _selectedFile = File(detail.files.first.path);
+                _selectedFiles = detail.files.map((f) => File(f.path)).toList();
               });
             }
           },
@@ -326,54 +301,57 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
           child: GestureDetector(
             onTap: _pickFile,
             child: Container(
-              padding: EdgeInsets.symmetric(
+              padding: const EdgeInsets.symmetric(
                 vertical: FileTransferWidget._dropZoneVerticalPadding,
-                horizontal: AppSpacing.base,
+                horizontal: AppSpacing.md,
               ),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(
-                  FileTransferWidget._fileInfoBorderRadius,
-                ),
-                color: _isDragging
-                    ? AppColors.primaryContainer
-                    : AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                color: _isDragging ? AppColors.surface2 : AppColors.background,
               ),
               child: CustomPaint(
                 painter: _DashedBorderPainter(
-                  color: _isDragging ? AppColors.primary : AppColors.outline,
-                  strokeWidth: _isDragging ? 2 : 1,
+                  color: _isDragging
+                      ? AppColors.borderStrong
+                      : AppColors.border,
+                  strokeWidth: 1,
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
                   child: Row(
                     children: [
                       Icon(
-                        _isDragging ? Icons.file_upload : Icons.file_present,
+                        _isDragging ? LucideIcons.fileUp : LucideIcons.file,
+                        size: 18,
                         color: _isDragging
-                            ? AppColors.primary
+                            ? AppColors.action
                             : AppColors.textMuted,
                       ),
                       const SizedBox(width: AppSpacing.md),
                       Expanded(
                         child: Text(
-                          _selectedFile != null
-                              ? _selectedFile!.path.split('/').last
+                          _selectedFiles.isNotEmpty
+                              ? (_selectedFiles.length == 1
+                                    ? _selectedFiles.first.path
+                                          .split('/')
+                                          .last
+                                    : '${_selectedFiles.length} files selected')
                               : (_isDragging
-                                    ? 'Drop file here'
-                                    : 'Tap to select or Drag & Drop'),
-                          style: _selectedFile != null || _isDragging
-                              ? AppTypography.mono()
-                              : AppTypography.body(
+                                    ? 'Drop files here'
+                                    : 'Tap to select or drag & drop'),
+                          style: _selectedFiles.isNotEmpty || _isDragging
+                              ? AppTypography.data
+                              : AppTypography.label.copyWith(
                                   color: AppColors.textMuted,
-                                  weight: FontWeight.w500,
                                 ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (_selectedFile != null && !_isDragging)
+                      if (_selectedFiles.isNotEmpty && !_isDragging)
                         const Icon(
-                          Icons.check_circle,
-                          color: AppColors.success,
+                          LucideIcons.check,
+                          size: 18,
+                          color: AppColors.ok,
                         ),
                     ],
                   ),
@@ -382,13 +360,15 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
             ),
           ),
         ),
-        const SizedBox(height: AppSpacing.base),
+        const SizedBox(height: AppSpacing.md),
         SizedBox(
           width: double.infinity,
           child: AppButton(
-            onPressed: _selectedFile == null ? null : _startTransfer,
-            icon: Icons.send,
-            label: 'Send File',
+            onPressed: _selectedFiles.isEmpty ? null : _startTransfer,
+            icon: LucideIcons.send,
+            label: _selectedFiles.length > 1
+                ? 'Send ${_selectedFiles.length} files'
+                : 'Send file',
           ),
         ),
       ],
