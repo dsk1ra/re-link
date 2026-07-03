@@ -37,14 +37,78 @@ compose() {
     fail "Docker Compose is required. Install Docker Desktop or docker-compose and retry."
 }
 
-enable_flutter_windows() {
-    flutter config --enable-windows-desktop >/dev/null
+detect_flutter_platform() {
+    case "$(uname -s)" in
+        Linux*)                   echo "linux"   ;;
+        Darwin*)                  echo "macos"   ;;
+        MINGW*|MSYS*|CYGWIN*)     echo "windows" ;;
+        *)  fail "Unsupported platform: $(uname -s)" ;;
+    esac
 }
 
-ensure_windows_device_available() {
-    if ! flutter devices | grep -qi 'windows'; then
-        fail "Flutter Windows desktop support is unavailable. Install the Windows desktop toolchain and rerun 'flutter doctor -v'."
+enable_flutter_desktop() {
+    local platform
+    platform="${1:-$(detect_flutter_platform)}"
+    flutter config --enable-"${platform}"-desktop >/dev/null 2>&1 || true
+}
+
+ensure_desktop_device_available() {
+    local platform
+    local devices_output
+
+    platform="${1:-$(detect_flutter_platform)}"
+    if ! devices_output="$(flutter devices 2>&1)"; then
+        printf '%s\n' "$devices_output" >&2
+        fail "Unable to list Flutter devices. Run 'flutter doctor -v' and resolve the reported issues."
     fi
+
+    if ! grep -qi "$platform" <<<"$devices_output"; then
+        printf '%s\n' "$devices_output" >&2
+        fail "Flutter ${platform} desktop support is unavailable. Run 'flutter doctor -v' and install the required toolchain."
+    fi
+}
+
+ensure_client_prerequisites() {
+    require_command flutter "Install the Flutter SDK and retry."
+    require_command dart "Install the Dart SDK via Flutter and retry."
+    require_command cargo "Install Rust/Cargo and retry."
+    require_command rustup "Install rustup and retry."
+    require_command flutter_rust_bridge_codegen "Run 'cargo install flutter_rust_bridge_codegen' and retry."
+}
+
+generate_frb_bindings() {
+    log "Generating flutter_rust_bridge bindings"
+    (cd "${PROJECT_ROOT}/client/flutter" && flutter_rust_bridge_codegen generate)
+}
+
+run_client_rust_checks() {
+    log "Running Rust checks for the client workspace"
+    (
+        cd "${PROJECT_ROOT}/client/rust"
+        cargo fmt --all --check
+        cargo clippy --workspace --all-targets -- -D warnings
+        cargo test --workspace
+    )
+}
+
+run_shared_rust_checks() {
+    log "Running Rust checks for the shared crate"
+    (
+        cd "${PROJECT_ROOT}/shared/rust"
+        cargo fmt --check
+        cargo clippy --all-targets -- -D warnings
+        cargo test
+    )
+}
+
+run_server_rust_checks() {
+    log "Running Rust checks for the server workspace"
+    (
+        cd "${PROJECT_ROOT}/server/rust"
+        cargo fmt --all --check
+        cargo clippy --workspace --all-targets -- -D warnings
+        cargo test --workspace
+    )
 }
 
 wait_for_http_ok() {
@@ -164,4 +228,65 @@ resolve_public_signaling_url() {
     log "Starting Cloudflare quick tunnel"
     start_cloudflare_quick_tunnel "https://localhost:443"
     RESOLVED_SIGNALING_PUBLIC_URL="$CLOUDFLARE_TUNNEL_URL"
+}
+
+try_copy_to_clipboard() {
+    local text="$1"
+    if command -v wl-copy >/dev/null 2>&1 && [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+        printf '%s' "$text" | wl-copy 2>/dev/null && return 0
+    fi
+    if command -v xclip >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+        printf '%s' "$text" | xclip -selection clipboard 2>/dev/null && return 0
+    fi
+    if command -v xsel >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+        printf '%s' "$text" | xsel --clipboard --input 2>/dev/null && return 0
+    fi
+    if command -v pbcopy >/dev/null 2>&1; then
+        printf '%s' "$text" | pbcopy 2>/dev/null && return 0
+    fi
+    return 1
+}
+
+display_public_url() {
+    local url="${1:?missing url}"
+    local url_file="${PROJECT_ROOT}/.tunnel-url"
+
+    printf '%s' "$url" > "$url_file"
+
+    local clipboard_note=""
+    if try_copy_to_clipboard "$url"; then
+        clipboard_note="Copied to clipboard  |  "
+    fi
+    local footer="${clipboard_note}Saved to .tunnel-url"
+
+    local title="Re:Link Public URL"
+    local inner=${#url}
+    (( ${#footer} > inner )) && inner=${#footer}
+    (( ${#title} > inner )) && inner=${#title}
+    (( inner < 40 )) && inner=40
+
+    local rule=""
+    for (( i = 0; i < inner + 4; i++ )); do rule+="─"; done
+
+    _pad() {
+        local t="$1" gap=$(( inner - ${#1} ))
+        printf '│  %s%*s  │\n' "$t" "$gap" ""
+    }
+    _blank() { printf '│  %*s  │\n' "$inner" ""; }
+
+    printf '\n'
+    printf '┌%s┐\n' "$rule"
+    _blank
+    _pad "$title"
+    _blank
+    _pad "$url"
+    _blank
+    _pad "$footer"
+    _blank
+    printf '└%s┘\n' "$rule"
+    printf '\n'
+}
+
+cleanup_tunnel_url_file() {
+    rm -f "${PROJECT_ROOT}/.tunnel-url" 2>/dev/null || true
 }

@@ -105,6 +105,7 @@ ReLinkSetup.exe
 ########################################
 server.log
 tunnel.log
+.tunnel-url
 
 ########################################
 # Security / Credentials

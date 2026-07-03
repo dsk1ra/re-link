@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../common.sh"
 
 ensure_server_prerequisites
-trap cleanup_cloudflare_quick_tunnel EXIT INT TERM
+trap 'cleanup_cloudflare_quick_tunnel; cleanup_tunnel_url_file' EXIT INT TERM
 start_local_infra
 resolve_public_signaling_url
 
@@ -25,7 +25,7 @@ export SIGNALING_RENDEZVOUS_TTL_SECS="${SIGNALING_RENDEZVOUS_TTL_SECS:-30}"
 export SIGNALING_REDIS_ENCRYPT="${SIGNALING_REDIS_ENCRYPT:-false}"
 export RUST_LOG="${RUST_LOG:-info}"
 
-log "Signaling public URL: ${SIGNALING_PUBLIC_URL}"
+display_public_url "$SIGNALING_PUBLIC_URL"
 log "Running the signaling server in release mode"
 
 cd "${PROJECT_ROOT}/server/rust"
