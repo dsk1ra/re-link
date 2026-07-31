@@ -1461,8 +1461,16 @@ async fn decode_incoming_track(
         let elapsed = window_started.elapsed();
         if elapsed >= Duration::from_secs(2) {
             let secs = elapsed.as_secs_f64();
-            let dec_avg = if decoded > 0 { decode_sum_us / decoded } else { 0 };
-            let push_avg = if decoded > 0 { push_sum_us / decoded } else { 0 };
+            let dec_avg = if decoded > 0 {
+                decode_sum_us / decoded
+            } else {
+                0
+            };
+            let push_avg = if decoded > 0 {
+                push_sum_us / decoded
+            } else {
+                0
+            };
             let fps = decoded as f64 / secs;
             tracing::info!(
                 target: "relink::recv_stats",
@@ -1523,7 +1531,11 @@ fn recv_stats_jsonl_path() -> PathBuf {
     let base = std::env::var("XDG_CACHE_HOME")
         .ok()
         .map(PathBuf::from)
-        .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".cache")))
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".cache"))
+        })
         .unwrap_or_else(|| PathBuf::from("/tmp"));
     base.join("relink").join("stage_stats.jsonl")
 }

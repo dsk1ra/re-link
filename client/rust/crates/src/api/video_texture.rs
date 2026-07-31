@@ -86,12 +86,7 @@ impl VideoTexture {
     /// Replace the back slot's buffer with `buf` (mapped readable) and
     /// publish it as the new front. The previous occupant of the back slot
     /// is dropped, releasing it back to the GStreamer buffer pool.
-    pub(crate) fn publish_buffer(
-        &self,
-        buf: gstreamer::Buffer,
-        width: u32,
-        height: u32,
-    ) {
+    pub(crate) fn publish_buffer(&self, buf: gstreamer::Buffer, width: u32, height: u32) {
         let mapped = match buf.into_mapped_buffer_readable() {
             Ok(m) => m,
             Err(_) => return,
@@ -158,11 +153,8 @@ impl VideoTexture {
 // Instead, Rust calls into C symbols at startup to register a callback;
 // the FlPixelBufferTexture's `copy_pixels` invokes that pointer.
 
-type CopyPixelsCallback = extern "C" fn(
-    out_buffer: *mut *const u8,
-    out_width: *mut u32,
-    out_height: *mut u32,
-) -> bool;
+type CopyPixelsCallback =
+    extern "C" fn(out_buffer: *mut *const u8, out_width: *mut u32, out_height: *mut u32) -> bool;
 
 extern "C" {
     fn relink_video_texture_mark_dirty();
@@ -184,10 +176,7 @@ mod runner_stubs {
         0
     }
     #[no_mangle]
-    extern "C" fn relink_video_texture_set_copy_pixels_callback(
-        _cb: super::CopyPixelsCallback,
-    ) {
-    }
+    extern "C" fn relink_video_texture_set_copy_pixels_callback(_cb: super::CopyPixelsCallback) {}
 }
 
 /// The function pointer we hand to C. Has C ABI so we can pass its address

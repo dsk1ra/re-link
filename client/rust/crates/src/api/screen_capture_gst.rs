@@ -83,7 +83,11 @@ fn stats_jsonl_path() -> PathBuf {
     let base = std::env::var("XDG_CACHE_HOME")
         .ok()
         .map(PathBuf::from)
-        .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".cache")))
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".cache"))
+        })
         .unwrap_or_else(|| PathBuf::from("/tmp"));
     base.join("relink").join("stage_stats.jsonl")
 }
@@ -322,7 +326,13 @@ impl PwCapture {
             .name("relink-pw-capture".into())
             .spawn(move || {
                 if let Err(e) = pw_capture_thread(
-                    node_id, target_w, target_h, target_fps, format_tx, appsrc_slot, quit_rx,
+                    node_id,
+                    target_w,
+                    target_h,
+                    target_fps,
+                    format_tx,
+                    appsrc_slot,
+                    quit_rx,
                 ) {
                     tracing::error!("PipeWire capture thread failed: {e:#}");
                 }

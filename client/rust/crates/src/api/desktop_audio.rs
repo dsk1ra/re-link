@@ -63,9 +63,8 @@ pub async fn start_desktop_audio_capture(connection_id: String) -> anyhow::Resul
     spawn_encode_thread(raw_rx, packet_tx, setup_tx);
 
     match tokio::time::timeout(Duration::from_secs(10), setup_rx).await {
-        Ok(result) => {
-            result.map_err(|_| anyhow::anyhow!("desktop audio thread terminated during setup"))??
-        }
+        Ok(result) => result
+            .map_err(|_| anyhow::anyhow!("desktop audio thread terminated during setup"))??,
         Err(_) => {
             let _ = quit_tx.send(());
             anyhow::bail!(
@@ -401,12 +400,18 @@ mod tests {
 
     #[test]
     fn mono_duplicates_to_both_channels() {
-        assert_eq!(to_stereo_interleaved(&[1.0, 2.0], 1), vec![1.0, 1.0, 2.0, 2.0]);
+        assert_eq!(
+            to_stereo_interleaved(&[1.0, 2.0], 1),
+            vec![1.0, 1.0, 2.0, 2.0]
+        );
     }
 
     #[test]
     fn stereo_passes_through_unchanged() {
-        assert_eq!(to_stereo_interleaved(&[1.0, 2.0, 3.0, 4.0], 2), vec![1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(
+            to_stereo_interleaved(&[1.0, 2.0, 3.0, 4.0], 2),
+            vec![1.0, 2.0, 3.0, 4.0]
+        );
     }
 
     #[test]

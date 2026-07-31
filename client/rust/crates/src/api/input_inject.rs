@@ -107,10 +107,17 @@ pub async fn set_remote_control_allowed(
 /// input events know what to scope against. Called when capture starts.
 pub(crate) async fn register_target(connection_id: &str, source_id: &str) {
     let target = match source_id.split_once(':') {
-        Some(("window", id_str)) => id_str
-            .parse::<u32>()
-            .map(InputTarget::Window)
-            .unwrap_or(InputTarget::Monitor { x: 0, y: 0, width: 0, height: 0 }),
+        Some(("window", id_str)) => {
+            id_str
+                .parse::<u32>()
+                .map(InputTarget::Window)
+                .unwrap_or(InputTarget::Monitor {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                })
+        }
         Some(("monitor", id_str)) => super::screen_capture::find_monitor(id_str)
             .and_then(|m| {
                 Ok(InputTarget::Monitor {
@@ -120,8 +127,18 @@ pub(crate) async fn register_target(connection_id: &str, source_id: &str) {
                     height: m.height()?,
                 })
             })
-            .unwrap_or(InputTarget::Monitor { x: 0, y: 0, width: 0, height: 0 }),
-        _ => InputTarget::Monitor { x: 0, y: 0, width: 0, height: 0 },
+            .unwrap_or(InputTarget::Monitor {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            }),
+        _ => InputTarget::Monitor {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        },
     };
 
     let state = get_or_create(connection_id).await;
@@ -163,7 +180,10 @@ pub(crate) fn parse_input_message(text: &str) -> Option<InputMsg> {
             delta_y: f64_field("deltaY")?,
         }),
         "input_key" => Some(InputMsg::Key {
-            unicode: value.get("unicode").and_then(|v| v.as_u64()).map(|v| v as u32),
+            unicode: value
+                .get("unicode")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32),
             named: value
                 .get("named")
                 .and_then(|v| v.as_str())
@@ -199,7 +219,11 @@ mod linux {
     }
 
     fn root_window(conn: &xcb::Connection) -> x::Window {
-        conn.get_setup().roots().next().expect("no X11 screens").root()
+        conn.get_setup()
+            .roots()
+            .next()
+            .expect("no X11 screens")
+            .root()
     }
 
     fn atom(conn: &xcb::Connection, name: &str) -> anyhow::Result<x::Atom> {
@@ -250,7 +274,10 @@ mod linux {
     /// Live position/size of `window` in root coordinates. Queried fresh
     /// every call (not cached) since the host can move/resize the shared
     /// window at any time.
-    fn window_rect(conn: &xcb::Connection, window: x::Window) -> anyhow::Result<(i32, i32, u32, u32)> {
+    fn window_rect(
+        conn: &xcb::Connection,
+        window: x::Window,
+    ) -> anyhow::Result<(i32, i32, u32, u32)> {
         let geom_cookie = conn.send_request(&x::GetGeometry {
             drawable: x::Drawable::Window(window),
         });
@@ -295,7 +322,12 @@ mod linux {
                     (y as f64 + ny.clamp(0.0, 1.0) * height as f64) as i16,
                 )))
             }
-            InputTarget::Monitor { x, y, width, height } => Ok(Some((
+            InputTarget::Monitor {
+                x,
+                y,
+                width,
+                height,
+            } => Ok(Some((
                 (x as f64 + nx.clamp(0.0, 1.0) * width as f64) as i16,
                 (y as f64 + ny.clamp(0.0, 1.0) * height as f64) as i16,
             ))),
@@ -421,7 +453,11 @@ mod linux {
         if let Some(keycode) = find_keycode_for_keysym(conn, keysym) {
             return fake_input(
                 conn,
-                if pressed { XTEST_KEY_PRESS } else { XTEST_KEY_RELEASE },
+                if pressed {
+                    XTEST_KEY_PRESS
+                } else {
+                    XTEST_KEY_RELEASE
+                },
                 keycode,
                 0,
                 0,
@@ -446,7 +482,11 @@ mod linux {
 
         fake_input(
             conn,
-            if pressed { XTEST_KEY_PRESS } else { XTEST_KEY_RELEASE },
+            if pressed {
+                XTEST_KEY_PRESS
+            } else {
+                XTEST_KEY_RELEASE
+            },
             scratch_keycode,
             0,
             0,
@@ -462,12 +502,21 @@ mod linux {
                     fake_input(conn, XTEST_MOTION_NOTIFY, 0, x, y)?;
                 }
             }
-            InputMsg::MouseButton { nx, ny, button, pressed } => {
+            InputMsg::MouseButton {
+                nx,
+                ny,
+                button,
+                pressed,
+            } => {
                 if let Some((x, y)) = resolve_point(conn, target, nx, ny)? {
                     fake_input(conn, XTEST_MOTION_NOTIFY, 0, x, y)?;
                     fake_input(
                         conn,
-                        if pressed { XTEST_BUTTON_PRESS } else { XTEST_BUTTON_RELEASE },
+                        if pressed {
+                            XTEST_BUTTON_PRESS
+                        } else {
+                            XTEST_BUTTON_RELEASE
+                        },
                         button_code(button),
                         x,
                         y,
@@ -484,7 +533,11 @@ mod linux {
                     fake_input(conn, XTEST_BUTTON_RELEASE, button, x, y)?;
                 }
             }
-            InputMsg::Key { unicode, named, pressed } => {
+            InputMsg::Key {
+                unicode,
+                named,
+                pressed,
+            } => {
                 let keysym = match (unicode, named.as_deref()) {
                     (Some(cp), _) => unicode_keysym(cp),
                     (None, Some(name)) => match named_keysym(name) {
@@ -533,8 +586,8 @@ mod linux {
         #[ignore = "queries a live X11/XWayland display's real keyboard mapping"]
         fn finds_a_real_keycode_for_a_common_letter() {
             let conn = conn().expect("no X11 connection available");
-            let keycode =
-                find_keycode_for_keysym(conn, unicode_keysym(b'a' as u32)).expect("'a' should be on any layout");
+            let keycode = find_keycode_for_keysym(conn, unicode_keysym(b'a' as u32))
+                .expect("'a' should be on any layout");
             // Round-trip: the keycode this returned must actually carry
             // that keysym at its base level, or injecting it would type
             // the wrong character.

@@ -83,7 +83,11 @@ fn stats_jsonl_path() -> PathBuf {
     let base = std::env::var("XDG_CACHE_HOME")
         .ok()
         .map(PathBuf::from)
-        .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".cache")))
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".cache"))
+        })
         .unwrap_or_else(|| PathBuf::from("/tmp"));
     base.join("relink").join("stage_stats.jsonl")
 }
@@ -92,7 +96,10 @@ fn open_stats_jsonl() -> Option<std::fs::File> {
     let path = stats_jsonl_path();
     if let Some(parent) = path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
-            tracing::warn!("recv_stats (gst): could not create {}: {e}", parent.display());
+            tracing::warn!(
+                "recv_stats (gst): could not create {}: {e}",
+                parent.display()
+            );
             return None;
         }
     }
@@ -254,11 +261,8 @@ pub(crate) async fn run_decode_pipeline(
         .max_buffers(2)
         .build();
 
-    let mut elements: Vec<&gst::Element> = vec![
-        appsrc.upcast_ref::<gst::Element>(),
-        &h264parse,
-        &decoder,
-    ];
+    let mut elements: Vec<&gst::Element> =
+        vec![appsrc.upcast_ref::<gst::Element>(), &h264parse, &decoder];
     elements.extend(convert_chain.iter());
     elements.push(&out_capsfilter);
     elements.push(appsink.upcast_ref::<gst::Element>());
@@ -315,7 +319,9 @@ pub(crate) async fn run_decode_pipeline(
                 );
 
                 STATS.decoded.fetch_add(1, Ordering::Relaxed);
-                STATS.decode_bytes.fetch_add(buffer.size() as u64, Ordering::Relaxed);
+                STATS
+                    .decode_bytes
+                    .fetch_add(buffer.size() as u64, Ordering::Relaxed);
 
                 // Sentinel: poke a zero-length frame with the real source
                 // dimensions down the FRB video stream so Dart can set up

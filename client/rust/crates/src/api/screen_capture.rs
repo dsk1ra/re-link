@@ -183,7 +183,10 @@ mod quality_tier_tests {
     fn does_not_degrade_past_the_last_tier() {
         let (idx, bad, _good) = step_tier(4, 0.5, 1, 0, 5);
         let (idx, _bad, _good) = step_tier(idx, 0.5, bad, 0, 5);
-        assert_eq!(idx, 4, "already at the worst tier, nothing lower to step to");
+        assert_eq!(
+            idx, 4,
+            "already at the worst tier, nothing lower to step to"
+        );
     }
 
     #[test]
@@ -194,7 +197,10 @@ mod quality_tier_tests {
         for _ in 0..20 {
             (idx, bad, good) = step_tier(idx, 0.0, bad, good, 5);
         }
-        assert_eq!(idx, 0, "already at the best tier, nothing higher to step to");
+        assert_eq!(
+            idx, 0,
+            "already at the best tier, nothing higher to step to"
+        );
     }
 
     #[test]
@@ -1005,8 +1011,13 @@ async fn adapt_quality(
         }
 
         let current = tier_idx.load(Ordering::Relaxed);
-        let (next, bad, good) =
-            step_tier(current, worst_loss, consecutive_bad, consecutive_good, TIERS.len());
+        let (next, bad, good) = step_tier(
+            current,
+            worst_loss,
+            consecutive_bad,
+            consecutive_good,
+            TIERS.len(),
+        );
         consecutive_bad = bad;
         consecutive_good = good;
 
