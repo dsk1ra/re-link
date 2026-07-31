@@ -109,12 +109,16 @@ jobs:
         working-directory: client/flutter
         run: flutter_rust_bridge_codegen generate --config-file flutter_rust_bridge.yaml
 
-      - name: Fail if the generated bindings are stale
+      # Reported, never enforced. The generated files embed lists of ignored
+      # items that codegen derives from `cargo expand` output, so they shift
+      # with the rustc version - a runner on a newer stable than the committer
+      # produces a diff with no API change behind it. Read it when the wire
+      # API looks wrong; do not gate on it.
+      - name: Report generated-binding drift
         run: |
           if ! git diff --quiet -- client/flutter/lib/src/rust client/rust/crates/src/frb_generated.rs; then
-            echo "::error::Committed flutter_rust_bridge output differs from a fresh generation. Run flutter_rust_bridge_codegen generate and commit the result."
-            git --no-pager diff --stat -- client/flutter/lib/src/rust client/rust/crates/src/frb_generated.rs
-            exit 1
+            echo "::warning::Fresh codegen differs from the committed output (often just rustc-version noise in the ignored-item comments; check the diff below for real API changes)."
+            git --no-pager diff -- client/flutter/lib/src/rust client/rust/crates/src/frb_generated.rs
           fi
 
       - name: Fetch Dart/Flutter dependencies
