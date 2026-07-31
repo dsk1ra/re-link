@@ -1,0 +1,143 @@
+name: Flutter Linux CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'client/flutter/**'
+      - 'client/rust/**'
+      - 'shared/rust/**'
+      - '.github/workflows/flutter-linux.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'client/flutter/**'
+      - 'client/rust/**'
+      - 'shared/rust/**'
+      - '.github/workflows/flutter-linux.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    name: Build Linux Client
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Two groups: the Flutter Linux desktop toolchain (gtk/ninja/clang), and
+      # the libraries the Rust client links - gstreamer + pipewire for the
+      # Wayland capture path cargokit enables, xcb/xtest for input injection,
+      # ALSA and opus for audio.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libgtk-3-dev \
+            liblzma-dev \
+            libglib2.0-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libpipewire-0.3-dev \
+            libasound2-dev \
+            libopus-dev \
+            libdbus-1-dev \
+            libxcb1-dev \
+            libxcb-randr0-dev \
+            libxcb-xtest0-dev \
+            libclang-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            client/rust/target
+          key: ${{ runner.os }}-flutter-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-cargo-
+
+      - name: Cache Dart pub cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('client/flutter/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Enable Linux desktop
+        run: flutter config --no-analytics --enable-linux-desktop
+
+      - name: Pre-cache Linux artifacts
+        run: flutter precache --linux
+
+      - name: Install flutter_rust_bridge_codegen
+        run: |
+          cargo install flutter_rust_bridge_codegen --version 2.12.0 --locked
+          cargo install cargo-expand --locked
+
+      - name: Ensure rust_builder exists
+        working-directory: client/flutter
+        run: |
+          if [ ! -f rust_builder/pubspec.yaml ]; then
+            flutter_rust_bridge_codegen integrate --template app
+          fi
+
+      - name: Generate rust_builder (Cargokit)
+        working-directory: client/flutter
+        run: flutter_rust_bridge_codegen generate --config-file flutter_rust_bridge.yaml
+
+      - name: Fail if the generated bindings are stale
+        run: |
+          if ! git diff --quiet -- client/flutter/lib/src/rust client/rust/crates/src/frb_generated.rs; then
+            echo "::error::Committed flutter_rust_bridge output differs from a fresh generation. Run flutter_rust_bridge_codegen generate and commit the result."
+            git --no-pager diff --stat -- client/flutter/lib/src/rust client/rust/crates/src/frb_generated.rs
+            exit 1
+          fi
+
+      - name: Fetch Dart/Flutter dependencies
+        working-directory: client/flutter
+        run: flutter pub get
+
+      - name: Analyze Flutter project
+        working-directory: client/flutter
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        working-directory: client/flutter
+        run: flutter test
+
+      - name: Build Linux app (Release)
+        working-directory: client/flutter
+        run: flutter build linux --release
+
+      - name: Archive Linux build output
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: client/flutter/build/linux/x64/release/bundle
+          if-no-files-found: error
+          retention-days: 7
