@@ -54,6 +54,10 @@ impl VideoRing {
     /// and an exclusive mutable view of its buffer, or `None` if every
     /// slot is currently in flight to Dart. Callers should drop the frame
     /// on `None`.
+    // The `&self -> &mut [u8]` is the whole point of the ring: the CAS below
+    // is what grants exclusivity, not the borrow checker. See the Send/Sync
+    // note above.
+    #[allow(clippy::mut_from_ref)]
     pub(crate) fn claim(&self) -> Option<(u32, &mut [u8])> {
         for i in 0..RING_SLOTS {
             if self.states[i]

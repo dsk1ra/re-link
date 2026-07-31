@@ -813,8 +813,8 @@ impl EncodePipeline {
 
         if want_preview && scene_changed {
             let preview_step = if tier.fps > 15 { 2 } else { 1 };
-            if self.frame_counter % preview_step == 0 {
-                let (pw, ph) = (target_w / 2 & !1, target_h / 2 & !1);
+            if self.frame_counter.is_multiple_of(preview_step) {
+                let (pw, ph) = ((target_w / 2) & !1, (target_h / 2) & !1);
                 if pw > 0 && ph > 0 {
                     let src = ImageRef::new(target_w, target_h, rgba, PixelType::U8x4)
                         .map_err(|e| anyhow::anyhow!("preview src view failed: {e}"))?;

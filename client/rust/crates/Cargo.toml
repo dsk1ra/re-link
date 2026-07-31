@@ -42,6 +42,11 @@ pipewire = { workspace = true, optional = true }
 # binary, not two.
 xcb = { version = "1.7", features = ["xtest"] }
 
+# flutter_rust_bridge's #[frb] macro expands to code guarded on this cfg;
+# without declaring it, every annotated item warns and `-D warnings` fails CI.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+
 [features]
 # On by default so a bare `cargo check`/`cargo test` compiles: desktop_audio
 # and video_texture reference pipewire/gstreamer unconditionally. The deps are

@@ -40,6 +40,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The client builds with --all-features, which turns on the Wayland
+      # capture path: gstreamer, pipewire and the glib stack behind them, plus
+      # ALSA for cpal and libclang for the -sys bindgen crates. The server
+      # needs none of it.
+      - name: Install system dependencies
+        if: matrix.working-directory == 'client/rust'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libglib2.0-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libpipewire-0.3-dev \
+            libasound2-dev \
+            libopus-dev \
+            libdbus-1-dev \
+            libxcb1-dev \
+            libxcb-randr0-dev \
+            libxcb-xtest0-dev \
+            libclang-dev \
+            pkg-config
+
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:

@@ -1130,32 +1130,29 @@ fn build_encode_pipeline(
         );
     }
 
-    let bus_watch = pipeline
-        .bus()
-        .map(|bus| {
-            bus.add_watch(move |_, msg| {
-                use gst::glib;
-                match msg.view() {
-                    gst::MessageView::Error(err) => {
-                        tracing::error!(
-                            "GStreamer encode error: {} (debug: {:?})",
-                            err.error(),
-                            err.debug()
-                        );
-                        cancel_flag.store(true, Ordering::Relaxed);
-                        glib::ControlFlow::Break
-                    }
-                    gst::MessageView::Eos(_) => {
-                        tracing::info!("GStreamer encode pipeline EOS");
-                        cancel_flag.store(true, Ordering::Relaxed);
-                        glib::ControlFlow::Break
-                    }
-                    _ => glib::ControlFlow::Continue,
+    let bus_watch = pipeline.bus().and_then(|bus| {
+        bus.add_watch(move |_, msg| {
+            use gst::glib;
+            match msg.view() {
+                gst::MessageView::Error(err) => {
+                    tracing::error!(
+                        "GStreamer encode error: {} (debug: {:?})",
+                        err.error(),
+                        err.debug()
+                    );
+                    cancel_flag.store(true, Ordering::Relaxed);
+                    glib::ControlFlow::Break
                 }
-            })
-            .ok()
+                gst::MessageView::Eos(_) => {
+                    tracing::info!("GStreamer encode pipeline EOS");
+                    cancel_flag.store(true, Ordering::Relaxed);
+                    glib::ControlFlow::Break
+                }
+                _ => glib::ControlFlow::Continue,
+            }
         })
-        .flatten();
+        .ok()
+    });
 
     Ok(GstPipeline {
         pipeline,
