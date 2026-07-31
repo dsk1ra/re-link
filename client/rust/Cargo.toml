@@ -24,7 +24,6 @@ yuv = { version = "0.8", features = ["fast_mode"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 cpal = "0.18"
 opus = "0.3"
-x264 = "0.5"
 rtcp = "0.11.0"
 ashpd = { version = "0.13", features = ["tokio", "screencast"] }
 gstreamer = "0.25"

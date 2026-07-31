@@ -122,7 +122,7 @@ const UPGRADE_LOSS: f64 = 0.01;
 const DEGRADE_AFTER: u32 = 2;
 const UPGRADE_AFTER: u32 = 10;
 
-/// Pure hysteresis step shared by both encoder backends (x264 and
+/// Pure hysteresis step shared by both encoder backends (openh264 and
 /// GStreamer): given the tier currently in use and one RTCP report's worst
 /// loss fraction, decides whether to step the tier index down/up. Sustained
 /// loss above 5% degrades after 2 bad reports; ~10 clean reports upgrade.
@@ -634,7 +634,7 @@ struct EncodePipeline {
     resizer: Resizer,
     resized: Option<Image<'static>>,
     planar: Option<YuvPlanarImageMut<'static, u8>>,
-    encoder: Option<x264::Encoder>,
+    encoder: Option<openh264::encoder::Encoder>,
     encoder_dims: (u32, u32),
     encoder_tier: Option<QualityTier>,
     last_hash: u64,
@@ -779,31 +779,26 @@ impl EncodePipeline {
         let y_stride = planar.y_plane.borrow().len() / target_h as usize;
         let u_stride = planar.u_plane.borrow().len() / (target_h as usize).div_ceil(2);
         let v_stride = planar.v_plane.borrow().len() / (target_h as usize).div_ceil(2);
-        let image = x264::Image::new(
-            x264::Colorspace::I420,
-            target_w as i32,
-            target_h as i32,
-            &[
-                x264::Plane {
-                    stride: y_stride as i32,
-                    data: planar.y_plane.borrow(),
-                },
-                x264::Plane {
-                    stride: u_stride as i32,
-                    data: planar.u_plane.borrow(),
-                },
-                x264::Plane {
-                    stride: v_stride as i32,
-                    data: planar.v_plane.borrow(),
-                },
-            ],
-        );
+        let image = I420Frame {
+            width: target_w as usize,
+            height: target_h as usize,
+            strides: (y_stride, u_stride, v_stride),
+            y: planar.y_plane.borrow(),
+            u: planar.u_plane.borrow(),
+            v: planar.v_plane.borrow(),
+        };
 
+        // Timestamps drive openh264's rate control, so feed it the tier's
+        // nominal frame interval rather than wall-clock: frames are only
+        // encoded when the scene changes, and real elapsed time between two
+        // of them would read as a huge frame gap and blow the bitrate budget.
+        let timestamp =
+            openh264::Timestamp::from_millis(self.frame_counter * 1000 / tier.fps as u64);
         let encoder = self.encoder.as_mut().expect("encoder ensured above");
-        let (data, _pic) = encoder
-            .encode(self.frame_counter as i64, image)
-            .map_err(|e| anyhow::anyhow!("H.264 encode failed: {e:?}"))?;
-        let data = data.entirety().to_vec();
+        let data = encoder
+            .encode_at(&image, timestamp)
+            .map_err(|e| anyhow::anyhow!("H.264 encode failed: {e:?}"))?
+            .to_vec();
 
         self.last_encoded_at = Instant::now();
         self.frame_counter += 1;
@@ -874,8 +869,41 @@ fn resize_into(
     Ok(())
 }
 
+/// Borrows the planes `yuv::rgba_to_yuv420` already filled so openh264 can
+/// read them in place - no copy, the frame lives only for the encode call.
+struct I420Frame<'a> {
+    width: usize,
+    height: usize,
+    strides: (usize, usize, usize),
+    y: &'a [u8],
+    u: &'a [u8],
+    v: &'a [u8],
+}
+
+impl openh264::formats::YUVSource for I420Frame<'_> {
+    fn dimensions(&self) -> (usize, usize) {
+        (self.width, self.height)
+    }
+
+    fn strides(&self) -> (usize, usize, usize) {
+        self.strides
+    }
+
+    fn y(&self) -> &[u8] {
+        self.y
+    }
+
+    fn u(&self) -> &[u8] {
+        self.u
+    }
+
+    fn v(&self) -> &[u8] {
+        self.v
+    }
+}
+
 fn ensure_encoder(
-    encoder: &mut Option<x264::Encoder>,
+    encoder: &mut Option<openh264::encoder::Encoder>,
     encoder_dims: &mut (u32, u32),
     encoder_tier: &mut Option<QualityTier>,
     width: u32,
@@ -898,20 +926,26 @@ fn ensure_encoder(
         );
     }
 
-    let enc = x264::Setup::preset(
-        x264::Preset::Ultrafast,
-        x264::Tune::None,
-        false,
-        true, // zero_latency
-    )
-    .fps(tier.fps, 1)
-    .bitrate(tier.bitrate_kbps as i32)
-    .max_keyframe_interval(tier.fps as i32)
-    .scenecut_threshold(0)
-    .baseline()
-    .annexb(true)
-    .build(x264::Colorspace::I420, width as i32, height as i32)
-    .map_err(|e| anyhow::anyhow!("failed to create x264 encoder: {e:?}"))?;
+    let config = openh264::encoder::EncoderConfig::new()
+        .usage_type(openh264::encoder::UsageType::ScreenContentRealTime)
+        .rate_control_mode(openh264::encoder::RateControlMode::Bitrate)
+        .bitrate(openh264::encoder::BitRate::from_bps(
+            tier.bitrate_kbps * 1000,
+        ))
+        .max_frame_rate(openh264::encoder::FrameRate::from_hz(tier.fps as f32))
+        .intra_frame_period(openh264::encoder::IntraFramePeriod::from_num_frames(
+            tier.fps,
+        ))
+        // The capture loop already gates on its own scene-change hash, so
+        // openh264's detector would only duplicate that work and insert
+        // keyframes we did not ask for.
+        .scene_change_detect(false)
+        .complexity(openh264::encoder::Complexity::Low)
+        .profile(openh264::encoder::Profile::Baseline);
+
+    let enc =
+        openh264::encoder::Encoder::with_api_config(openh264::OpenH264API::from_source(), config)
+            .map_err(|e| anyhow::anyhow!("failed to create openh264 encoder: {e:?}"))?;
 
     *encoder = Some(enc);
     *encoder_dims = (width, height);

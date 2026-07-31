@@ -29,7 +29,6 @@ yuv = { workspace = true }
 xxhash-rust = { workspace = true }
 cpal = { workspace = true }
 opus = { workspace = true }
-x264 = { workspace = true }
 rtcp = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

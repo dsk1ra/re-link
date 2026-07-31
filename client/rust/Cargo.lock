@@ -459,8 +459,6 @@ dependencies = [
  "cexpr",
  "clang-sys",
  "itertools 0.13.0",
- "log",
- "prettyplease",
  "proc-macro2",
  "quote",
  "regex",
@@ -3308,7 +3306,6 @@ dependencies = [
  "webrtc",
  "webrtc-ice",
  "webrtc-media",
- "x264",
  "xcap",
  "xcb",
  "xxhash-rust",
@@ -4978,26 +4975,6 @@ dependencies = [
  "rand_core 0.6.4",
  "serde",
  "zeroize",
-]
-
-[[package]]
-name = "x264"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc93ffd258cebeced05f02b73fb291e17fe78a6a99bfcff1091e6606ed0dec92"
-dependencies = [
- "pkg-config",
- "x264-sys",
-]
-
-[[package]]
-name = "x264-sys"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b694bc460acd21d48a05977f57025a93e2a4d4a10feffde9f0c66925d6e72ff4"
-dependencies = [
- "bindgen",
- "system-deps",
 ]
 
 [[package]]
