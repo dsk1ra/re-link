@@ -6,8 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `run_pipewire_capture`, `spawn_encode_thread`, `spawn_pipewire_thread`, `stop_capture_for_connection`, `to_stereo_interleaved`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `DesktopAudioCaptureHandle`, `RawChunk`
+// These functions are ignored because they are not marked as `pub`: `stop_capture_for_connection`
 
 Future<void> startDesktopAudioCapture({required String connectionId}) => RustLib
     .instance

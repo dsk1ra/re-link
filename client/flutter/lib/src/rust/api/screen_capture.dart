@@ -7,8 +7,8 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `adapt_quality`, `clamped`, `ensure_encoder`, `find_monitor`, `find_window`, `fit_dimensions`, `new`, `process`, `resize_into`, `run_poll_loop`, `run_recorder_loop`, `spawn_capture_thread`, `spawn_encode_thread`, `start_video_recorder`, `step_tier`, `write_outputs`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CaptureHandle`, `EncodeOutput`, `EncodePipeline`, `QualityTier`, `RawFrame`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CaptureHandle`, `EncodeOutput`, `EncodePipeline`, `I420Frame`, `QualityTier`, `RawFrame`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `dimensions`, `eq`, `fmt`, `fmt`, `fmt`, `strides`, `u`, `v`, `y`
 
 List<CaptureSourceDto> listCaptureSources() =>
     RustLib.instance.api.crateApiScreenCaptureListCaptureSources();

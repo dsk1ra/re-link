@@ -1331,7 +1331,7 @@ async fn decode_incoming_track(
 ) {
     // Prefer the GStreamer + NVDEC path when nvh264dec + cuda postproc are
     // available. Single-digit ms transit instead of openh264's ~300 ms.
-    #[cfg(feature = "gstreamer")]
+    #[cfg(all(target_os = "linux", feature = "gstreamer"))]
     {
         if super::screen_decode_gst::is_available() {
             match super::screen_decode_gst::run_decode_pipeline(

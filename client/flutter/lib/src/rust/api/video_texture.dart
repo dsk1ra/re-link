@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `as_ptr`, `current`, `install_copy_pixels_callback`, `new`, `publish_buffer`, `publish_owned_rgba`, `publish`, `rust_copy_pixels`
+// These functions are ignored because they are not marked as `pub`: `as_ptr`, `current`, `install_copy_pixels_callback`, `new`, `publish_owned_rgba`, `publish`, `rust_copy_pixels`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `FrameStore`, `Slot`, `VideoTexture`
 
 /// Returns the Flutter texture id registered by the runner. Returns 0 until

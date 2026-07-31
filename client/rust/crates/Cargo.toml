@@ -48,8 +48,10 @@ xcb = { version = "1.7", features = ["xtest"] }
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
 
 [features]
-# On by default so a bare `cargo check`/`cargo test` compiles: desktop_audio
-# and video_texture reference pipewire/gstreamer unconditionally. The deps are
-# Linux-only above, so this is inert on Windows and macOS.
-default = ["gstreamer"]
+# Off by default: the code now compiles either way, so a plain `cargo check`
+# needs no gstreamer/pipewire dev packages. Cargokit turns it on for real
+# builds. Every gate is `all(target_os = "linux", feature = "gstreamer")` -
+# the deps below are Linux-only, so the feature alone never implies the
+# crates are linkable.
+default = []
 gstreamer = ["dep:ashpd", "dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video", "dep:pipewire"]

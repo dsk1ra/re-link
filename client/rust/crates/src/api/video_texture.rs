@@ -22,6 +22,7 @@
 //     per decoder cycle, so the back slot the decoder writes to is never
 //     the one the engine is currently uploading from.
 
+#[cfg(all(target_os = "linux", feature = "gstreamer"))]
 use gstreamer::buffer::{MappedBuffer, Readable};
 use once_cell::sync::Lazy;
 use std::cell::UnsafeCell;
@@ -33,6 +34,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 /// for the compositor to read, so `TextureVideoView` renders identically
 /// regardless of which decoder produced the frame.
 enum FrameStore {
+    #[cfg(all(target_os = "linux", feature = "gstreamer"))]
     Gst(MappedBuffer<Readable>),
     Owned(Vec<u8>),
 }
@@ -40,6 +42,7 @@ enum FrameStore {
 impl FrameStore {
     fn as_ptr(&self) -> *const u8 {
         match self {
+            #[cfg(all(target_os = "linux", feature = "gstreamer"))]
             FrameStore::Gst(m) => m.as_slice().as_ptr(),
             FrameStore::Owned(v) => v.as_ptr(),
         }
@@ -86,6 +89,7 @@ impl VideoTexture {
     /// Replace the back slot's buffer with `buf` (mapped readable) and
     /// publish it as the new front. The previous occupant of the back slot
     /// is dropped, releasing it back to the GStreamer buffer pool.
+    #[cfg(all(target_os = "linux", feature = "gstreamer"))]
     pub(crate) fn publish_buffer(&self, buf: gstreamer::Buffer, width: u32, height: u32) {
         let mapped = match buf.into_mapped_buffer_readable() {
             Ok(m) => m,

@@ -23,7 +23,7 @@ pub(crate) static CAPTURE_SESSIONS: Lazy<Mutex<HashMap<String, CaptureHandle>>> 
 pub(crate) struct CaptureHandle {
     cancel_flag: Arc<AtomicBool>,
     cancel_tx: tokio::sync::watch::Sender<bool>,
-    #[cfg(feature = "gstreamer")]
+    #[cfg(all(target_os = "linux", feature = "gstreamer"))]
     gst_pipeline: Option<Arc<super::screen_capture_gst::GstPipeline>>,
 }
 
@@ -32,12 +32,12 @@ impl CaptureHandle {
         Self {
             cancel_flag,
             cancel_tx,
-            #[cfg(feature = "gstreamer")]
+            #[cfg(all(target_os = "linux", feature = "gstreamer"))]
             gst_pipeline: None,
         }
     }
 
-    #[cfg(feature = "gstreamer")]
+    #[cfg(all(target_os = "linux", feature = "gstreamer"))]
     pub(crate) fn new_gst(
         cancel_flag: Arc<AtomicBool>,
         cancel_tx: tokio::sync::watch::Sender<bool>,
@@ -237,7 +237,7 @@ pub(crate) enum EncodeOutput {
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn list_capture_sources() -> anyhow::Result<Vec<CaptureSourceDto>> {
-    #[cfg(feature = "gstreamer")]
+    #[cfg(all(target_os = "linux", feature = "gstreamer"))]
     if super::screen_capture_gst::is_available() {
         return Ok(super::screen_capture_gst::list_sources());
     }
@@ -319,7 +319,7 @@ pub async fn start_capture(
         None
     };
 
-    #[cfg(feature = "gstreamer")]
+    #[cfg(all(target_os = "linux", feature = "gstreamer"))]
     let source_id = if super::screen_capture_gst::is_available() {
         match super::screen_capture_gst::start_capture_gst(
             connection_id.clone(),
@@ -435,7 +435,7 @@ pub async fn stop_capture(connection_id: String) -> anyhow::Result<()> {
     if let Some(handle) = sessions.remove(&connection_id) {
         handle.cancel_flag.store(true, Ordering::Relaxed);
         let _ = handle.cancel_tx.send(true);
-        #[cfg(feature = "gstreamer")]
+        #[cfg(all(target_os = "linux", feature = "gstreamer"))]
         if let Some(pipeline) = &handle.gst_pipeline {
             pipeline.stop();
         }
