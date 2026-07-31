@@ -93,7 +93,19 @@ jobs:
       - name: Pre-cache Linux artifacts
         run: flutter precache --linux
 
+      - name: Cache cargo-installed codegen tools
+        id: frb-tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/flutter_rust_bridge_codegen
+            ~/.cargo/bin/flutter_rust_bridge_codegen.exe
+            ~/.cargo/bin/cargo-expand
+            ~/.cargo/bin/cargo-expand.exe
+          key: ${{ runner.os }}-frb-tools-2.12.0
+
       - name: Install flutter_rust_bridge_codegen
+        if: steps.frb-tools.outputs.cache-hit != 'true'
         run: |
           cargo install flutter_rust_bridge_codegen --version 2.12.0 --locked
           cargo install cargo-expand --locked
