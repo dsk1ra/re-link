@@ -44,5 +44,8 @@ pipewire = { workspace = true, optional = true }
 xcb = { version = "1.7", features = ["xtest"] }
 
 [features]
-default = []
+# On by default so a bare `cargo check`/`cargo test` compiles: desktop_audio
+# and video_texture reference pipewire/gstreamer unconditionally. The deps are
+# Linux-only above, so this is inert on Windows and macOS.
+default = ["gstreamer"]
 gstreamer = ["dep:ashpd", "dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video", "dep:pipewire"]
