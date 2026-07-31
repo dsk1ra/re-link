@@ -47,7 +47,7 @@ impl StageStats {
         let c = self.count.swap(0, Ordering::Relaxed);
         let s = self.sum_us.swap(0, Ordering::Relaxed);
         let m = self.max_us.swap(0, Ordering::Relaxed);
-        (c, if c == 0 { 0 } else { s / c }, m)
+        (c, s.checked_div(c).unwrap_or(0), m)
     }
 }
 

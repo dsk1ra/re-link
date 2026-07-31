@@ -45,7 +45,7 @@ impl StageStats {
         let count = self.count.swap(0, Ordering::Relaxed);
         let sum = self.sum_us.swap(0, Ordering::Relaxed);
         let max = self.max_us.swap(0, Ordering::Relaxed);
-        let avg = if count == 0 { 0 } else { sum / count };
+        let avg = sum.checked_div(count).unwrap_or(0);
         (count, avg, max)
     }
 }

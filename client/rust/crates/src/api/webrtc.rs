@@ -1461,16 +1461,8 @@ async fn decode_incoming_track(
         let elapsed = window_started.elapsed();
         if elapsed >= Duration::from_secs(2) {
             let secs = elapsed.as_secs_f64();
-            let dec_avg = if decoded > 0 {
-                decode_sum_us / decoded
-            } else {
-                0
-            };
-            let push_avg = if decoded > 0 {
-                push_sum_us / decoded
-            } else {
-                0
-            };
+            let dec_avg = decode_sum_us.checked_div(decoded).unwrap_or(0);
+            let push_avg = push_sum_us.checked_div(decoded).unwrap_or(0);
             let fps = decoded as f64 / secs;
             tracing::info!(
                 target: "relink::recv_stats",
