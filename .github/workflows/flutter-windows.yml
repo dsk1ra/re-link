@@ -22,6 +22,11 @@ on:
 permissions:
   contents: read
 
+# audiopus_sys builds vendored opus through cmake, and its CMakeLists still
+# declares cmake_minimum_required < 3.5, which CMake 4 rejects outright.
+env:
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -80,7 +85,8 @@ jobs:
 
       - name: Install flutter_rust_bridge_codegen
         run: |
-          cargo install flutter_rust_bridge_codegen --version 2.11.1 --locked
+          cargo install flutter_rust_bridge_codegen --version 2.12.0 --locked
+          cargo install cargo-expand --locked
 
       - name: Add Cargo bin to PATH
         run: |
@@ -154,7 +160,8 @@ jobs:
 
       - name: Install flutter_rust_bridge_codegen
         run: |
-          cargo install flutter_rust_bridge_codegen --version 2.11.1 --locked
+          cargo install flutter_rust_bridge_codegen --version 2.12.0 --locked
+          cargo install cargo-expand --locked
 
       - name: Add Cargo bin to PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
@@ -240,7 +247,8 @@ jobs:
 
       - name: Install flutter_rust_bridge_codegen
         run: |
-          cargo install flutter_rust_bridge_codegen --version 2.11.1 --locked
+          cargo install flutter_rust_bridge_codegen --version 2.12.0 --locked
+          cargo install cargo-expand --locked
 
       - name: Add Cargo bin to PATH
         run: |
