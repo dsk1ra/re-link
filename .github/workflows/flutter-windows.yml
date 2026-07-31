@@ -2,7 +2,7 @@ name: Flutter Windows CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - 'client/flutter/**'
       - 'client/rust/**'
@@ -10,7 +10,7 @@ on:
       - 'shared/rust/**'
       - '.github/workflows/flutter-windows.yml'
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - 'client/flutter/**'
       - 'client/rust/**'
